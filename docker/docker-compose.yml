@@ -1,0 +1,94 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: payforms-postgres
+    environment:
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
+      POSTGRES_DB: ${DB_NAME:-payforms}
+    ports:
+      - "${DB_HOST_PORT:-5433}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - payforms-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: payforms-redis
+    ports:
+      - "6379:6379"
+    networks:
+      - payforms-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.backend
+    container_name: payforms-backend
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: ${DB_USER:-postgres}
+      DB_PASSWORD: ${DB_PASSWORD:-postgres}
+      DB_NAME: ${DB_NAME:-payforms}
+      DB_POOL_MAX: ${DB_POOL_MAX:-50}
+      DB_POOL_MIN: ${DB_POOL_MIN:-5}
+      DB_POOL_IDLE_TIMEOUT_MS: ${DB_POOL_IDLE_TIMEOUT_MS:-30000}
+      DB_POOL_CONNECTION_TIMEOUT_MS: ${DB_POOL_CONNECTION_TIMEOUT_MS:-5000}
+      NODE_ENV: ${NODE_ENV:-development}
+      PORT: 3001
+      JWT_SECRET: ${JWT_SECRET:-dev_jwt_secret}
+      CACHE_DEFAULT_TTL_SECONDS: ${CACHE_DEFAULT_TTL_SECONDS:-120}
+      CACHE_REDIS_ENABLED: ${CACHE_REDIS_ENABLED:-true}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+      REDIS_TLS: ${REDIS_TLS:-false}
+      REDIS_CONNECT_TIMEOUT_MS: ${REDIS_CONNECT_TIMEOUT_MS:-10000}
+    ports:
+      - "3001:3001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ../apps/backend/src:/app/src
+      - /app/node_modules
+    networks:
+      - payforms-network
+    command: npm run start:dev
+
+  frontend:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.frontend
+    container_name: payforms-frontend
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:3001
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+    volumes:
+      - ../apps/frontend/src:/app/src
+      - /app/node_modules
+    networks:
+      - payforms-network
+    command: npm run dev
+
+volumes:
+  postgres_data:
+
+networks:
+  payforms-network:
+    driver: bridge

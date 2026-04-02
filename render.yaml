@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: payforms-backend
+    env: node
+    plan: free
+    branch: main
+    rootDir: apps/backend
+    buildCommand: npm install && npm run build
+    startCommand: npm run start
+    autoDeploy: true
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production

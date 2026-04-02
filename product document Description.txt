@@ -1,0 +1,604 @@
+📘 PAYFORM – UI/UX PRODUCT REQUIREMENTS DOCUMENT (MVP)
+🧠 1. DESIGN PRINCIPLES
+Core UX Rules
+3-click rule for core actions
+Guided flows > flexible UI
+Table-first dashboards (finance-friendly)
+Consistency across modules
+No empty states without guidance
+🎨 2. GLOBAL UI SYSTEM
+Layout Structure
+Sidebar (Left)
+Topbar (Header)
+Main Content Area
+Right Panel (optional context/actions)
+Sidebar Navigation
+Dashboard
+Forms
+Contacts
+Groups
+Transactions
+Reports
+Imports
+Audit Logs
+Settings
+Topbar
+Organization switch (future)
+Search (global: contacts, transactions)
+Notifications (future)
+Profile menu
+🏢 3. ORGANIZATION SETTINGS
+Screen: Settings → Organization
+Fields
+Organization Name (text)
+Logo Upload (image)
+Require Contact Login (toggle)
+Actions
+Save Changes
+Upload Logo
+Response
+Success toast: “Organization updated”
+Logo preview updates instantly
+Screen: Settings → Payment Integration
+Fields
+Paystack Public Key (text)
+Paystack Secret Key (password)
+Actions
+Save
+Test Connection
+Responses
+Success: “Connection successful”
+Error: “Invalid API key”
+👥 4. STAFF MANAGEMENT
+Screen: Users
+Table Columns
+Email
+Role
+Status (Invited / Active)
+Date Created
+Actions
+Invite User
+Resend Invite
+Change Role
+Invite Modal
+
+Fields:
+
+Email
+Role (dropdown)
+
+Action:
+
+Send Invite
+📄 5. FORM BUILDER
+Screen: Forms List
+Table Columns
+Title
+Category
+Status
+Created Date
+Actions
+Filters
+Search
+Category
+Status
+Actions
+Create Form
+Edit
+Delete
+Bulk Delete
+Screen: Create/Edit Form
+Step 1: Basic Info
+
+Fields:
+
+Title
+Category
+Payment Type (Fixed / Variable)
+Amount (if fixed)
+Allow Partial Payment (toggle)
+Step 2: Fields Builder
+Default Fields
+Name
+Email
+Add Field Modal
+
+Fields:
+
+Label
+Type (text, email, number, select)
+Required (toggle)
+
+If select:
+
+Options (list input)
+Field Actions
+Edit
+Delete
+Move Up/Down
+Step 3: Assign Audience (CRITICAL)
+UI
+Groups (Tree View)
+Year 1
+Engineering
+Science
+
+Checkbox multi-select
+
+Contacts (Search + Select)
+Actions
+Assign
+Remove
+Step 4: Publish
+
+Fields:
+
+Slug (editable)
+
+Actions:
+
+Publish Form
+
+Response:
+
+Show live link
+🌐 6. PUBLIC PAYMENT PAGE
+Fields Displayed
+Organization Logo
+Form Title
+Input Fields
+Amount Display
+Actions
+Submit Form
+Proceed to Payment
+Behavior
+If login required:
+Redirect to login
+🔐 7. CONTACT LOGIN
+Screen: Login
+
+Fields:
+
+Email
+Password
+
+Actions:
+
+Login
+Forgot Password
+Screen: Contact Dashboard
+Sections
+Payment Summary
+Total Paid
+Outstanding
+Transactions Table
+
+Columns:
+
+Form
+Amount
+Status
+Date
+Actions
+Pay Now (if pending)
+Download Receipt
+👤 8. CONTACT MANAGEMENT
+Screen: Contacts List
+Table Columns
+Name
+Email
+Phone
+Student ID
+Group(s)
+Created Date
+Filters
+Search
+Group
+Date Range
+Actions
+Add Contact
+Import
+Export
+Bulk Delete
+Assign to Group
+Screen: Contact Detail
+Sections
+Personal Info
+Full name
+Email
+Phone
+Gender
+Student ID
+Guardian Info
+Payment History
+
+Table:
+
+Form
+Amount
+Status
+Date
+Actions
+Edit
+Delete
+Export History
+👥 9. GROUPS & SUBGROUPS
+Screen: Groups
+Tree View
+Year 1
+ ├── Engineering
+ ├── Science
+Actions
+Create Group
+Create Subgroup
+Edit
+Delete (only if empty)
+Group Detail
+List of contacts
+Assign/remove contacts
+💳 10. TRANSACTIONS
+Screen: Transactions List
+Table Columns
+Reference
+Contact
+Student ID
+Form
+Amount
+Status
+Date
+Filters
+Date range
+Status
+Form
+Group
+Search
+Screen: Transaction Detail
+Sections
+Payment Info
+Amount
+Status
+Channel
+Date
+Contact Info
+Form Info
+Gateway Response (JSON view)
+📥 11. IMPORT SYSTEM
+Screen: Import Upload
+Step 1: Upload File
+CSV Upload
+Step 2: Field Mapping
+
+Match:
+
+CSV columns → system fields
+Step 3: Validation Preview
+Valid rows
+Errors
+Step 4: Confirm Import
+Screen: Import Logs
+
+Columns:
+
+File Name
+Status
+Records
+Date
+
+Filters:
+
+Date
+Status
+📜 12. AUDIT LOGS
+Screen: Activity Logs
+Table Columns
+User
+Action
+Entity
+Date
+Filters
+Date
+User
+Action
+Search
+🔔 13. NOTIFICATIONS
+Reminder Modal
+
+Fields:
+
+Form
+Target (group)
+Type:
+All
+Unpaid
+Partial
+
+Action:
+
+Send Reminder
+📊 14. REPORTS & ANALYTICS
+Screen: Summary Dashboard
+Total Revenue
+Pending
+Failed
+Filters
+Date range
+Form
+Group
+Export Options
+CSV
+PDF
+🔁 15. PAYMENT CALLBACK PAGE
+States
+Loading
+“Verifying payment…”
+Success
+“Payment successful”
+Show receipt
+Failed
+“Payment failed”
+Retry button
+🧠 FINAL UX FLOW SUMMARY
+Admin Flow
+Create Form → Assign Group → Share Link → Track Payment
+Contact Flow
+Login → View Fees → Pay → Track Status
+⚠️ UX GUARDRAILS
+DO NOT ADD
+Drag-and-drop builder
+Multi-step forms
+Complex logic UI
+Over-custom styling
+
+🧱 PAYFORM – SYSTEM ARCHITECTURE (FINAL)
+🎯 1. ARCHITECTURE PRINCIPLES
+Multi-tenant SaaS (organization-based isolation)
+No fund custody (org uses Paystack)
+Modular Monolith (fast MVP, scalable later)
+API-first backend
+Event-driven internally (lightweight)
+Separation of concerns across modules
+🧩 2. HIGH-LEVEL ARCHITECTURE
+┌──────────────────────────────┐
+│        Frontend (Next.js)    │
+│ ─ Admin Dashboard            │
+│ ─ Form Builder              │
+│ ─ Public Payment Pages      │
+│ ─ Contact Portal            │
+└──────────────┬───────────────┘
+               │ HTTPS API
+┌──────────────▼───────────────┐
+│        Backend (NestJS)      │
+│  Modular Monolith            │
+│                              │
+│  ├ Auth Module               │
+│  ├ Organization Module       │
+│  ├ User/Invite Module        │
+│  ├ Contact Module            │
+│  ├ Contact Auth Module       │
+│  ├ Group Module              │
+│  ├ Form Module               │
+│  ├ Form Targeting Module     │
+│  ├ Submission Module         │
+│  ├ Payment Module            │
+│  ├ Notification Module       │
+│  ├ Import Module             │
+│  ├ Reporting Module          │
+│  ├ Audit Module              │
+└──────────────┬───────────────┘
+               │
+┌──────────────▼───────────────┐
+│     PostgreSQL Database      │
+└──────────────────────────────┘
+
+External Services:
+- Paystack (Payments)
+- Email (SendGrid/SES)
+- File Storage (S3/Cloudinary)
+🧠 3. CORE DOMAIN ARCHITECTURE
+Key Domains
+Organization → Users (Admins/Staff)
+
+Organization → Contacts → Groups (with subgroups)
+
+Forms → Form Fields → Form Targets
+
+Contacts → Submissions → Payments
+
+Payments → Payment Logs
+
+System → Activity Logs
+🔁 4. END-TO-END DATA FLOW
+A. FORM CREATION FLOW
+Admin → Create Form
+      → Add Fields
+      → Assign Targets (Group/Contact)
+      → Publish
+
+Stored in:
+- forms
+- form_fields
+- form_targets
+B. PAYMENT FLOW (CRITICAL PATH)
+User → Fill Form → Submit
+
+Backend:
+→ Create submission
+→ Create payment record
+→ Initialize Paystack payment
+
+User → Pay via Paystack
+
+Paystack:
+→ Redirect to callback
+→ Send webhook
+
+Backend:
+→ Verify payment
+→ Update payment status
+→ Log event
+→ Send notification
+C. CONTACT MANAGEMENT FLOW
+Admin → Import Contacts (CSV)
+      → Map Fields
+      → Validate
+      → Save
+
+Contacts:
+→ Assigned to groups
+→ Can login (optional)
+→ Can view payment history
+D. TARGETING FLOW
+Form → Assigned to:
+   - Group(s)
+   - Subgroup(s)
+   - Contact(s)
+
+Backend resolves:
+→ All eligible contacts
+→ Used for:
+   - Access control
+   - Reporting
+   - Notifications
+🧩 5. MODULE-LEVEL ARCHITECTURE
+1. Auth Module (Admin)
+JWT authentication
+Role: Admin / Staff
+2. Contact Auth Module
+Login for contacts
+Password reset
+Optional (controlled by org setting)
+3. Organization Module
+Org profile
+Branding (logo)
+Settings (login toggle)
+Payment keys
+4. User/Invitation Module
+Invite via email
+Accept invite
+Role assignment
+5. Contact Module
+CRUD contacts
+Bulk import
+Extended profile fields
+Payment linkage
+6. Group Module (Hierarchical)
+Groups + subgroups
+Tree structure
+Assign contacts
+7. Form Module
+Create/update/delete forms
+Manage fields
+Slug routing
+8. Form Targeting Module (CRITICAL)
+form_targets:
+- target_type (group/contact)
+- target_id
+
+Handles:
+
+Eligibility
+Notifications
+Reporting scope
+9. Submission Module
+Stores form responses
+Links contact to payment
+10. Payment Module
+
+Core responsibilities:
+
+- initializePayment()
+- verifyPayment()
+- handleWebhook()
+- updatePaymentStatus()
+- storeGatewayResponse()
+Payment Truth Model
+Webhook = source of truth
+Verify endpoint = backup
+Redirect = UX only
+11. Notification Module
+Email notifications
+Payment confirmation
+Reminders (unpaid/partial)
+12. Import Module
+CSV upload
+Field mapping
+Validation
+Import logs
+13. Reporting Module
+Aggregations
+Filters (date, group, form)
+Export (CSV/PDF)
+14. Audit Module
+Activity logs
+Payment logs
+Immutable records
+🗄️ 6. DATA STORAGE DESIGN
+Multi-Tenant Strategy
+Single DB
+organization_id on all tables
+Key Relationships
+Organization
+ ├── Users
+ ├── Contacts
+ │    └── Groups (many-to-many)
+ │
+ ├── Forms
+ │    ├── Fields
+ │    └── Targets
+ │
+ ├── Submissions
+ │    └── Payments
+ │
+ ├── Import Logs
+ ├── Activity Logs
+ └── Payment Logs
+🔐 7. SECURITY ARCHITECTURE
+Layers
+1. Authentication
+JWT (admin + contact)
+2. Authorization
+Organization isolation
+Role checks
+3. Data Protection
+Encrypt Paystack keys
+Hash passwords (bcrypt)
+4. Payment Security
+Verify webhook signature
+Validate payment server-side
+⚙️ 8. INFRASTRUCTURE COMPONENTS
+Backend Hosting
+Node.js (NestJS)
+Docker (optional)
+Database
+PostgreSQL
+File Storage
+AWS S3 / Cloudinary
+Email
+SendGrid / AWS SES
+Payments
+Paystack
+🚀 9. SCALABILITY PATH (FUTURE)
+Phase 2
+Redis (caching, queues)
+Background jobs (emails, imports)
+Phase 3
+Microservices split:
+Payments
+Notifications
+Reporting
+Phase 4
+Event-driven architecture (Kafka/RabbitMQ)
+🧠 10. SYSTEM STRENGTH
+
+This architecture enables:
+
+✅ Flexibility
+Forms for any use case
+✅ Structure
+Groups + targeting
+✅ Reliability
+Webhook-driven payments
+✅ Scalability
+Modular expansion path
+
+
