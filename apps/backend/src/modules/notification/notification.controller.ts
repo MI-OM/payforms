@@ -1,7 +1,12 @@
 import { Controller, Post, Body, UseGuards, Request } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { NotificationService } from './notification.service';
-import { ReminderNotificationDto, ScheduleNotificationDto } from './dto/notification.dto';
+import {
+  ReminderNotificationDto,
+  GroupReminderNotificationDto,
+  ScheduleNotificationDto,
+  GroupScheduleNotificationDto,
+} from './dto/notification.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 
 @ApiTags('Notifications')
@@ -24,9 +29,30 @@ export class NotificationController {
     return this.notificationService.sendReminder(filtered, message);
   }
 
+  @Post('reminder/groups')
+  async sendGroupReminder(@Body() dto: GroupReminderNotificationDto, @Request() req) {
+    const message = dto.message || 'Please complete your payment as soon as possible.';
+    const recipients = await this.notificationService.getGroupContactEmails(
+      req.user.organization_id,
+      dto.group_ids,
+    );
+
+    return this.notificationService.sendReminder(recipients, message);
+  }
+
   @Post('schedule')
   async schedule(@Body() dto: ScheduleNotificationDto) {
     // For MVP, schedule immediately.
     return this.notificationService.sendEmail(dto.recipients, dto.subject, dto.body);
+  }
+
+  @Post('schedule/groups')
+  async scheduleByGroups(@Body() dto: GroupScheduleNotificationDto, @Request() req) {
+    const recipients = await this.notificationService.getGroupContactEmails(
+      req.user.organization_id,
+      dto.group_ids,
+    );
+
+    return this.notificationService.sendEmail(recipients, dto.subject, dto.body);
   }
 }

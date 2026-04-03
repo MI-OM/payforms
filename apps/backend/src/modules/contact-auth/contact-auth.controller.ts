@@ -15,8 +15,8 @@ export class ContactAuthController {
   constructor(private contactAuthService: ContactAuthService) {}
 
   @Post('login')
-  async login(@Body() dto: ContactLoginDto) {
-    return this.contactAuthService.login(dto);
+  async login(@Body() dto: ContactLoginDto, @Request() req) {
+    return this.contactAuthService.login(dto, this.resolveRequestHost(req));
   }
 
   @Post('set-password')
@@ -25,13 +25,13 @@ export class ContactAuthController {
   }
 
   @Post('reset/request')
-  async requestPasswordReset(@Body() dto: ContactPasswordResetRequestDto) {
-    return this.contactAuthService.requestPasswordReset(dto);
+  async requestPasswordReset(@Body() dto: ContactPasswordResetRequestDto, @Request() req) {
+    return this.contactAuthService.requestPasswordReset(dto, this.resolveRequestHost(req));
   }
 
   @Post('password-reset/request')
-  async requestPasswordResetAlias(@Body() dto: ContactPasswordResetRequestDto) {
-    return this.contactAuthService.requestPasswordReset(dto);
+  async requestPasswordResetAlias(@Body() dto: ContactPasswordResetRequestDto, @Request() req) {
+    return this.contactAuthService.requestPasswordReset(dto, this.resolveRequestHost(req));
   }
 
   @Post('reset/confirm')
@@ -49,5 +49,22 @@ export class ContactAuthController {
   @ApiBearerAuth()
   async getCurrentContact(@Request() req) {
     return req.user;
+  }
+
+  private resolveRequestHost(req: any): string | null {
+    const header =
+      req?.headers?.['x-forwarded-host'] ||
+      req?.headers?.host ||
+      (typeof req?.get === 'function' ? req.get('host') : null);
+
+    if (!header) {
+      return null;
+    }
+
+    const firstValue = String(Array.isArray(header) ? header[0] : header)
+      .split(',')[0]
+      .trim();
+
+    return firstValue || null;
   }
 }

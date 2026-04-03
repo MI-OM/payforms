@@ -134,6 +134,133 @@ export class ReportService {
     };
   }
 
+  async getFormPerformance(organizationId: string, startDate?: string, endDate?: string) {
+    const { start, end } = this.parseDateRange(startDate, endDate);
+
+    const forms = await this.formRepository.find({
+      where: { organization_id: organizationId },
+      select: ['id', 'title', 'slug', 'is_active', 'created_at'],
+      order: { created_at: 'DESC' },
+    });
+
+    const submissionsQuery = this.submissionRepository
+      .createQueryBuilder('submission')
+      .select('submission.form_id', 'form_id')
+      .addSelect('COUNT(submission.id)', 'submissions')
+      .where('submission.organization_id = :organizationId', { organizationId });
+
+    if (start) {
+      submissionsQuery.andWhere('submission.created_at >= :start', { start });
+    }
+    if (end) {
+      submissionsQuery.andWhere('submission.created_at <= :end', { end });
+    }
+
+    const submissionsByForm = await submissionsQuery
+      .groupBy('submission.form_id')
+      .getRawMany();
+
+    const paymentsQuery = this.paymentRepository
+      .createQueryBuilder('payment')
+      .innerJoin('payment.submission', 'submission')
+      .select('submission.form_id', 'form_id')
+      .addSelect('COUNT(payment.id)', 'payments')
+      .addSelect('SUM(CASE WHEN payment.status = :paid THEN 1 ELSE 0 END)', 'paid_payments')
+      .addSelect('SUM(CASE WHEN payment.status = :pending THEN 1 ELSE 0 END)', 'pending_payments')
+      .addSelect('SUM(CASE WHEN payment.status = :failed THEN 1 ELSE 0 END)', 'failed_payments')
+      .addSelect('SUM(CASE WHEN payment.status = :partial THEN 1 ELSE 0 END)', 'partial_payments')
+      .addSelect('SUM(payment.amount)', 'amount_total')
+      .addSelect('SUM(CASE WHEN payment.status = :paid THEN payment.amount ELSE 0 END)', 'paid_amount_total')
+      .addSelect('SUM(CASE WHEN payment.status = :pending THEN payment.amount ELSE 0 END)', 'pending_amount_total')
+      .addSelect('SUM(CASE WHEN payment.status = :failed THEN payment.amount ELSE 0 END)', 'failed_amount_total')
+      .addSelect('SUM(CASE WHEN payment.status = :partial THEN payment.amount ELSE 0 END)', 'partial_amount_total')
+      .where('payment.organization_id = :organizationId', { organizationId })
+      .setParameters({ paid: 'PAID', pending: 'PENDING', failed: 'FAILED', partial: 'PARTIAL' });
+
+    if (start) {
+      paymentsQuery.andWhere('payment.created_at >= :start', { start });
+    }
+    if (end) {
+      paymentsQuery.andWhere('payment.created_at <= :end', { end });
+    }
+
+    const paymentsByForm = await paymentsQuery
+      .groupBy('submission.form_id')
+      .getRawMany();
+
+    const submissionMap = new Map(submissionsByForm.map(row => [row.form_id, Number(row.submissions || 0)]));
+    const paymentMap = new Map(paymentsByForm.map(row => [row.form_id, row]));
+
+    const data = forms.map(form => {
+      const submissionCount = submissionMap.get(form.id) || 0;
+      const paymentRow = paymentMap.get(form.id) || {};
+
+      const payments = Number(paymentRow.payments || 0);
+      const paidPayments = Number(paymentRow.paid_payments || 0);
+      const pendingPayments = Number(paymentRow.pending_payments || 0);
+      const failedPayments = Number(paymentRow.failed_payments || 0);
+      const partialPayments = Number(paymentRow.partial_payments || 0);
+      const amountTotal = Number(paymentRow.amount_total || 0);
+      const paidAmountTotal = Number(paymentRow.paid_amount_total || 0);
+      const pendingAmountTotal = Number(paymentRow.pending_amount_total || 0);
+      const failedAmountTotal = Number(paymentRow.failed_amount_total || 0);
+      const partialAmountTotal = Number(paymentRow.partial_amount_total || 0);
+
+      const completionRate = submissionCount > 0
+        ? Number(((paidPayments / submissionCount) * 100).toFixed(2))
+        : 0;
+      const collectionRate = amountTotal > 0
+        ? Number(((paidAmountTotal / amountTotal) * 100).toFixed(2))
+        : 0;
+
+      return {
+        form_id: form.id,
+        title: form.title,
+        slug: form.slug,
+        is_active: form.is_active,
+        created_at: form.created_at?.toISOString() ?? null,
+        submissions: submissionCount,
+        payments,
+        paid_payments: paidPayments,
+        pending_payments: pendingPayments,
+        failed_payments: failedPayments,
+        partial_payments: partialPayments,
+        amount_total: amountTotal,
+        paid_amount_total: paidAmountTotal,
+        pending_amount_total: pendingAmountTotal,
+        failed_amount_total: failedAmountTotal,
+        partial_amount_total: partialAmountTotal,
+        completion_rate: completionRate,
+        collection_rate: collectionRate,
+      };
+    });
+
+    const totals = data.reduce(
+      (acc, row) => ({
+        submissions: acc.submissions + row.submissions,
+        payments: acc.payments + row.payments,
+        amount_total: acc.amount_total + row.amount_total,
+        paid_amount_total: acc.paid_amount_total + row.paid_amount_total,
+      }),
+      { submissions: 0, payments: 0, amount_total: 0, paid_amount_total: 0 },
+    );
+
+    return {
+      range: {
+        start: start?.toISOString() ?? null,
+        end: end?.toISOString() ?? null,
+      },
+      totals: {
+        forms: forms.length,
+        submissions: totals.submissions,
+        payments: totals.payments,
+        amount_total: totals.amount_total,
+        paid_amount_total: totals.paid_amount_total,
+      },
+      data,
+    };
+  }
+
   async exportReport(organizationId: string, type: 'summary' | 'analytics', format: 'csv' | 'pdf', startDate?: string, endDate?: string) {
     const data = type === 'analytics'
       ? await this.getAnalytics(organizationId, startDate, endDate)

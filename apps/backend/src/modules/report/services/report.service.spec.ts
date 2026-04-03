@@ -13,6 +13,7 @@ type MockRepository = Record<string, any>;
 type MockQueryBuilder = Record<string, any>;
 
 const createMockQueryBuilder = (): MockQueryBuilder => ({
+  innerJoin: jest.fn().mockReturnThis(),
   where: jest.fn().mockReturnThis(),
   andWhere: jest.fn().mockReturnThis(),
   select: jest.fn().mockReturnThis(),
@@ -33,7 +34,7 @@ describe('ReportService', () => {
   let contactRepository: MockRepository;
 
   beforeEach(() => {
-    formRepository = { count: jest.fn() };
+    formRepository = { count: jest.fn(), find: jest.fn() };
     submissionRepository = { createQueryBuilder: jest.fn() };
     paymentRepository = { createQueryBuilder: jest.fn() };
     contactRepository = { count: jest.fn() };
@@ -126,6 +127,90 @@ describe('ReportService', () => {
     expect(result.submissions_by_day).toEqual([{ day: '2026-01-01', count: 2 }]);
     expect(result.payments_by_day).toEqual([{ day: '2026-01-01', total: 1500, count: 3 }]);
     expect(result.payment_status_breakdown).toEqual([{ status: 'PAID', count: 2, total_amount: 1500 }]);
+  });
+
+  it('returns per-form performance metrics', async () => {
+    formRepository.find.mockResolvedValue([
+      { id: 'form-1', title: 'School Fees', slug: 'school-fees', is_active: true, created_at: new Date('2026-01-01T00:00:00.000Z') },
+      { id: 'form-2', title: 'Hostel Fees', slug: 'hostel-fees', is_active: false, created_at: new Date('2026-01-02T00:00:00.000Z') },
+    ]);
+
+    const submissionsQuery = createMockQueryBuilder();
+    submissionsQuery.getRawMany.mockResolvedValue([
+      { form_id: 'form-1', submissions: '3' },
+    ]);
+
+    const paymentsQuery = createMockQueryBuilder();
+    paymentsQuery.getRawMany.mockResolvedValue([
+      {
+        form_id: 'form-1',
+        payments: '2',
+        paid_payments: '1',
+        pending_payments: '1',
+        failed_payments: '0',
+        partial_payments: '0',
+        amount_total: '500',
+        paid_amount_total: '300',
+        pending_amount_total: '200',
+        failed_amount_total: '0',
+        partial_amount_total: '0',
+      },
+    ]);
+
+    submissionRepository.createQueryBuilder.mockReturnValueOnce(submissionsQuery);
+    paymentRepository.createQueryBuilder.mockReturnValueOnce(paymentsQuery);
+
+    const result = await service.getFormPerformance('org-1', '2026-01-01', '2026-01-31');
+
+    expect(result.totals).toEqual({
+      forms: 2,
+      submissions: 3,
+      payments: 2,
+      amount_total: 500,
+      paid_amount_total: 300,
+    });
+    expect(result.data).toEqual([
+      {
+        form_id: 'form-1',
+        title: 'School Fees',
+        slug: 'school-fees',
+        is_active: true,
+        created_at: '2026-01-01T00:00:00.000Z',
+        submissions: 3,
+        payments: 2,
+        paid_payments: 1,
+        pending_payments: 1,
+        failed_payments: 0,
+        partial_payments: 0,
+        amount_total: 500,
+        paid_amount_total: 300,
+        pending_amount_total: 200,
+        failed_amount_total: 0,
+        partial_amount_total: 0,
+        completion_rate: 33.33,
+        collection_rate: 60,
+      },
+      {
+        form_id: 'form-2',
+        title: 'Hostel Fees',
+        slug: 'hostel-fees',
+        is_active: false,
+        created_at: '2026-01-02T00:00:00.000Z',
+        submissions: 0,
+        payments: 0,
+        paid_payments: 0,
+        pending_payments: 0,
+        failed_payments: 0,
+        partial_payments: 0,
+        amount_total: 0,
+        paid_amount_total: 0,
+        pending_amount_total: 0,
+        failed_amount_total: 0,
+        partial_amount_total: 0,
+        completion_rate: 0,
+        collection_rate: 0,
+      },
+    ]);
   });
 
   it('exports summary as csv', async () => {

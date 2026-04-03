@@ -11,6 +11,7 @@ type MockNotificationService = ReturnType<typeof mockNotificationService>;
 
 const mockNotificationService = () => ({
   getContactEmail: jest.fn(),
+  getGroupContactEmails: jest.fn(),
   sendReminder: jest.fn(),
   sendEmail: jest.fn(),
 });
@@ -48,6 +49,32 @@ describe('NotificationController', () => {
 
     const result = await controller.schedule(dto as any);
 
+    expect(service.sendEmail).toHaveBeenCalledWith(['a@example.com'], 'Subject', 'Body');
+    expect(result).toEqual({ ok: true });
+  });
+
+  it('sends group reminder to resolved group recipients', async () => {
+    const req = { user: { organization_id: 'org-1' } };
+    const dto = { group_ids: ['g1', 'g2'], message: 'Group reminder' };
+    service.getGroupContactEmails.mockResolvedValue(['a@example.com', 'b@example.com']);
+    service.sendReminder.mockResolvedValue({ success: true });
+
+    const result = await controller.sendGroupReminder(dto as any, req as any);
+
+    expect(service.getGroupContactEmails).toHaveBeenCalledWith('org-1', ['g1', 'g2']);
+    expect(service.sendReminder).toHaveBeenCalledWith(['a@example.com', 'b@example.com'], 'Group reminder');
+    expect(result).toEqual({ success: true });
+  });
+
+  it('schedules group notification to resolved group recipients', async () => {
+    const req = { user: { organization_id: 'org-1' } };
+    const dto = { group_ids: ['g1'], subject: 'Subject', body: 'Body' };
+    service.getGroupContactEmails.mockResolvedValue(['a@example.com']);
+    service.sendEmail.mockResolvedValue({ ok: true });
+
+    const result = await controller.scheduleByGroups(dto as any, req as any);
+
+    expect(service.getGroupContactEmails).toHaveBeenCalledWith('org-1', ['g1']);
     expect(service.sendEmail).toHaveBeenCalledWith(['a@example.com'], 'Subject', 'Body');
     expect(result).toEqual({ ok: true });
   });

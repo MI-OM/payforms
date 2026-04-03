@@ -29,6 +29,15 @@ export class ReportController {
     return this.reportService.getAnalytics(req.user.organization_id, startDate, endDate);
   }
 
+  @Get('forms/performance')
+  async getFormPerformance(
+    @Request() req,
+    @Query('start_date') startDate?: string,
+    @Query('end_date') endDate?: string,
+  ) {
+    return this.reportService.getFormPerformance(req.user.organization_id, startDate, endDate);
+  }
+
   @Get('export')
   async exportReport(
     @Request() req,

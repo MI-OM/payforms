@@ -15,6 +15,16 @@ type MockRepository = Record<string, any>;
 
 const createMockRepository = (): MockRepository => ({
   findOne: jest.fn(),
+  createQueryBuilder: jest.fn(),
+});
+
+const createMockContactQueryBuilder = () => ({
+  innerJoin: jest.fn().mockReturnThis(),
+  where: jest.fn().mockReturnThis(),
+  andWhere: jest.fn().mockReturnThis(),
+  select: jest.fn().mockReturnThis(),
+  distinct: jest.fn().mockReturnThis(),
+  getMany: jest.fn(),
 });
 
 describe('NotificationService', () => {
@@ -71,6 +81,31 @@ describe('NotificationService', () => {
     const result = await service.getContactEmail('org-1', 'contact-1');
 
     expect(result).toBeUndefined();
+  });
+
+  it('returns unique normalized emails for group contacts', async () => {
+    const queryBuilder = createMockContactQueryBuilder();
+    queryBuilder.getMany.mockResolvedValue([
+      { email: 'A@Example.com ' },
+      { email: 'a@example.com' },
+      { email: 'b@example.com' },
+    ]);
+    contactRepository.createQueryBuilder.mockReturnValue(queryBuilder);
+
+    const result = await service.getGroupContactEmails('org-1', ['group-1', 'group-2']);
+
+    expect(contactRepository.createQueryBuilder).toHaveBeenCalledWith('contact');
+    expect(queryBuilder.innerJoin).toHaveBeenCalledWith('contact.groups', 'group');
+    expect(queryBuilder.where).toHaveBeenCalledWith('contact.organization_id = :organizationId', { organizationId: 'org-1' });
+    expect(queryBuilder.andWhere).toHaveBeenCalledWith('group.id IN (:...groupIds)', { groupIds: ['group-1', 'group-2'] });
+    expect(result).toEqual(['a@example.com', 'b@example.com']);
+  });
+
+  it('returns empty group email list when no group ids are provided', async () => {
+    const result = await service.getGroupContactEmails('org-1', []);
+
+    expect(result).toEqual([]);
+    expect(contactRepository.createQueryBuilder).not.toHaveBeenCalled();
   });
 
   it('throws BadRequestException when SENDGRID_API_KEY is missing', async () => {

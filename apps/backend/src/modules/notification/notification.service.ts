@@ -24,6 +24,29 @@ export class NotificationService {
     return contact?.email;
   }
 
+  async getGroupContactEmails(organizationId: string, groupIds: string[]) {
+    if (!groupIds.length) {
+      return [];
+    }
+
+    const contacts = await this.contactRepository
+      .createQueryBuilder('contact')
+      .innerJoin('contact.groups', 'group')
+      .where('contact.organization_id = :organizationId', { organizationId })
+      .andWhere('group.id IN (:...groupIds)', { groupIds })
+      .andWhere('contact.email IS NOT NULL')
+      .andWhere("TRIM(contact.email) <> ''")
+      .select(['contact.email'])
+      .distinct(true)
+      .getMany();
+
+    const normalizedEmails = contacts
+      .map(contact => contact.email?.trim().toLowerCase())
+      .filter((email): email is string => !!email);
+
+    return Array.from(new Set(normalizedEmails));
+  }
+
   private getEmailProvider(): EmailProvider {
     const configuredProvider = this.configService.get<string>('EMAIL_PROVIDER');
     const provider = (configuredProvider || 'sendgrid').toLowerCase();

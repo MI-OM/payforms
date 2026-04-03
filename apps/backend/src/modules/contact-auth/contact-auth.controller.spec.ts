@@ -26,11 +26,12 @@ describe('ContactAuthController', () => {
 
   it('logs in a contact', async () => {
     const dto = { email: 'contact@example.com', password: 'pass1234', organization_id: 'org-1' };
+    const req = { headers: { host: 'school.payforms.com' } };
     service.login.mockResolvedValue({ access_token: 'token' });
 
-    const result = await controller.login(dto as any);
+    const result = await controller.login(dto as any, req as any);
 
-    expect(service.login).toHaveBeenCalledWith(dto);
+    expect(service.login).toHaveBeenCalledWith(dto, 'school.payforms.com');
     expect(result).toEqual({ access_token: 'token' });
   });
 
@@ -46,12 +47,18 @@ describe('ContactAuthController', () => {
 
   it('requests password reset using both endpoints', async () => {
     const dto = { email: 'contact@example.com' };
+    const req = {
+      headers: { 'x-forwarded-host': 'pay.myuni.com' },
+      get: () => 'localhost:3001',
+    };
     service.requestPasswordReset.mockResolvedValue({ success: true });
 
-    const result1 = await controller.requestPasswordReset(dto as any);
-    const result2 = await controller.requestPasswordResetAlias(dto as any);
+    const result1 = await controller.requestPasswordReset(dto as any, req as any);
+    const result2 = await controller.requestPasswordResetAlias(dto as any, req as any);
 
     expect(service.requestPasswordReset).toHaveBeenCalledTimes(2);
+    expect(service.requestPasswordReset).toHaveBeenNthCalledWith(1, dto, 'pay.myuni.com');
+    expect(service.requestPasswordReset).toHaveBeenNthCalledWith(2, dto, 'pay.myuni.com');
     expect(result1).toEqual({ success: true });
     expect(result2).toEqual({ success: true });
   });

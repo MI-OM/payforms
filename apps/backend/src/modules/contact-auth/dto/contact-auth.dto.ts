@@ -1,14 +1,25 @@
-import { IsEmail, IsString, MinLength } from 'class-validator';
-import { ApiProperty } from '@nestjs/swagger';
+import { IsEmail, IsString, MinLength, IsOptional } from 'class-validator';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class ContactLoginDto {
   @ApiProperty({ example: 'john@example.com' })
   @IsEmail()
   email: string;
 
-  @ApiProperty({ example: 'org-123' })
+  @ApiPropertyOptional({ example: 'org-123' })
+  @IsOptional()
   @IsString()
-  organization_id: string;
+  organization_id?: string;
+
+  @ApiPropertyOptional({ example: 'school' })
+  @IsOptional()
+  @IsString()
+  organization_subdomain?: string;
+
+  @ApiPropertyOptional({ example: 'pay.myuni.com' })
+  @IsOptional()
+  @IsString()
+  organization_domain?: string;
 
   @ApiProperty({ example: 'StrongPass123!' })
   @IsString()
@@ -32,9 +43,20 @@ export class ContactPasswordResetRequestDto {
   @IsEmail()
   email: string;
 
-  @ApiProperty({ example: 'org-123' })
+  @ApiPropertyOptional({ example: 'org-123' })
+  @IsOptional()
   @IsString()
-  organization_id: string;
+  organization_id?: string;
+
+  @ApiPropertyOptional({ example: 'school' })
+  @IsOptional()
+  @IsString()
+  organization_subdomain?: string;
+
+  @ApiPropertyOptional({ example: 'pay.myuni.com' })
+  @IsOptional()
+  @IsString()
+  organization_domain?: string;
 }
 
 export class ContactResetPasswordDto {

@@ -15,6 +15,7 @@ describe('ReportController', () => {
     reportService = {
       getSummary: jest.fn().mockResolvedValue({ forms: 1 }),
       getAnalytics: jest.fn().mockResolvedValue({ submissions_by_day: [] }),
+      getFormPerformance: jest.fn().mockResolvedValue({ data: [] }),
       exportReport: jest.fn().mockResolvedValue('exported'),
     };
 
@@ -35,6 +36,14 @@ describe('ReportController', () => {
 
     expect(reportService.getAnalytics).toHaveBeenCalledWith('org-1', '2026-01-01', '2026-01-31');
     expect(result).toEqual({ submissions_by_day: [] });
+  });
+
+  it('calls getFormPerformance with organization and query params', async () => {
+    const req = { user: { organization_id: 'org-1' } } as any;
+    const result = await controller.getFormPerformance(req, '2026-01-01', '2026-01-31');
+
+    expect(reportService.getFormPerformance).toHaveBeenCalledWith('org-1', '2026-01-01', '2026-01-31');
+    expect(result).toEqual({ data: [] });
   });
 
   it('exports csv report and sets response headers', async () => {

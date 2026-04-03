@@ -15,6 +15,15 @@ import {
   ContactResetPasswordDto,
 } from './dto/contact-auth.dto';
 
+const SUBDOMAIN_PATTERN = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
+
+type OrganizationContextInput = {
+  organization_id?: string;
+  organization_subdomain?: string;
+  organization_domain?: string;
+  request_host?: string | null;
+};
+
 @Injectable()
 export class ContactAuthService {
   constructor(
@@ -27,9 +36,19 @@ export class ContactAuthService {
     private notificationService: NotificationService,
   ) {}
 
-  async login(dto: ContactLoginDto) {
+  async login(dto: ContactLoginDto, requestHost?: string | null) {
+    const organizationId = await this.resolveOrganizationId({
+      organization_id: dto.organization_id,
+      organization_subdomain: dto.organization_subdomain,
+      organization_domain: dto.organization_domain,
+      request_host: requestHost,
+    });
+
     const contact = await this.contactRepository.findOne({
-      where: { email: dto.email, organization_id: dto.organization_id },
+      where: {
+        email: this.normalizeEmail(dto.email),
+        organization_id: organizationId,
+      },
       relations: ['organization'],
     });
 
@@ -74,9 +93,19 @@ export class ContactAuthService {
     return this.confirmPasswordReset(dto as ContactResetPasswordDto);
   }
 
-  async requestPasswordReset(dto: ContactPasswordResetRequestDto) {
+  async requestPasswordReset(dto: ContactPasswordResetRequestDto, requestHost?: string | null) {
+    const organizationId = await this.resolveOrganizationId({
+      organization_id: dto.organization_id,
+      organization_subdomain: dto.organization_subdomain,
+      organization_domain: dto.organization_domain,
+      request_host: requestHost,
+    });
+
     const contact = await this.contactRepository.findOne({
-      where: { email: dto.email, organization_id: dto.organization_id },
+      where: {
+        email: this.normalizeEmail(dto.email),
+        organization_id: organizationId,
+      },
       relations: ['organization'],
     });
     if (!contact) {
@@ -126,5 +155,130 @@ export class ContactAuthService {
     contact.password_reset_token = null;
     contact.password_reset_expires_at = null;
     return this.contactRepository.save(contact);
+  }
+
+  private normalizeEmail(email: string) {
+    return email.trim().toLowerCase();
+  }
+
+  private normalizeOptionalValue(value?: string | null) {
+    if (value === undefined || value === null) {
+      return null;
+    }
+    const normalized = value.trim();
+    return normalized.length ? normalized : null;
+  }
+
+  private normalizeSubdomain(value?: string | null) {
+    const normalized = this.normalizeOptionalValue(value)?.toLowerCase() ?? null;
+    if (!normalized) {
+      return null;
+    }
+
+    if (!SUBDOMAIN_PATTERN.test(normalized)) {
+      throw new BadRequestException('Invalid organization_subdomain format');
+    }
+
+    return normalized;
+  }
+
+  private normalizeDomain(value?: string | null) {
+    const normalized = this.normalizeOptionalValue(value)?.toLowerCase() ?? null;
+    if (!normalized) {
+      return null;
+    }
+
+    const withoutProtocol = normalized.replace(/^https?:\/\//, '');
+    const withoutPath = withoutProtocol.split('/')[0];
+    const withoutPort = withoutPath.replace(/:\d+$/, '');
+    return withoutPort.replace(/\.$/, '');
+  }
+
+  private extractHost(value?: string | null) {
+    const normalized = this.normalizeOptionalValue(value)?.toLowerCase() ?? null;
+    if (!normalized) {
+      return null;
+    }
+
+    const firstValue = normalized.split(',')[0].trim();
+    return this.normalizeDomain(firstValue);
+  }
+
+  private extractSubdomainFromHost(host: string) {
+    const configuredBaseDomain = this.normalizeDomain(
+      this.configService.get<string>('TENANT_BASE_DOMAIN'),
+    );
+    if (!configuredBaseDomain) {
+      return null;
+    }
+
+    const suffix = `.${configuredBaseDomain}`;
+    if (!host.endsWith(suffix)) {
+      return null;
+    }
+
+    const candidate = host.slice(0, -suffix.length);
+    if (!candidate || candidate.includes('.')) {
+      return null;
+    }
+
+    return this.normalizeSubdomain(candidate);
+  }
+
+  private async resolveOrganizationId(input: OrganizationContextInput) {
+    const explicitOrganizationId = this.normalizeOptionalValue(input.organization_id);
+    if (explicitOrganizationId) {
+      return explicitOrganizationId;
+    }
+
+    const explicitSubdomain = this.normalizeSubdomain(input.organization_subdomain);
+    if (explicitSubdomain) {
+      const org = await this.organizationRepository.findOne({
+        where: { subdomain: explicitSubdomain },
+        select: ['id'],
+      });
+      if (!org) {
+        throw new BadRequestException('Invalid organization context');
+      }
+      return org.id;
+    }
+
+    const explicitDomain = this.normalizeDomain(input.organization_domain);
+    if (explicitDomain) {
+      const org = await this.organizationRepository.findOne({
+        where: { custom_domain: explicitDomain },
+        select: ['id'],
+      });
+      if (!org) {
+        throw new BadRequestException('Invalid organization context');
+      }
+      return org.id;
+    }
+
+    const requestHost = this.extractHost(input.request_host);
+    if (requestHost) {
+      const orgByDomain = await this.organizationRepository.findOne({
+        where: { custom_domain: requestHost },
+        select: ['id'],
+      });
+      if (orgByDomain) {
+        return orgByDomain.id;
+      }
+
+      const hostSubdomain = this.extractSubdomainFromHost(requestHost);
+      if (hostSubdomain) {
+        const orgBySubdomain = await this.organizationRepository.findOne({
+          where: { subdomain: hostSubdomain },
+          select: ['id'],
+        });
+        if (orgBySubdomain) {
+          return orgBySubdomain.id;
+        }
+      }
+    }
+
+    throw new BadRequestException(
+      'Organization context is required. Provide organization_id, organization_subdomain, or organization_domain.',
+    );
   }
 }

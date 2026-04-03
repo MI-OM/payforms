@@ -8,6 +8,8 @@ import { PaymentLog } from '../../audit/entities/payment-log.entity';
 
 @Entity('organizations')
 @Index('IDX_org_email_verification_token', ['email_verification_token'])
+@Index('IDX_organizations_subdomain_unique', ['subdomain'], { unique: true, where: '"subdomain" IS NOT NULL' })
+@Index('IDX_organizations_custom_domain_unique', ['custom_domain'], { unique: true, where: '"custom_domain" IS NOT NULL' })
 export class Organization {
   @PrimaryGeneratedColumn('uuid')
   id: string;
@@ -35,6 +37,12 @@ export class Organization {
 
   @Column({ nullable: true })
   logo_url: string;
+
+  @Column({ type: 'varchar', nullable: true })
+  subdomain: string | null;
+
+  @Column({ type: 'varchar', nullable: true })
+  custom_domain: string | null;
 
   @Column({ type: 'boolean', default: false })
   require_contact_login: boolean;

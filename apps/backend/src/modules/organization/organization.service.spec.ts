@@ -66,6 +66,8 @@ describe('OrganizationService', () => {
         'email',
         'email_verified',
         'logo_url',
+        'subdomain',
+        'custom_domain',
         'require_contact_login',
         'notify_submission_confirmation',
         'notify_payment_confirmation',
@@ -175,6 +177,8 @@ describe('OrganizationService', () => {
       email: 'admin@org.com',
       email_verified: true,
       logo_url: 'https://example.com/logo.png',
+      subdomain: 'school',
+      custom_domain: 'pay.myuni.com',
       require_contact_login: true,
       notify_submission_confirmation: true,
       notify_payment_confirmation: false,
@@ -191,11 +195,40 @@ describe('OrganizationService', () => {
       email: 'admin@org.com',
       email_verified: true,
       logo_url: 'https://example.com/logo.png',
+      subdomain: 'school',
+      custom_domain: 'pay.myuni.com',
       require_contact_login: true,
       notify_submission_confirmation: true,
       notify_payment_confirmation: false,
       notify_payment_failure: false,
     });
+  });
+
+  it('normalizes and updates tenant domains', async () => {
+    const existing = { id: 'org-1', email: 'admin@org.com' } as Organization;
+    const updated = {
+      id: 'org-1',
+      subdomain: 'school',
+      custom_domain: 'pay.myuni.com',
+    } as Organization;
+
+    organizationRepository.findOne
+      .mockResolvedValueOnce(existing)
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(updated);
+    organizationRepository.update.mockResolvedValue(undefined);
+
+    const result = await service.update('org-1', {
+      subdomain: 'School',
+      custom_domain: 'https://Pay.MyUni.com/',
+    } as any);
+
+    expect(organizationRepository.update).toHaveBeenCalledWith('org-1', {
+      subdomain: 'school',
+      custom_domain: 'pay.myuni.com',
+    });
+    expect(result).toEqual(updated);
   });
 
   it('throws NotFoundException when getting settings for missing org', async () => {

@@ -78,6 +78,37 @@ describe('ContactAuthService', () => {
     });
   });
 
+  it('logs in using organization subdomain context', async () => {
+    const hashedPassword = await bcrypt.hash('pass1234', 10);
+    const contact = {
+      id: 'contact-2',
+      email: 'student@example.com',
+      password_hash: hashedPassword,
+      organization_id: 'org-tenant',
+      is_active: true,
+      must_reset_password: false,
+      organization: { id: 'org-tenant', name: 'Tenant Org' } as Organization,
+    } as unknown as Contact;
+
+    organizationRepository.findOne.mockResolvedValueOnce({ id: 'org-tenant' });
+    contactRepository.findOne.mockResolvedValue(contact);
+
+    await service.login({
+      email: 'student@example.com',
+      password: 'pass1234',
+      organization_subdomain: 'school',
+    } as any);
+
+    expect(organizationRepository.findOne).toHaveBeenCalledWith({
+      where: { subdomain: 'school' },
+      select: ['id'],
+    });
+    expect(contactRepository.findOne).toHaveBeenCalledWith({
+      where: { email: 'student@example.com', organization_id: 'org-tenant' },
+      relations: ['organization'],
+    });
+  });
+
   it('validates a contact by id and organization', async () => {
     const contact = { id: 'contact-1' } as unknown as Contact;
     contactRepository.findOne.mockResolvedValue(contact);
@@ -130,6 +161,39 @@ describe('ContactAuthService', () => {
       'contact@example.com',
       expect.stringContaining('http://localhost:3000/contact-reset?token='),
     );
+  });
+
+  it('uses request host custom domain context for password reset', async () => {
+    const contact = {
+      id: 'contact-3',
+      email: 'domain-user@example.com',
+      organization_id: 'org-domain',
+      organization: null,
+    } as unknown as Contact;
+    const organization = { id: 'org-domain', name: 'Domain Org' } as Organization;
+
+    organizationRepository.findOne
+      .mockResolvedValueOnce({ id: 'org-domain' })
+      .mockResolvedValueOnce(organization);
+    contactRepository.findOne.mockResolvedValue(contact);
+    contactRepository.save.mockImplementation(async updatedContact => updatedContact as any);
+
+    const result = await service.requestPasswordReset(
+      { email: 'domain-user@example.com' } as any,
+      'pay.myuni.com',
+    );
+
+    expect(result).toEqual({ success: true });
+    expect(organizationRepository.findOne).toHaveBeenNthCalledWith(1, {
+      where: { custom_domain: 'pay.myuni.com' },
+      select: ['id'],
+    });
+  });
+
+  it('throws when no organization context is provided', async () => {
+    await expect(
+      service.login({ email: 'student@example.com', password: 'pass1234' } as any),
+    ).rejects.toThrow('Organization context is required');
   });
 
   it('confirms a password reset and updates the contact password', async () => {

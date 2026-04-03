@@ -22,6 +22,16 @@ export class UpdateOrganizationDto {
   @IsEmail()
   email?: string;
 
+  @ApiPropertyOptional({ example: 'school' })
+  @IsOptional()
+  @IsString()
+  subdomain?: string;
+
+  @ApiPropertyOptional({ example: 'pay.myuni.com' })
+  @IsOptional()
+  @IsString()
+  custom_domain?: string;
+
   @ApiPropertyOptional({ example: true })
   @IsOptional()
   @IsBoolean()
