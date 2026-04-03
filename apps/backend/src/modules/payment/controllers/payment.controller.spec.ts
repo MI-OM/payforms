@@ -1,4 +1,5 @@
 import { PaymentController } from './payment.controller';
+import { NotFoundException } from '@nestjs/common';
 
 declare const describe: any;
 declare const it: any;
@@ -12,8 +13,7 @@ const mockPaymentService = () => ({
   findByOrganization: jest.fn(),
   exportByOrganization: jest.fn(),
   findById: jest.fn(),
-  findByReference: jest.fn(),
-  verifyPaystack: jest.fn(),
+  verifyAndFinalizePayment: jest.fn(),
   create: jest.fn(),
   updateStatus: jest.fn(),
 });
@@ -62,19 +62,25 @@ describe('PaymentController', () => {
 
   it('verifies a payment and returns result when found', async () => {
     const req = { user: { organization_id: 'org-1' } };
-    service.findByReference.mockResolvedValue({ id: 'payment-1' });
-    service.verifyPaystack.mockResolvedValue({ status: 'success' });
+    service.verifyAndFinalizePayment.mockResolvedValue({
+      success: true,
+      payment: { id: 'payment-1', status: 'PAID' },
+      verified: { status: 'success' },
+    });
 
     const result = await controller.verifyPayment(req as any, 'ref-1');
 
-    expect(service.findByReference).toHaveBeenCalledWith('org-1', 'ref-1');
-    expect(service.verifyPaystack).toHaveBeenCalledWith('org-1', 'ref-1');
-    expect(result).toEqual({ payment: { id: 'payment-1' }, verified: { status: 'success' } });
+    expect(service.verifyAndFinalizePayment).toHaveBeenCalledWith('org-1', 'ref-1', 'manual_verify');
+    expect(result).toEqual({
+      success: true,
+      payment: { id: 'payment-1', status: 'PAID' },
+      verified: { status: 'success' },
+    });
   });
 
   it('returns error when payment reference is missing', async () => {
     const req = { user: { organization_id: 'org-1' } };
-    service.findByReference.mockResolvedValue(null);
+    service.verifyAndFinalizePayment.mockRejectedValue(new NotFoundException('Payment not found'));
 
     const result = await controller.verifyPayment(req as any, 'ref-1');
 

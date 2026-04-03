@@ -1,4 +1,4 @@
-import { IsEmail, IsString, MinLength, IsOptional, IsIn } from 'class-validator';
+import { IsEmail, IsString, MinLength, IsOptional } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class RegisterDto {
@@ -10,16 +10,6 @@ export class RegisterDto {
   @ApiProperty({ example: 'admin@acme.com' })
   @IsEmail()
   email: string;
-
-  @ApiPropertyOptional({ example: 'Mr' })
-  @IsOptional()
-  @IsString()
-  title?: string;
-
-  @ApiPropertyOptional({ example: 'Finance Director' })
-  @IsOptional()
-  @IsString()
-  designation?: string;
 
   @ApiProperty({ example: 'StrongPass123!' })
   @IsString()
@@ -44,24 +34,19 @@ export class RefreshTokenDto {
 }
 
 export class InviteUserDto {
+  @ApiProperty({ example: 'Janet' })
+  @IsString()
+  @MinLength(1)
+  first_name: string;
+
+  @ApiProperty({ example: 'Doe' })
+  @IsString()
+  @MinLength(1)
+  last_name: string;
+
   @ApiProperty({ example: 'staff@acme.com' })
   @IsEmail()
   email: string;
-
-  @ApiPropertyOptional({ enum: ['ADMIN', 'STAFF'], example: 'STAFF' })
-  @IsOptional()
-  @IsIn(['ADMIN', 'STAFF'])
-  role?: 'ADMIN' | 'STAFF';
-
-  @ApiPropertyOptional({ example: 'Mrs' })
-  @IsOptional()
-  @IsString()
-  title?: string;
-
-  @ApiPropertyOptional({ example: 'Accounts Officer' })
-  @IsOptional()
-  @IsString()
-  designation?: string;
 }
 
 export class AcceptInviteDto {
@@ -73,13 +58,30 @@ export class AcceptInviteDto {
   @IsString()
   @MinLength(8)
   password: string;
+}
 
-  @ApiPropertyOptional({ example: 'Dr' })
+export class UpdateProfileDto {
+  @ApiPropertyOptional({ example: 'Janet' })
+  @IsOptional()
+  @IsString()
+  first_name?: string;
+
+  @ApiPropertyOptional({ example: 'M.' })
+  @IsOptional()
+  @IsString()
+  middle_name?: string;
+
+  @ApiPropertyOptional({ example: 'Doe' })
+  @IsOptional()
+  @IsString()
+  last_name?: string;
+
+  @ApiPropertyOptional({ example: 'Mrs' })
   @IsOptional()
   @IsString()
   title?: string;
 
-  @ApiPropertyOptional({ example: 'Assistant Bursar' })
+  @ApiPropertyOptional({ example: 'Accounts Officer' })
   @IsOptional()
   @IsString()
   designation?: string;

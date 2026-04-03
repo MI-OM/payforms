@@ -19,6 +19,8 @@ const mockAuthService = () => ({
   requestOrganizationEmailVerification: jest.fn(),
   getOrganizationEmailVerificationStatus: jest.fn(),
   logout: jest.fn(),
+  getProfile: jest.fn(),
+  updateProfile: jest.fn(),
 });
 
 describe('AuthController', () => {
@@ -60,9 +62,9 @@ describe('AuthController', () => {
 
     const req = { user: { id: 'user-admin', organization_id: 'org-1', role: 'ADMIN' } };
     await expect(
-      authController.inviteUser(req as any, { email: 'new@acme.com' }),
+      authController.inviteUser(req as any, { first_name: 'Janet', last_name: 'Doe', email: 'new@acme.com' }),
     ).resolves.toEqual({ invited: true });
-    expect(authService.inviteUser).toHaveBeenCalledWith(req.user, { email: 'new@acme.com' });
+    expect(authService.inviteUser).toHaveBeenCalledWith(req.user, { first_name: 'Janet', last_name: 'Doe', email: 'new@acme.com' });
   });
 
   it('should accept invite', async () => {
@@ -93,7 +95,27 @@ describe('AuthController', () => {
 
   it('should return current user', async () => {
     const req = { user: { id: 'user-1', email: 'admin@acme.com' } };
+    authService.getProfile.mockResolvedValue(req.user);
     await expect(authController.getCurrentUser(req as any)).resolves.toEqual(req.user);
+    expect(authService.getProfile).toHaveBeenCalledWith('user-1');
+  });
+
+  it('should return current profile', async () => {
+    const req = { user: { id: 'user-1' } };
+    authService.getProfile.mockResolvedValue({ id: 'user-1', first_name: 'Jane' });
+
+    await expect(authController.getProfile(req as any)).resolves.toEqual({ id: 'user-1', first_name: 'Jane' });
+    expect(authService.getProfile).toHaveBeenCalledWith('user-1');
+  });
+
+  it('should update profile', async () => {
+    const req = { user: { id: 'user-1' } };
+    authService.updateProfile.mockResolvedValue({ id: 'user-1', first_name: 'Jane', last_name: 'Doe' });
+
+    await expect(
+      authController.updateProfile(req as any, { first_name: 'Jane', last_name: 'Doe' }),
+    ).resolves.toEqual({ id: 'user-1', first_name: 'Jane', last_name: 'Doe' });
+    expect(authService.updateProfile).toHaveBeenCalledWith('user-1', { first_name: 'Jane', last_name: 'Doe' });
   });
 
   it('should request password reset', async () => {

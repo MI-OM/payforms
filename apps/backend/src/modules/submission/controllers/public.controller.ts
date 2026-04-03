@@ -139,6 +139,48 @@ export class PublicController {
     });
   }
 
+  @Get('payments/callback')
+  async handlePaymentCallback(
+    @Query('reference') reference?: string,
+    @Query('trxref') trxref?: string,
+  ) {
+    const resolvedReference = reference || trxref;
+    if (!resolvedReference) {
+      throw new BadRequestException('Payment reference is required');
+    }
+
+    const payment = await this.paymentService.findByReferenceGlobal(resolvedReference);
+    if (!payment) {
+      return {
+        status: 'ignored',
+        reason: 'payment_not_found',
+        reference: resolvedReference,
+      };
+    }
+
+    try {
+      const result = await this.paymentService.verifyAndFinalizePayment(
+        payment.organization_id,
+        resolvedReference,
+        'callback_redirect',
+      );
+
+      return {
+        status: 'processed',
+        reference: resolvedReference,
+        skipped: !!result.skipped,
+        payment: result.payment,
+        verified: result.verified,
+      };
+    } catch (error: any) {
+      return {
+        status: 'error',
+        reference: resolvedReference,
+        message: error?.message || 'Verification failed',
+      };
+    }
+  }
+
   @Post('forms/:slug/submit')
   @HttpCode(HttpStatus.OK)
   async submitPublicForm(
@@ -189,6 +231,11 @@ export class PublicController {
       }
     }
 
+    const callback = callbackUrl || this.configService.get('PAYSTACK_CALLBACK_URL');
+    if (!callback) {
+      throw new BadRequestException('Callback URL is required');
+    }
+
     const submission = await this.submissionService.create(form.organization_id, form.id, {
       data: dto.data,
       contact_id: contactId,
@@ -199,17 +246,22 @@ export class PublicController {
       amount,
     });
 
-    const callback = callbackUrl || this.configService.get('PAYSTACK_CALLBACK_URL');
-    if (!callback) {
-      throw new BadRequestException('Callback URL is required');
+    let paymentAuthorization: any;
+    try {
+      paymentAuthorization = await this.paymentService.initializePaystack(
+        form.organization_id,
+        payment,
+        callback,
+        dto.contact_email,
+      );
+    } catch (error: any) {
+      await this.paymentService.markInitializationFailed(
+        form.organization_id,
+        payment.id,
+        error?.message || 'Failed to initialize payment',
+      );
+      throw error;
     }
-
-    const paymentAuthorization = await this.paymentService.initializePaystack(
-      form.organization_id,
-      payment,
-      callback,
-      dto.contact_email,
-    );
 
     const confirmationEmail = dto.contact_email;
     if (

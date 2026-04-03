@@ -155,7 +155,7 @@ export class PaymentService {
   async updateStatus(organizationId: string, id: string, dto: UpdatePaymentStatusDto) {
     await this.paymentRepository.update({ id, organization_id: organizationId }, {
       status: dto.status,
-      paid_at: dto.status === 'PAID' ? new Date() : undefined,
+      paid_at: dto.status === 'PAID' ? (dto.paid_at ?? new Date()) : null,
     });
     return this.findById(organizationId, id);
   }
@@ -238,78 +238,99 @@ export class PaymentService {
     data: any,
     eventId: string,
   ) {
-    const reference = data.reference;
+    const reference = data?.reference;
+    if (!reference) {
+      return { success: true, skipped: true, reason: 'missing_reference' };
+    }
+
     const payment = await this.paymentRepository.findOne({
       where: { reference, organization_id: organizationId },
       relations: ['submission'],
     });
 
     if (!payment) {
-      throw new NotFoundException('Payment not found for webhook reference');
+      return { success: true, skipped: true, reason: 'payment_not_found' };
     }
 
+    return this.applyPaystackOutcome({
+      organizationId,
+      payment,
+      event,
+      eventId,
+      paystackData: data,
+    });
+  }
+
+  async verifyAndFinalizePayment(
+    organizationId: string,
+    reference: string,
+    source: 'manual_verify' | 'callback_redirect' = 'manual_verify',
+  ) {
+    const payment = await this.paymentRepository.findOne({
+      where: { reference, organization_id: organizationId },
+      relations: ['submission'],
+    });
+    if (!payment) {
+      throw new NotFoundException('Payment not found');
+    }
+
+    const verified = await this.verifyPaystack(organizationId, reference);
+    const eventId = this.buildVerificationEventId(source, reference, verified?.id);
+    const event = source === 'callback_redirect'
+      ? 'paystack.callback.verify'
+      : 'paystack.manual.verify';
+
+    const result = await this.applyPaystackOutcome({
+      organizationId,
+      payment,
+      event,
+      eventId,
+      paystackData: verified,
+    });
+
+    return {
+      ...result,
+      verified,
+    };
+  }
+
+  async markInitializationFailed(
+    organizationId: string,
+    paymentId: string,
+    reason: string,
+    details?: Record<string, any>,
+  ) {
+    const payment = await this.findById(organizationId, paymentId);
+    if (!payment) {
+      return null;
+    }
+
+    const eventId = `payment.initialize.failed:${payment.reference}`;
     const existingLog = await this.paymentLogRepository.findOne({
       where: { payment_id: payment.id, event_id: eventId },
     });
-    if (existingLog) {
-      return { success: true, skipped: true };
+
+    if (!existingLog) {
+      await this.paymentLogRepository.save(
+        this.paymentLogRepository.create({
+          organization_id: organizationId,
+          payment_id: payment.id,
+          event_id: eventId,
+          event: 'payment.initialize.failed',
+          payload: {
+            reference: payment.reference,
+            reason,
+            ...(details || {}),
+          },
+        }),
+      );
     }
 
-    const org = await this.organizationRepository.findOne({ where: { id: organizationId } });
-    const submission = payment.submission;
-    let recipientEmail: string | undefined = data?.customer?.email;
-
-    if (submission?.contact_id) {
-      const contact = await this.contactRepository.findOne({
-        where: { id: submission.contact_id, organization_id: organizationId },
-        select: ['email'],
-      });
-      if (contact?.email) {
-        recipientEmail = contact.email;
-      }
+    if (payment.status !== 'FAILED') {
+      return this.updateStatus(organizationId, payment.id, { status: 'FAILED' });
     }
 
-    const status = this.mapPaystackStatusToPaymentStatus(data?.status);
-    const updateDto = { status } as UpdatePaymentStatusDto;
-    if (status === 'PAID') {
-      updateDto.paid_at = new Date();
-    }
-
-    await this.updateStatus(organizationId, payment.id, updateDto);
-
-    await this.paymentLogRepository.save(
-      this.paymentLogRepository.create({
-        organization_id: organizationId,
-        payment_id: payment.id,
-        event_id: eventId,
-        event,
-        payload: data,
-      }),
-    );
-
-    if (org && recipientEmail) {
-      try {
-        if (status === 'PAID' && org.notify_payment_confirmation) {
-          await this.notificationService.sendPaymentConfirmation(
-            org,
-            recipientEmail,
-            payment.amount,
-            payment.reference,
-          );
-        } else if (status === 'FAILED' && org.notify_payment_failure) {
-          await this.notificationService.sendFailedPaymentReminder(
-            org,
-            recipientEmail,
-            payment.amount,
-            payment.reference,
-          );
-        }
-      } catch (error) {
-        console.warn('Payment notification email failed:', error);
-      }
-    }
-
-    return { success: true };
+    return payment;
   }
 
   private mapPaystackStatusToPaymentStatus(status: string): 'PAID' | 'FAILED' | 'PARTIAL' | 'PENDING' {
@@ -385,5 +406,115 @@ export class PaymentService {
     const raw = String(value ?? '');
     const safeValue = /^[=+\-@]/.test(raw) ? `'${raw}` : raw;
     return `"${safeValue.replace(/"/g, '""')}"`;
+  }
+
+  private async applyPaystackOutcome(params: {
+    organizationId: string;
+    payment: Payment;
+    event: string;
+    eventId: string;
+    paystackData: any;
+  }) {
+    const { organizationId, payment, event, eventId, paystackData } = params;
+
+    const existingLog = await this.paymentLogRepository.findOne({
+      where: { payment_id: payment.id, event_id: eventId },
+    });
+    if (existingLog) {
+      return { success: true, skipped: true, payment };
+    }
+
+    const previousStatus = payment.status;
+    const status = this.mapPaystackStatusToPaymentStatus(paystackData?.status);
+    const paidAt = status === 'PAID' && paystackData?.paid_at
+      ? new Date(paystackData.paid_at)
+      : undefined;
+
+    const updatedPayment = await this.updateStatus(organizationId, payment.id, { status, paid_at: paidAt });
+
+    await this.paymentLogRepository.save(
+      this.paymentLogRepository.create({
+        organization_id: organizationId,
+        payment_id: payment.id,
+        event_id: eventId,
+        event,
+        payload: paystackData,
+      }),
+    );
+
+    await this.maybeSendPaymentNotifications(
+      organizationId,
+      updatedPayment ?? payment,
+      paystackData,
+      previousStatus,
+      status,
+    );
+
+    return { success: true, payment: updatedPayment ?? payment };
+  }
+
+  private async maybeSendPaymentNotifications(
+    organizationId: string,
+    payment: Payment,
+    paystackData: any,
+    previousStatus: Payment['status'],
+    nextStatus: Payment['status'],
+  ) {
+    if (previousStatus === nextStatus) {
+      return;
+    }
+
+    const org = await this.organizationRepository.findOne({ where: { id: organizationId } });
+    if (!org) {
+      return;
+    }
+
+    const recipientEmail = await this.resolveRecipientEmail(organizationId, payment, paystackData);
+    if (!recipientEmail) {
+      return;
+    }
+
+    try {
+      if (nextStatus === 'PAID' && org.notify_payment_confirmation) {
+        await this.notificationService.sendPaymentConfirmation(
+          org,
+          recipientEmail,
+          payment.amount,
+          payment.reference,
+        );
+      } else if (nextStatus === 'FAILED' && org.notify_payment_failure) {
+        await this.notificationService.sendFailedPaymentReminder(
+          org,
+          recipientEmail,
+          payment.amount,
+          payment.reference,
+        );
+      }
+    } catch (error) {
+      console.warn('Payment notification email failed:', error);
+    }
+  }
+
+  private async resolveRecipientEmail(organizationId: string, payment: Payment, paystackData: any) {
+    let recipientEmail: string | undefined = paystackData?.customer?.email;
+
+    if (payment.submission?.contact_id) {
+      const contact = await this.contactRepository.findOne({
+        where: { id: payment.submission.contact_id, organization_id: organizationId },
+        select: ['email'],
+      });
+      if (contact?.email) {
+        recipientEmail = contact.email;
+      }
+    }
+
+    return recipientEmail;
+  }
+
+  private buildVerificationEventId(source: 'manual_verify' | 'callback_redirect', reference: string, paystackId?: string | number) {
+    if (paystackId !== undefined && paystackId !== null) {
+      return `paystack.verify:${source}:${String(paystackId)}`;
+    }
+    return `paystack.verify:${source}:${reference}`;
   }
 }

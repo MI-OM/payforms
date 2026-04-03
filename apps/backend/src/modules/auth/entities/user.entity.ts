@@ -15,6 +15,15 @@ export class User {
   email: string;
 
   @Column({ type: 'varchar', nullable: true })
+  first_name: string | null;
+
+  @Column({ type: 'varchar', nullable: true })
+  middle_name: string | null;
+
+  @Column({ type: 'varchar', nullable: true })
+  last_name: string | null;
+
+  @Column({ type: 'varchar', nullable: true })
   title: string | null;
 
   @Column({ type: 'varchar', nullable: true })

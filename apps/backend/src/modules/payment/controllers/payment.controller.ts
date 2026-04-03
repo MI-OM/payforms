@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, UseGuards, Request, Param, Query, Res } from '@nestjs/common';
+import { Controller, Get, Post, Body, UseGuards, Request, Param, Query, Res, NotFoundException } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { PaymentService } from '../services/payment.service';
 import { CreatePaymentDto, UpdatePaymentStatusDto } from '../dto/payment.dto';
@@ -41,17 +41,17 @@ export class PaymentController {
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   async verifyPayment(@Request() req, @Param('reference') reference: string) {
-    const payment = await this.paymentService.findByReference(req.user.organization_id, reference);
-    if (!payment) {
-      return { error: 'Payment not found' };
-    }
-
-    // Verify with Paystack
     try {
-      const verified = await this.paymentService.verifyPaystack(req.user.organization_id, reference);
-      return { payment, verified };
+      return await this.paymentService.verifyAndFinalizePayment(
+        req.user.organization_id,
+        reference,
+        'manual_verify',
+      );
     } catch (error) {
-      return { payment, error: 'Verification failed' };
+      if (error instanceof NotFoundException) {
+        return { error: 'Payment not found' };
+      }
+      return { error: 'Verification failed' };
     }
   }
 

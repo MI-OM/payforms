@@ -1,4 +1,4 @@
-import { UnauthorizedException, BadRequestException, ForbiddenException } from '@nestjs/common';
+import { UnauthorizedException, BadRequestException } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
 import * as crypto from 'crypto';
 import { AuthService } from './auth.service';
@@ -80,6 +80,9 @@ describe('AuthService', () => {
       email: 'admin@acme.com',
       organization_id: 'org-1',
       role: 'ADMIN',
+      first_name: null,
+      middle_name: null,
+      last_name: null,
       title: null,
       designation: null,
       password_hash: 'hashed-value',
@@ -104,6 +107,9 @@ describe('AuthService', () => {
     expect(userRepository.create).toHaveBeenCalledWith({
       organization_id: 'org-1',
       email: 'admin@acme.com',
+      first_name: null,
+      middle_name: null,
+      last_name: null,
       title: null,
       designation: null,
       password_hash: 'hashed-value',
@@ -117,6 +123,9 @@ describe('AuthService', () => {
         email: 'admin@acme.com',
         role: 'ADMIN',
         organization_id: 'org-1',
+        first_name: null,
+        middle_name: null,
+        last_name: null,
         title: null,
         designation: null,
       },
@@ -139,6 +148,9 @@ describe('AuthService', () => {
       organization_id: 'org-1',
       password_hash: 'hashed-value',
       role: 'STAFF',
+      first_name: 'Janet',
+      middle_name: null,
+      last_name: 'Doe',
       title: 'Mr',
       designation: 'Accountant',
     } as User;
@@ -157,6 +169,9 @@ describe('AuthService', () => {
         email: 'staff@acme.com',
         role: 'STAFF',
         organization_id: 'org-1',
+        first_name: 'Janet',
+        middle_name: null,
+        last_name: 'Doe',
         title: 'Mr',
         designation: 'Accountant',
       },
@@ -205,8 +220,8 @@ describe('AuthService', () => {
     const savedInvite = {
       id: 'invite-1',
       email: 'new@acme.com',
-      title: null,
-      designation: null,
+      first_name: 'Janet',
+      last_name: 'Doe',
       role: 'STAFF',
       token: 'a'.repeat(64),
       expires_at: new Date(Date.now() + 1000 * 60 * 60 * 24 * 7),
@@ -218,31 +233,18 @@ describe('AuthService', () => {
     invitationRepository.save.mockResolvedValue(savedInvite);
 
     const result = await authService.inviteUser(inviter, {
+      first_name: 'Janet',
+      last_name: 'Doe',
       email: 'new@acme.com',
     });
 
     expect(result).toMatchObject({
       email: 'new@acme.com',
-      title: null,
-      designation: null,
+      first_name: 'Janet',
+      last_name: 'Doe',
       role: 'STAFF',
     });
     expect(result.token).toHaveLength(64);
-  });
-
-  it('throws ForbiddenException when non-admin invites admin', async () => {
-    const inviter = {
-      id: 'user-staff',
-      organization_id: 'org-1',
-      role: 'STAFF',
-    } as User;
-
-    await expect(
-      authService.inviteUser(inviter, {
-        email: 'admin2@acme.com',
-        role: 'ADMIN',
-      }),
-    ).rejects.toThrow(ForbiddenException);
   });
 
   it('accepts a valid invitation token', async () => {
@@ -250,6 +252,8 @@ describe('AuthService', () => {
       id: 'invite-2',
       organization_id: 'org-1',
       email: 'invitee@acme.com',
+      first_name: 'John',
+      last_name: 'Doe',
       role: 'STAFF',
       token: 'token-123',
       accepted: false,
@@ -260,6 +264,9 @@ describe('AuthService', () => {
       email: 'invitee@acme.com',
       organization_id: 'org-1',
       role: 'STAFF',
+      first_name: 'John',
+      middle_name: null,
+      last_name: 'Doe',
       title: null,
       designation: null,
       password_hash: 'hashed-value',
@@ -334,6 +341,85 @@ describe('AuthService', () => {
 
     expect(result).toEqual({ success: true });
     expect(userRepository.save).toHaveBeenCalled();
+  });
+
+  it('gets profile for an existing user', async () => {
+    const user = {
+      id: 'user-profile',
+      email: 'profile@acme.com',
+      organization_id: 'org-1',
+      role: 'STAFF',
+      first_name: 'Jane',
+      middle_name: 'M',
+      last_name: 'Doe',
+      title: 'Ms',
+      designation: 'Officer',
+    } as User;
+
+    userRepository.findOne.mockResolvedValue(user);
+
+    const result = await authService.getProfile('user-profile');
+    expect(result).toEqual({
+      id: 'user-profile',
+      email: 'profile@acme.com',
+      role: 'STAFF',
+      organization_id: 'org-1',
+      first_name: 'Jane',
+      middle_name: 'M',
+      last_name: 'Doe',
+      title: 'Ms',
+      designation: 'Officer',
+    });
+  });
+
+  it('updates profile fields and normalizes empty strings to null', async () => {
+    const user = {
+      id: 'user-profile',
+      email: 'profile@acme.com',
+      organization_id: 'org-1',
+      role: 'STAFF',
+      first_name: 'Jane',
+      middle_name: 'M',
+      last_name: 'Doe',
+      title: 'Ms',
+      designation: 'Officer',
+    } as User;
+
+    userRepository.findOne.mockResolvedValueOnce(user);
+    userRepository.update.mockResolvedValue(undefined);
+    userRepository.findOne.mockResolvedValueOnce({
+      ...user,
+      first_name: 'Janet',
+      middle_name: null,
+      last_name: 'Doe',
+      title: null,
+      designation: 'Lead Officer',
+    } as User);
+
+    const result = await authService.updateProfile('user-profile', {
+      first_name: ' Janet ',
+      middle_name: '   ',
+      title: '',
+      designation: 'Lead Officer',
+    });
+
+    expect(userRepository.update).toHaveBeenCalledWith('user-profile', {
+      first_name: 'Janet',
+      middle_name: null,
+      title: null,
+      designation: 'Lead Officer',
+    });
+    expect(result).toEqual({
+      id: 'user-profile',
+      email: 'profile@acme.com',
+      role: 'STAFF',
+      organization_id: 'org-1',
+      first_name: 'Janet',
+      middle_name: null,
+      last_name: 'Doe',
+      title: null,
+      designation: 'Lead Officer',
+    });
   });
 
   it('verifies organization email with a valid token', async () => {

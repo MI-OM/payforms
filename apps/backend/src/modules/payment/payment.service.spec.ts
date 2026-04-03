@@ -240,6 +240,19 @@ describe('PaymentService', () => {
     expect(result).toEqual(payment);
   });
 
+  it('returns skipped webhook response when payment reference is unknown', async () => {
+    paymentRepository.findOne.mockResolvedValue(null);
+
+    const result = await service.handleWebhookEvent(
+      'org-1',
+      'charge.success',
+      { reference: 'missing-ref', status: 'success' },
+      'event-unknown',
+    );
+
+    expect(result).toEqual({ success: true, skipped: true, reason: 'payment_not_found' });
+  });
+
   it('handles webhook event and creates a payment log', async () => {
     const payment = { id: 'payment-1', reference: 'ref-1', amount: 500, organization_id: 'org-1', submission: { contact_id: 'contact-1' } } as any;
     const org = { id: 'org-1', notify_payment_confirmation: true, paystack_secret_key: 'secret' } as Organization;
@@ -257,6 +270,76 @@ describe('PaymentService', () => {
 
     expect(paymentLogRepository.save).toHaveBeenCalled();
     expect(notificationService.sendPaymentConfirmation).toHaveBeenCalledWith(org, 'customer@example.com', 500, 'ref-1');
-    expect(result).toEqual({ success: true });
+    expect(result).toEqual({ success: true, payment });
+  });
+
+  it('verifies and finalizes payment status with logging', async () => {
+    const payment = {
+      id: 'payment-1',
+      reference: 'ref-1',
+      amount: 500,
+      status: 'PENDING',
+      organization_id: 'org-1',
+      submission: null,
+    } as any;
+    const org = {
+      id: 'org-1',
+      paystack_secret_key: 'secret',
+      notify_payment_confirmation: false,
+      notify_payment_failure: false,
+    } as Organization;
+
+    paymentRepository.findOne.mockResolvedValue(payment);
+    organizationRepository.findOne.mockResolvedValue(org);
+    paymentLogRepository.findOne.mockResolvedValue(null);
+    paymentRepository.update.mockResolvedValue(undefined);
+    paymentLogRepository.create.mockReturnValue({});
+    paymentLogRepository.save.mockResolvedValue({});
+    (axios.get as any).mockResolvedValue({
+      data: {
+        data: {
+          id: 12345,
+          status: 'success',
+          paid_at: '2026-04-03T09:00:00.000Z',
+          customer: { email: 'payer@example.com' },
+        },
+      },
+    });
+
+    const result = await service.verifyAndFinalizePayment('org-1', 'ref-1', 'manual_verify');
+
+    expect(axios.get).toHaveBeenCalled();
+    expect(paymentRepository.update).toHaveBeenCalledWith(
+      { id: 'payment-1', organization_id: 'org-1' },
+      expect.objectContaining({ status: 'PAID' }),
+    );
+    expect(paymentLogRepository.save).toHaveBeenCalled();
+    expect(result.success).toBe(true);
+    expect(result.verified.status).toBe('success');
+  });
+
+  it('marks initialization failure as failed and logs event', async () => {
+    const payment = {
+      id: 'payment-1',
+      reference: 'ref-1',
+      amount: 500,
+      status: 'PENDING',
+      organization_id: 'org-1',
+      submission: null,
+    } as any;
+
+    paymentRepository.findOne.mockResolvedValue(payment);
+    paymentLogRepository.findOne.mockResolvedValue(null);
+    paymentLogRepository.create.mockReturnValue({});
+    paymentLogRepository.save.mockResolvedValue({});
+    paymentRepository.update.mockResolvedValue(undefined);
+
+    await service.markInitializationFailed('org-1', 'payment-1', 'Failed to initialize payment');
+
+    expect(paymentRepository.update).toHaveBeenCalledWith(
+      { id: 'payment-1', organization_id: 'org-1' },
+      expect.objectContaining({ status: 'FAILED', paid_at: null }),
+    );
+    expect(paymentLogRepository.save).toHaveBeenCalled();
   });
 });

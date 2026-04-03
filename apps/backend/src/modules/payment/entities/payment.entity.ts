@@ -25,8 +25,8 @@ export class Payment {
   @Column({ type: 'varchar', enum: ['PENDING', 'PAID', 'PARTIAL', 'FAILED'], default: 'PENDING' })
   status: 'PENDING' | 'PAID' | 'PARTIAL' | 'FAILED';
 
-  @Column({ nullable: true })
-  paid_at: Date;
+  @Column({ type: 'timestamp', nullable: true })
+  paid_at: Date | null;
 
   @CreateDateColumn()
   created_at: Date;

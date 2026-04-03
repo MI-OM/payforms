@@ -28,6 +28,9 @@ const mockSubmissionService = () => ({
 const mockPaymentService = () => ({
   create: jest.fn(),
   initializePaystack: jest.fn(),
+  markInitializationFailed: jest.fn(),
+  findByReferenceGlobal: jest.fn(),
+  verifyAndFinalizePayment: jest.fn(),
 });
 
 const mockContactService = () => ({
@@ -515,6 +518,71 @@ describe('PublicController', () => {
     configService.get.mockReturnValue(null);
 
     await expect(controller.submitPublicForm('test', dto as any, undefined, undefined)).rejects.toThrow(BadRequestException);
+  });
+
+  it('marks payment as failed when paystack initialization fails', async () => {
+    const form = { id: 'form-1', organization_id: 'org-1', title: 'Test', payment_type: 'FIXED', amount: 100, allow_partial: false, fields: [], targets: [], organization: { notify_submission_confirmation: false } } as any;
+    const dto = { data: { name: 'Jane Doe' }, contact_email: 'jane@example.com' };
+    const submission = { id: 'submission-1' };
+    const payment = { id: 'payment-1', reference: 'ref-1', amount: 100 };
+
+    formService.findBySlug.mockResolvedValue(form);
+    contactService.findByEmail.mockResolvedValue({ id: 'contact-1' });
+    submissionService.create.mockResolvedValue(submission);
+    paymentService.create.mockResolvedValue(payment);
+    paymentService.initializePaystack.mockRejectedValue(new BadRequestException('Failed to initialize payment'));
+    paymentService.markInitializationFailed.mockResolvedValue({ ...payment, status: 'FAILED' });
+
+    await expect(
+      controller.submitPublicForm('test', dto as any, 'https://callback', undefined),
+    ).rejects.toThrow(BadRequestException);
+
+    expect(paymentService.markInitializationFailed).toHaveBeenCalledWith(
+      'org-1',
+      'payment-1',
+      'Failed to initialize payment',
+    );
+  });
+
+  it('returns ignored callback response when payment reference is unknown', async () => {
+    paymentService.findByReferenceGlobal.mockResolvedValue(null);
+
+    const result = await controller.handlePaymentCallback('ref-1', undefined);
+
+    expect(result).toEqual({
+      status: 'ignored',
+      reason: 'payment_not_found',
+      reference: 'ref-1',
+    });
+  });
+
+  it('processes callback response when payment reference is found', async () => {
+    paymentService.findByReferenceGlobal.mockResolvedValue({
+      id: 'payment-1',
+      organization_id: 'org-1',
+      reference: 'ref-1',
+    });
+    paymentService.verifyAndFinalizePayment.mockResolvedValue({
+      success: true,
+      skipped: false,
+      payment: { id: 'payment-1', status: 'PAID' },
+      verified: { status: 'success' },
+    });
+
+    const result = await controller.handlePaymentCallback('ref-1', undefined);
+
+    expect(paymentService.verifyAndFinalizePayment).toHaveBeenCalledWith(
+      'org-1',
+      'ref-1',
+      'callback_redirect',
+    );
+    expect(result).toEqual({
+      status: 'processed',
+      reference: 'ref-1',
+      skipped: false,
+      payment: { id: 'payment-1', status: 'PAID' },
+      verified: { status: 'success' },
+    });
   });
 
   it('validates required submission field and throws BadRequestException', async () => {

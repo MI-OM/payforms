@@ -1,4 +1,4 @@
-import { Injectable, UnauthorizedException, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
+import { Injectable, UnauthorizedException, NotFoundException, BadRequestException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -14,6 +14,7 @@ import {
   RefreshTokenDto,
   InviteUserDto,
   AcceptInviteDto,
+  UpdateProfileDto,
   PasswordResetRequestDto,
   PasswordResetConfirmDto,
   VerifyOrganizationEmailDto,
@@ -49,8 +50,11 @@ export class AuthService {
     const user = this.userRepository.create({
       organization_id: savedOrg.id,
       email: dto.email,
-      title: dto.title ?? null,
-      designation: dto.designation ?? null,
+      first_name: null,
+      middle_name: null,
+      last_name: null,
+      title: null,
+      designation: null,
       password_hash: passwordHash,
       role: 'ADMIN',
     });
@@ -67,23 +71,12 @@ export class AuthService {
 
     return {
       ...tokens,
-      user: {
-        id: savedUser.id,
-        email: savedUser.email,
-        role: savedUser.role,
-        organization_id: savedUser.organization_id,
-        title: savedUser.title,
-        designation: savedUser.designation,
-      },
+      user: this.mapAuthUser(savedUser),
     };
   }
 
   async inviteUser(inviter: User, dto: InviteUserDto) {
     const organizationId = inviter.organization_id;
-
-    if (dto.role && dto.role === 'ADMIN' && inviter.role !== 'ADMIN') {
-      throw new ForbiddenException('Only ADMIN can invite another ADMIN');
-    }
 
     const existingUser = await this.userRepository.findOne({ where: { email: dto.email } });
     if (existingUser) {
@@ -101,9 +94,9 @@ export class AuthService {
     const invitation = this.invitationRepository.create({
       organization_id: organizationId,
       email: dto.email,
-      title: dto.title ?? null,
-      designation: dto.designation ?? null,
-      role: dto.role || 'STAFF',
+      first_name: dto.first_name.trim(),
+      last_name: dto.last_name.trim(),
+      role: 'STAFF',
       token,
       invited_by: inviter.id,
       accepted: false,
@@ -115,8 +108,8 @@ export class AuthService {
     return {
       id: savedInvite.id,
       email: savedInvite.email,
-      title: savedInvite.title,
-      designation: savedInvite.designation,
+      first_name: savedInvite.first_name,
+      last_name: savedInvite.last_name,
       role: savedInvite.role,
       token: savedInvite.token,
       expires_at: savedInvite.expires_at,
@@ -146,8 +139,11 @@ export class AuthService {
     const user = this.userRepository.create({
       organization_id: invitation.organization_id,
       email: invitation.email,
-      title: dto.title ?? invitation.title ?? null,
-      designation: dto.designation ?? invitation.designation ?? null,
+      first_name: invitation.first_name ?? null,
+      middle_name: null,
+      last_name: invitation.last_name ?? null,
+      title: null,
+      designation: null,
       password_hash: passwordHash,
       role: invitation.role,
     });
@@ -160,14 +156,7 @@ export class AuthService {
     const tokens = await this.createTokens(savedUser);
     return {
       ...tokens,
-      user: {
-        id: savedUser.id,
-        email: savedUser.email,
-        role: savedUser.role,
-        organization_id: savedUser.organization_id,
-        title: savedUser.title,
-        designation: savedUser.designation,
-      },
+      user: this.mapAuthUser(savedUser),
     };
   }
 
@@ -189,15 +178,48 @@ export class AuthService {
 
     return {
       ...tokens,
-      user: {
-        id: user.id,
-        email: user.email,
-        role: user.role,
-        organization_id: user.organization_id,
-        title: user.title,
-        designation: user.designation,
-      },
+      user: this.mapAuthUser(user),
     };
+  }
+
+  async getProfile(userId: string) {
+    const user = await this.userRepository.findOne({ where: { id: userId } });
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    return this.mapAuthUser(user);
+  }
+
+  async updateProfile(userId: string, dto: UpdateProfileDto) {
+    const user = await this.userRepository.findOne({ where: { id: userId } });
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    const updatePayload: Partial<User> = {};
+
+    if (dto.first_name !== undefined) {
+      updatePayload.first_name = this.normalizeProfileField(dto.first_name);
+    }
+    if (dto.middle_name !== undefined) {
+      updatePayload.middle_name = this.normalizeProfileField(dto.middle_name);
+    }
+    if (dto.last_name !== undefined) {
+      updatePayload.last_name = this.normalizeProfileField(dto.last_name);
+    }
+    if (dto.title !== undefined) {
+      updatePayload.title = this.normalizeProfileField(dto.title);
+    }
+    if (dto.designation !== undefined) {
+      updatePayload.designation = this.normalizeProfileField(dto.designation);
+    }
+
+    if (Object.keys(updatePayload).length > 0) {
+      await this.userRepository.update(userId, updatePayload);
+    }
+
+    return this.getProfile(userId);
   }
 
   async refreshTokens(dto: RefreshTokenDto) {
@@ -337,6 +359,9 @@ export class AuthService {
       email: user.email,
       organization_id: user.organization_id,
       role: user.role,
+      first_name: user.first_name,
+      middle_name: user.middle_name,
+      last_name: user.last_name,
       title: user.title,
       designation: user.designation,
     };
@@ -383,5 +408,27 @@ export class AuthService {
 
   async validateUser(id: string): Promise<User | null> {
     return this.userRepository.findOne({ where: { id } });
+  }
+
+  private mapAuthUser(user: User) {
+    return {
+      id: user.id,
+      email: user.email,
+      role: user.role,
+      organization_id: user.organization_id,
+      first_name: user.first_name,
+      middle_name: user.middle_name,
+      last_name: user.last_name,
+      title: user.title,
+      designation: user.designation,
+    };
+  }
+
+  private normalizeProfileField(value: string | null | undefined) {
+    if (value === undefined || value === null) {
+      return null;
+    }
+    const normalized = value.trim();
+    return normalized.length ? normalized : null;
   }
 }

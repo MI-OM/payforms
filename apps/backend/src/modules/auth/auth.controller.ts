@@ -1,6 +1,6 @@
-import { Controller, Post, Body, Get, UseGuards, Request } from '@nestjs/common';
+import { Controller, Post, Body, Get, Patch, UseGuards, Request } from '@nestjs/common';
 import { AuthService } from './auth.service';
-import { RegisterDto, LoginDto, RefreshTokenDto, InviteUserDto, AcceptInviteDto, PasswordResetRequestDto, PasswordResetConfirmDto, VerifyOrganizationEmailDto } from './dto/auth.dto';
+import { RegisterDto, LoginDto, RefreshTokenDto, InviteUserDto, AcceptInviteDto, UpdateProfileDto, PasswordResetRequestDto, PasswordResetConfirmDto, VerifyOrganizationEmailDto } from './dto/auth.dto';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { RolesGuard } from './guards/roles.guard';
 import { Roles } from './decorators/roles.decorator';
@@ -76,10 +76,24 @@ export class AuthController {
     return this.authService.logout(req.user.id);
   }
 
+  @Get('profile')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  async getProfile(@Request() req) {
+    return this.authService.getProfile(req.user.id);
+  }
+
+  @Patch('profile')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  async updateProfile(@Request() req, @Body() dto: UpdateProfileDto) {
+    return this.authService.updateProfile(req.user.id, dto);
+  }
+
   @Get('me')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   async getCurrentUser(@Request() req) {
-    return req.user;
+    return this.authService.getProfile(req.user.id);
   }
 }
