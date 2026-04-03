@@ -110,6 +110,14 @@ export class PaymentService {
     return this.buildPaymentsCsv(payments);
   }
 
+  async generateContactReceiptByPaymentId(organizationId: string, contactId: string, paymentId: string) {
+    return this.generateContactReceipt(organizationId, contactId, { paymentId });
+  }
+
+  async generateContactReceiptByReference(organizationId: string, contactId: string, reference: string) {
+    return this.generateContactReceipt(organizationId, contactId, { reference });
+  }
+
   async getTransactionHistory(
     organizationId: string,
     paymentId: string,
@@ -400,6 +408,99 @@ export class PaymentService {
     );
 
     return `id,reference,amount,status,paid_at,created_at,submission_id,form_id,contact_id\n${rows.join('\n')}`;
+  }
+
+  private async generateContactReceipt(
+    organizationId: string,
+    contactId: string,
+    lookup: { paymentId?: string; reference?: string },
+  ) {
+    const paymentQuery = this.paymentRepository
+      .createQueryBuilder('payment')
+      .leftJoinAndSelect('payment.submission', 'submission')
+      .where('payment.organization_id = :organizationId', { organizationId })
+      .andWhere('submission.contact_id = :contactId', { contactId });
+
+    if (lookup.paymentId) {
+      paymentQuery.andWhere('payment.id = :paymentId', { paymentId: lookup.paymentId });
+    } else if (lookup.reference) {
+      paymentQuery.andWhere('payment.reference = :reference', { reference: lookup.reference });
+    } else {
+      throw new BadRequestException('Payment lookup is required');
+    }
+
+    const payment = await paymentQuery.getOne();
+    if (!payment) {
+      throw new NotFoundException('Payment not found');
+    }
+
+    if (payment.status !== 'PAID' && payment.status !== 'PARTIAL') {
+      throw new BadRequestException('Receipt is available only for paid or partial payments');
+    }
+
+    const [organization, contact] = await Promise.all([
+      this.organizationRepository.findOne({
+        where: { id: organizationId },
+        select: ['id', 'name', 'email'],
+      }),
+      this.contactRepository.findOne({
+        where: { id: contactId, organization_id: organizationId },
+        select: ['id', 'first_name', 'last_name', 'email'],
+      }),
+    ]);
+
+    if (!organization || !contact) {
+      throw new NotFoundException('Receipt owner not found');
+    }
+
+    const pdf = await this.buildReceiptPdf({
+      organization,
+      contact,
+      payment,
+    });
+
+    const normalizedReference = String(payment.reference || payment.id).replace(/[^a-zA-Z0-9_-]+/g, '_');
+    return {
+      fileName: `receipt-${normalizedReference}.pdf`,
+      content: pdf,
+    };
+  }
+
+  private async buildReceiptPdf(payload: {
+    organization: Pick<Organization, 'id' | 'name' | 'email'>;
+    contact: Pick<Contact, 'id' | 'first_name' | 'last_name' | 'email'>;
+    payment: Payment;
+  }): Promise<Buffer> {
+    return new Promise((resolve, reject) => {
+      const PDFDocument = require('pdfkit');
+      const pdf = new PDFDocument({ margin: 36 });
+      const chunks: Buffer[] = [];
+
+      pdf.on('data', chunk => chunks.push(chunk));
+      pdf.on('end', () => resolve(Buffer.concat(chunks)));
+      pdf.on('error', reject);
+
+      const { organization, contact, payment } = payload;
+      const contactName = [contact.first_name, contact.last_name].filter(Boolean).join(' ').trim();
+      const amount = Number(payment.amount || 0);
+
+      pdf.fontSize(20).text('Payment Receipt', { align: 'center' });
+      pdf.moveDown();
+      pdf.fontSize(12).text(`Organization: ${organization.name}`);
+      pdf.text(`Organization Email: ${organization.email || '-'}`);
+      pdf.text(`Contact: ${contactName || '-'}`);
+      pdf.text(`Contact Email: ${contact.email || '-'}`);
+      pdf.moveDown(0.5);
+      pdf.text(`Reference: ${payment.reference}`);
+      pdf.text(`Amount: NGN ${amount.toFixed(2)}`);
+      pdf.text(`Status: ${payment.status}`);
+      pdf.text(`Paid At: ${payment.paid_at ? payment.paid_at.toISOString() : '-'}`);
+      pdf.text(`Created At: ${payment.created_at ? payment.created_at.toISOString() : '-'}`);
+      pdf.text(`Form ID: ${payment.submission?.form_id || '-'}`);
+      pdf.text(`Submission ID: ${payment.submission_id || '-'}`);
+
+      pdf.end();
+    });
   }
 
   private escapeCsv(value: unknown) {

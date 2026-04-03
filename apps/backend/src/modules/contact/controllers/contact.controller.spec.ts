@@ -29,6 +29,7 @@ const mockContactImportService = () => ({
   commitImport: jest.fn(),
   listImports: jest.fn(),
   getImport: jest.fn(),
+  sendPasswordSetupEmails: jest.fn(),
 });
 
 describe('ContactController', () => {
@@ -46,10 +47,12 @@ describe('ContactController', () => {
     const req = { user: { organization_id: 'org-1' } };
     const dto = { name: 'Jane Doe', email: 'jane@example.com' };
     contactService.create.mockResolvedValue({ id: 'contact-1' });
+    contactImportService.sendPasswordSetupEmails.mockResolvedValue(undefined);
 
     const result = await contactController.createContact(req as any, dto as any);
 
     expect(contactService.create).toHaveBeenCalledWith('org-1', dto);
+    expect(contactImportService.sendPasswordSetupEmails).toHaveBeenCalledWith('org-1', [{ id: 'contact-1' }]);
     expect(result).toEqual({ id: 'contact-1' });
   });
 
@@ -112,10 +115,12 @@ describe('ContactController', () => {
     const req = { user: { organization_id: 'org-1' } };
     const dto = { contacts: [{ name: 'A', email: 'a@example.com' }] };
     contactService.bulkImport.mockResolvedValue([{ id: 'contact-1' }]);
+    contactImportService.sendPasswordSetupEmails.mockResolvedValue(undefined);
 
     const result = await contactController.bulkImport(req as any, dto as any);
 
     expect(contactService.bulkImport).toHaveBeenCalledWith('org-1', dto.contacts);
+    expect(contactImportService.sendPasswordSetupEmails).toHaveBeenCalledWith('org-1', [{ id: 'contact-1' }]);
     expect(result).toEqual([{ id: 'contact-1' }]);
   });
 

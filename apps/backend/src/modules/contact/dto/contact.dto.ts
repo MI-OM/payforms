@@ -103,6 +103,24 @@ export class CreateContactDto {
   @IsOptional()
   @IsString()
   guardian_phone?: string;
+
+  @ApiPropertyOptional({
+    example: true,
+    description: 'If true, contact is flagged for password setup/login flow. Defaults to true when omitted.',
+  })
+  @Transform(toOptionalBoolean)
+  @IsOptional()
+  @IsBoolean()
+  require_login?: boolean;
+
+  @ApiPropertyOptional({
+    example: true,
+    description: 'Override reset/setup requirement directly. Defaults to require_login value.',
+  })
+  @Transform(toOptionalBoolean)
+  @IsOptional()
+  @IsBoolean()
+  must_reset_password?: boolean;
 }
 
 export class UpdateContactDto {

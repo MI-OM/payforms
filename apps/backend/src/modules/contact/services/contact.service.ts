@@ -42,11 +42,24 @@ export class ContactService {
   ) {}
 
   async create(organizationId: string, dto: CreateContactDto) {
+    const { require_login, must_reset_password, ...contactFields } = dto;
+    const requireLogin = require_login ?? true;
+    const mustResetPassword = must_reset_password ?? requireLogin;
+    const passwordResetToken = mustResetPassword
+      ? crypto.randomBytes(32).toString('hex')
+      : null;
+    const passwordResetExpiresAt = mustResetPassword
+      ? new Date(Date.now() + 1000 * 60 * 60 * 24 * 7)
+      : null;
+
     const contact = this.contactRepository.create({
       organization_id: organizationId,
-      ...dto,
-      email: this.normalizeEmail(dto.email),
+      ...contactFields,
+      email: this.normalizeEmail(contactFields.email),
       is_active: true,
+      must_reset_password: mustResetPassword,
+      password_reset_token: passwordResetToken,
+      password_reset_expires_at: passwordResetExpiresAt,
     });
     return this.contactRepository.save(contact);
   }
@@ -294,7 +307,7 @@ export class ContactService {
     const contactEntities: Contact[] = [];
     for (const row of normalizedRows) {
       const groups = await this.resolveImportGroups(organizationId, row, groupById, groupByName);
-      const requireLogin = row.require_login ?? false;
+      const requireLogin = row.require_login ?? true;
       const mustResetPassword = row.must_reset_password ?? requireLogin;
       const passwordResetToken = mustResetPassword
         ? crypto.randomBytes(32).toString('hex')

@@ -1,6 +1,7 @@
-import { Controller, Post, Body, Get, UseGuards, Request } from '@nestjs/common';
+import { Controller, Post, Body, Get, UseGuards, Request, Param, Res } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { ContactAuthService } from './contact-auth.service';
+import { PaymentService } from '../payment/services/payment.service';
 import {
   ContactLoginDto,
   ContactSetPasswordDto,
@@ -8,11 +9,15 @@ import {
   ContactResetPasswordDto,
 } from './dto/contact-auth.dto';
 import { ContactJwtAuthGuard } from './guards/contact-jwt-auth.guard';
+import { Response } from 'express';
 
 @ApiTags('Contact Auth')
 @Controller('contact-auth')
 export class ContactAuthController {
-  constructor(private contactAuthService: ContactAuthService) {}
+  constructor(
+    private contactAuthService: ContactAuthService,
+    private paymentService: PaymentService,
+  ) {}
 
   @Post('login')
   async login(@Body() dto: ContactLoginDto, @Request() req) {
@@ -49,6 +54,44 @@ export class ContactAuthController {
   @ApiBearerAuth()
   async getCurrentContact(@Request() req) {
     return req.user;
+  }
+
+  @Get('payments/:id/receipt')
+  @UseGuards(ContactJwtAuthGuard)
+  @ApiBearerAuth()
+  async downloadPaymentReceipt(
+    @Request() req,
+    @Param('id') id: string,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const receipt = await this.paymentService.generateContactReceiptByPaymentId(
+      req.user.organization_id,
+      req.user.id,
+      id,
+    );
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${receipt.fileName}"`);
+    return receipt.content;
+  }
+
+  @Get('payments/reference/:reference/receipt')
+  @UseGuards(ContactJwtAuthGuard)
+  @ApiBearerAuth()
+  async downloadPaymentReceiptByReference(
+    @Request() req,
+    @Param('reference') reference: string,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const receipt = await this.paymentService.generateContactReceiptByReference(
+      req.user.organization_id,
+      req.user.id,
+      reference,
+    );
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${receipt.fileName}"`);
+    return receipt.content;
   }
 
   private resolveRequestHost(req: any): string | null {

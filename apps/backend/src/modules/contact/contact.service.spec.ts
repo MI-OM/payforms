@@ -68,9 +68,22 @@ describe('ContactService', () => {
 
   it('creates a contact', async () => {
     const dto = { first_name: 'Jane', last_name: 'Doe', email: 'jane@example.com' };
-    const savedContact = { id: 'contact-1', organization_id: 'org-1', ...dto, is_active: true } as unknown as Contact;
+    const savedContact = {
+      id: 'contact-1',
+      organization_id: 'org-1',
+      ...dto,
+      is_active: true,
+      must_reset_password: true,
+    } as unknown as Contact;
 
-    contactRepository.create.mockReturnValue({ organization_id: 'org-1', ...dto, is_active: true });
+    contactRepository.create.mockReturnValue({
+      organization_id: 'org-1',
+      ...dto,
+      is_active: true,
+      must_reset_password: true,
+      password_reset_token: 'token',
+      password_reset_expires_at: new Date(),
+    });
     contactRepository.save.mockResolvedValue(savedContact);
 
     const result = await contactService.create('org-1', dto as any);
@@ -80,6 +93,9 @@ describe('ContactService', () => {
       ...dto,
       email: 'jane@example.com',
       is_active: true,
+      must_reset_password: true,
+      password_reset_token: expect.any(String),
+      password_reset_expires_at: expect.any(Date),
     });
     expect(result).toEqual(savedContact);
   });
@@ -284,9 +300,9 @@ describe('ContactService', () => {
         guardian_email: undefined,
         guardian_phone: undefined,
         is_active: true,
-        must_reset_password: false,
-        password_reset_token: null,
-        password_reset_expires_at: null,
+        must_reset_password: true,
+        password_reset_token: expect.any(String),
+        password_reset_expires_at: expect.any(Date),
         groups: [],
         id: 'contact',
       },
@@ -302,9 +318,9 @@ describe('ContactService', () => {
         guardian_email: undefined,
         guardian_phone: undefined,
         is_active: true,
-        must_reset_password: false,
-        password_reset_token: null,
-        password_reset_expires_at: null,
+        must_reset_password: true,
+        password_reset_token: expect.any(String),
+        password_reset_expires_at: expect.any(Date),
         groups: [],
         id: 'contact',
       },

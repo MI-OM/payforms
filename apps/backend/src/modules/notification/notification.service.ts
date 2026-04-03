@@ -16,6 +16,15 @@ export class NotificationService {
     private contactRepository: Repository<Contact>,
   ) {}
 
+  private trimOptionalValue(value?: string | null) {
+    if (!value) {
+      return null;
+    }
+
+    const normalized = value.trim();
+    return normalized.length ? normalized : null;
+  }
+
   async getContactEmail(organizationId: string, contactId: string) {
     const contact = await this.contactRepository.findOne({
       where: { id: contactId, organization_id: organizationId },
@@ -48,14 +57,29 @@ export class NotificationService {
   }
 
   private getEmailProvider(): EmailProvider {
-    const configuredProvider = this.configService.get<string>('EMAIL_PROVIDER');
-    const provider = (configuredProvider || 'sendgrid').toLowerCase();
+    const configuredProvider = this.trimOptionalValue(this.configService.get<string>('EMAIL_PROVIDER'));
+    if (configuredProvider) {
+      const provider = configuredProvider.toLowerCase();
+      if (provider !== 'sendgrid' && provider !== 'mailgun' && provider !== 'brevo') {
+        throw new BadRequestException('Invalid EMAIL_PROVIDER. Supported values: sendgrid, mailgun, brevo');
+      }
 
-    if (provider !== 'sendgrid' && provider !== 'mailgun' && provider !== 'brevo') {
-      throw new BadRequestException('Invalid EMAIL_PROVIDER. Supported values: sendgrid, mailgun, brevo');
+      return provider as EmailProvider;
     }
 
-    return provider;
+    // Fallback auto-detection allows deployments to work when EMAIL_PROVIDER is omitted.
+    const hasMailgun = !!this.trimOptionalValue(this.configService.get<string>('MAILGUN_API_KEY'))
+      && !!this.trimOptionalValue(this.configService.get<string>('MAILGUN_DOMAIN'));
+    if (hasMailgun) {
+      return 'mailgun';
+    }
+
+    const hasBrevo = !!this.trimOptionalValue(this.configService.get<string>('BREVO_API_KEY'));
+    if (hasBrevo) {
+      return 'brevo';
+    }
+
+    return 'sendgrid';
   }
 
   private getProviderApiKey(provider: EmailProvider) {
@@ -197,7 +221,11 @@ export class NotificationService {
         throw error;
       }
 
-      console.error(`Email send error (${provider}):`, error);
+      console.error(`Email send error (${provider}):`, {
+        message: (error as any)?.message,
+        status: (error as any)?.response?.status,
+        data: (error as any)?.response?.data,
+      });
       throw new InternalServerErrorException('Failed to send email');
     }
   }

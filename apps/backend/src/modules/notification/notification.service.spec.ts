@@ -178,6 +178,20 @@ describe('NotificationService', () => {
     });
   });
 
+  it('auto-selects mailgun when EMAIL_PROVIDER is not set but Mailgun config exists', async () => {
+    mockConfig({
+      EMAIL_PROVIDER: null,
+      MAILGUN_API_KEY: 'mailgun-key',
+      MAILGUN_DOMAIN: 'mg.example.com',
+      EMAIL_FROM: 'noreply@example.com',
+    });
+    (axios.post as any).mockResolvedValue({});
+
+    await service.sendEmail(['a@example.com'], 'Subject', '<p>html</p>');
+
+    expect((axios.post as any).mock.calls[0][0]).toBe('https://api.mailgun.net/v3/mg.example.com/messages');
+  });
+
   it('sends email via Brevo API', async () => {
     mockConfig({
       EMAIL_PROVIDER: 'brevo',

@@ -9,6 +9,7 @@ import { ContactAuthService } from './contact-auth.service';
 import { ContactAuthController } from './contact-auth.controller';
 import { ContactJwtStrategy } from './strategies/contact-jwt.strategy';
 import { NotificationModule } from '../notification/notification.module';
+import { PaymentModule } from '../payment/payment.module';
 
 @Module({
   imports: [
@@ -22,6 +23,7 @@ import { NotificationModule } from '../notification/notification.module';
       }),
     }),
     NotificationModule,
+    PaymentModule,
   ],
   controllers: [ContactAuthController],
   providers: [ContactAuthService, ContactJwtStrategy],

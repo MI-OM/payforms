@@ -7,6 +7,7 @@ declare const beforeEach: any;
 declare const jest: any;
 
 type MockContactAuthService = ReturnType<typeof mockContactAuthService>;
+type MockPaymentService = ReturnType<typeof mockPaymentService>;
 
 const mockContactAuthService = () => ({
   login: jest.fn(),
@@ -15,13 +16,20 @@ const mockContactAuthService = () => ({
   confirmPasswordReset: jest.fn(),
 });
 
+const mockPaymentService = () => ({
+  generateContactReceiptByPaymentId: jest.fn(),
+  generateContactReceiptByReference: jest.fn(),
+});
+
 describe('ContactAuthController', () => {
   let controller: ContactAuthController;
   let service: MockContactAuthService;
+  let paymentService: MockPaymentService;
 
   beforeEach(() => {
     service = mockContactAuthService();
-    controller = new ContactAuthController(service as any);
+    paymentService = mockPaymentService();
+    controller = new ContactAuthController(service as any, paymentService as any);
   });
 
   it('logs in a contact', async () => {
@@ -81,5 +89,39 @@ describe('ContactAuthController', () => {
     const result = await controller.getCurrentContact(req as any);
 
     expect(result).toEqual({ id: 'contact-1' });
+  });
+
+  it('downloads payment receipt by payment id', async () => {
+    const req = { user: { id: 'contact-1', organization_id: 'org-1' } };
+    const res = { setHeader: jest.fn() };
+    const content = Buffer.from('pdf-content');
+    paymentService.generateContactReceiptByPaymentId.mockResolvedValue({
+      fileName: 'receipt-ref.pdf',
+      content,
+    });
+
+    const result = await controller.downloadPaymentReceipt(req as any, 'payment-1', res as any);
+
+    expect(paymentService.generateContactReceiptByPaymentId).toHaveBeenCalledWith('org-1', 'contact-1', 'payment-1');
+    expect(res.setHeader).toHaveBeenCalledWith('Content-Type', 'application/pdf');
+    expect(res.setHeader).toHaveBeenCalledWith('Content-Disposition', 'attachment; filename="receipt-ref.pdf"');
+    expect(result).toEqual(content);
+  });
+
+  it('downloads payment receipt by reference', async () => {
+    const req = { user: { id: 'contact-1', organization_id: 'org-1' } };
+    const res = { setHeader: jest.fn() };
+    const content = Buffer.from('pdf-content');
+    paymentService.generateContactReceiptByReference.mockResolvedValue({
+      fileName: 'receipt-ref.pdf',
+      content,
+    });
+
+    const result = await controller.downloadPaymentReceiptByReference(req as any, 'ref-1', res as any);
+
+    expect(paymentService.generateContactReceiptByReference).toHaveBeenCalledWith('org-1', 'contact-1', 'ref-1');
+    expect(res.setHeader).toHaveBeenCalledWith('Content-Type', 'application/pdf');
+    expect(res.setHeader).toHaveBeenCalledWith('Content-Disposition', 'attachment; filename="receipt-ref.pdf"');
+    expect(result).toEqual(content);
   });
 });

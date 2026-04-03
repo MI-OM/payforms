@@ -19,7 +19,9 @@ export class ContactController {
 
   @Post()
   async createContact(@Request() req, @Body() dto: CreateContactDto) {
-    return this.contactService.create(req.user.organization_id, dto);
+    const contact = await this.contactService.create(req.user.organization_id, dto);
+    await this.contactImportService.sendPasswordSetupEmails(req.user.organization_id, [contact]);
+    return contact;
   }
 
   @Get()
@@ -70,7 +72,9 @@ export class ContactController {
 
   @Post('import')
   async bulkImport(@Request() req, @Body() dto: BulkImportContactsDto) {
-    return this.contactService.bulkImport(req.user.organization_id, dto.contacts);
+    const contacts = await this.contactService.bulkImport(req.user.organization_id, dto.contacts);
+    await this.contactImportService.sendPasswordSetupEmails(req.user.organization_id, contacts);
+    return contacts;
   }
 
   @Post('imports/validate')

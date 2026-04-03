@@ -25,6 +25,35 @@ export class ContactImportService {
     private configService: ConfigService,
   ) {}
 
+  async sendPasswordSetupEmails(organizationId: string, contacts: Contact[]) {
+    if (!contacts.length) {
+      return;
+    }
+
+    const organization = await this.organizationRepository.findOne({ where: { id: organizationId } });
+    const frontendUrl = this.configService.get<string>('FRONTEND_URL');
+
+    for (const contact of contacts) {
+      if (!contact.email || !contact.must_reset_password || !contact.password_reset_token) {
+        continue;
+      }
+
+      const resetLink = frontendUrl
+        ? `${frontendUrl.replace(/\/$/, '')}/contact-reset?token=${contact.password_reset_token}`
+        : `Use this token to reset your password: ${contact.password_reset_token}`;
+
+      try {
+        await this.notificationService.sendPasswordResetEmail(
+          organization,
+          contact.email,
+          resetLink,
+        );
+      } catch (error) {
+        console.warn('Failed to send contact password setup email:', error);
+      }
+    }
+  }
+
   private validateRow(
     row: Record<string, any>,
     rowIndex: number,
@@ -186,27 +215,7 @@ export class ContactImportService {
     try {
       const contacts = (importJob.payload || []) as Array<any>;
       const createdContacts = await this.contactService.bulkImport(organizationId, contacts);
-
-      const organization = await this.organizationRepository.findOne({ where: { id: organizationId } });
-      const frontendUrl = this.configService.get<string>('FRONTEND_URL');
-
-      for (const contact of createdContacts) {
-        if (contact.must_reset_password && contact.password_reset_token) {
-          const resetLink = frontendUrl
-            ? `${frontendUrl.replace(/\/$/, '')}/contact-reset?token=${contact.password_reset_token}`
-            : `Use this token to reset your password: ${contact.password_reset_token}`;
-
-          try {
-            await this.notificationService.sendPasswordResetEmail(
-              organization,
-              contact.email,
-              resetLink,
-            );
-          } catch (error) {
-            console.warn('Failed to send imported contact password setup email:', error);
-          }
-        }
-      }
+      await this.sendPasswordSetupEmails(organizationId, createdContacts);
 
       importJob.status = ContactImportStatus.COMPLETED;
       importJob.success_count = createdContacts.length;

@@ -52,6 +52,7 @@ describe('PaymentService', () => {
       take: jest.fn().mockReturnThis(),
       getManyAndCount: jest.fn(),
       getMany: jest.fn(),
+      getOne: jest.fn(),
     };
 
     paymentRepository.createQueryBuilder.mockReturnValue(queryBuilder);
@@ -341,5 +342,42 @@ describe('PaymentService', () => {
       expect.objectContaining({ status: 'FAILED', paid_at: null }),
     );
     expect(paymentLogRepository.save).toHaveBeenCalled();
+  });
+
+  it('generates a contact receipt by payment id', async () => {
+    const payment = {
+      id: 'payment-1',
+      submission_id: 'submission-1',
+      reference: 'ref-1',
+      amount: 500,
+      status: 'PAID',
+      paid_at: new Date('2026-04-03T09:00:00.000Z'),
+      created_at: new Date('2026-04-03T08:00:00.000Z'),
+      submission: { form_id: 'form-1', contact_id: 'contact-1' },
+    } as any;
+
+    queryBuilder.getOne.mockResolvedValue(payment);
+    organizationRepository.findOne.mockResolvedValue({ id: 'org-1', name: 'Org One', email: 'org@example.com' });
+    contactRepository.findOne.mockResolvedValue({ id: 'contact-1', first_name: 'Jane', last_name: 'Doe', email: 'jane@example.com' });
+
+    const result = await service.generateContactReceiptByPaymentId('org-1', 'contact-1', 'payment-1');
+
+    expect(queryBuilder.andWhere).toHaveBeenCalledWith('payment.id = :paymentId', { paymentId: 'payment-1' });
+    expect(result.fileName).toBe('receipt-ref-1.pdf');
+    expect(Buffer.isBuffer(result.content)).toBe(true);
+  });
+
+  it('throws when generating receipt for unpaid transaction', async () => {
+    queryBuilder.getOne.mockResolvedValue({
+      id: 'payment-1',
+      reference: 'ref-1',
+      amount: 500,
+      status: 'PENDING',
+      submission: { contact_id: 'contact-1' },
+    });
+
+    await expect(
+      service.generateContactReceiptByReference('org-1', 'contact-1', 'ref-1'),
+    ).rejects.toThrow(BadRequestException);
   });
 });
