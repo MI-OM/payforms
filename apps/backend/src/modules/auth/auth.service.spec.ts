@@ -53,6 +53,7 @@ describe('AuthService', () => {
     notificationService = {
       sendOrganizationEmailVerificationEmail: jest.fn().mockResolvedValue(undefined),
       sendPasswordResetEmail: jest.fn().mockResolvedValue(undefined),
+      sendEmail: jest.fn().mockResolvedValue(undefined),
     };
 
     const bcryptMock = bcrypt as any;
@@ -231,6 +232,7 @@ describe('AuthService', () => {
     userRepository.findOne.mockResolvedValue(null);
     invitationRepository.findOne.mockResolvedValue(null);
     invitationRepository.save.mockResolvedValue(savedInvite);
+    organizationRepository.findOne.mockResolvedValue({ id: 'org-1', name: 'Acme' });
 
     const result = await authService.inviteUser(inviter, {
       first_name: 'Janet',
@@ -245,6 +247,45 @@ describe('AuthService', () => {
       role: 'STAFF',
     });
     expect(result.token).toHaveLength(64);
+    expect(result.invite_email_sent).toBe(true);
+    expect(notificationService.sendEmail).toHaveBeenCalledWith(
+      ['new@acme.com'],
+      'Acme Staff Invitation',
+      expect.stringContaining('accept-invite?token='),
+    );
+  });
+
+  it('still creates invitation when invite email sending fails', async () => {
+    const inviter = {
+      id: 'user-admin',
+      organization_id: 'org-1',
+      role: 'ADMIN',
+    } as User;
+    const savedInvite = {
+      id: 'invite-1',
+      email: 'new@acme.com',
+      first_name: 'Janet',
+      last_name: 'Doe',
+      role: 'STAFF',
+      token: 'a'.repeat(64),
+      expires_at: new Date(Date.now() + 1000 * 60 * 60 * 24 * 7),
+      created_at: new Date(),
+    } as Invitation;
+
+    userRepository.findOne.mockResolvedValue(null);
+    invitationRepository.findOne.mockResolvedValue(null);
+    invitationRepository.save.mockResolvedValue(savedInvite);
+    organizationRepository.findOne.mockResolvedValue({ id: 'org-1', name: 'Acme' });
+    notificationService.sendEmail.mockRejectedValue(new Error('mail failed'));
+
+    const result = await authService.inviteUser(inviter, {
+      first_name: 'Janet',
+      last_name: 'Doe',
+      email: 'new@acme.com',
+    });
+
+    expect(result.email).toBe('new@acme.com');
+    expect(result.invite_email_sent).toBe(false);
   });
 
   it('accepts a valid invitation token', async () => {

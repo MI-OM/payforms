@@ -105,6 +105,33 @@ export class AuthService {
     });
 
     const savedInvite = await this.invitationRepository.save(invitation);
+    const organization = await this.organizationRepository.findOne({
+      where: { id: organizationId },
+      select: ['id', 'name'],
+    });
+
+    const frontendUrl = this.configService.get<string>('FRONTEND_URL');
+    const inviteLink = frontendUrl
+      ? `${frontendUrl.replace(/\/$/, '')}/accept-invite?token=${savedInvite.token}`
+      : '';
+
+    let inviteEmailSent = false;
+    try {
+      const subject = `${organization?.name || 'Payforms'} Staff Invitation`;
+      const html = `
+        <p>Hello ${savedInvite.first_name},</p>
+        <p>You have been invited to join ${organization?.name || 'an organization'} on Payforms.</p>
+        ${inviteLink ? `<p>Accept invitation: <a href="${inviteLink}">${inviteLink}</a></p>` : ''}
+        <p>Invitation token: <strong>${savedInvite.token}</strong></p>
+        <p>This invitation expires on ${savedInvite.expires_at?.toISOString() || 'N/A'}.</p>
+      `;
+
+      await this.notificationService.sendEmail([savedInvite.email], subject, html);
+      inviteEmailSent = true;
+    } catch (error) {
+      console.warn('Failed to send invitation email:', error);
+    }
+
     return {
       id: savedInvite.id,
       email: savedInvite.email,
@@ -114,6 +141,7 @@ export class AuthService {
       token: savedInvite.token,
       expires_at: savedInvite.expires_at,
       created_at: savedInvite.created_at,
+      invite_email_sent: inviteEmailSent,
     };
   }
 

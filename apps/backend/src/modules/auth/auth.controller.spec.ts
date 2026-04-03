@@ -58,12 +58,12 @@ describe('AuthController', () => {
   });
 
   it('should call inviteUser with request user', async () => {
-    authService.inviteUser.mockResolvedValue({ invited: true });
+    authService.inviteUser.mockResolvedValue({ invited: true, invite_email_sent: true });
 
     const req = { user: { id: 'user-admin', organization_id: 'org-1', role: 'ADMIN' } };
     await expect(
       authController.inviteUser(req as any, { first_name: 'Janet', last_name: 'Doe', email: 'new@acme.com' }),
-    ).resolves.toEqual({ invited: true });
+    ).resolves.toEqual({ invited: true, invite_email_sent: true });
     expect(authService.inviteUser).toHaveBeenCalledWith(req.user, { first_name: 'Janet', last_name: 'Doe', email: 'new@acme.com' });
   });
 
