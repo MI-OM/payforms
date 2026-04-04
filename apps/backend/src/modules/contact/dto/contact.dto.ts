@@ -329,6 +329,31 @@ export class ContactQueryDto {
   @IsString()
   group_id?: string;
 
+  @ApiPropertyOptional({ example: 'STU-2024-001' })
+  @IsOptional()
+  @IsString()
+  student_id?: string;
+
+  @ApiPropertyOptional({ example: 'Doe' })
+  @IsOptional()
+  @IsString()
+  last_name?: string;
+
+  @ApiPropertyOptional({ example: 'Jane' })
+  @IsOptional()
+  @IsString()
+  first_name?: string;
+
+  @ApiPropertyOptional({ example: 'john@example.com' })
+  @IsOptional()
+  @IsEmail()
+  email?: string;
+
+  @ApiPropertyOptional({ example: 'external-123' })
+  @IsOptional()
+  @IsString()
+  external_id?: string;
+
   @ApiPropertyOptional({ example: 1, minimum: 1 })
   @IsOptional()
   @Type(() => Number)

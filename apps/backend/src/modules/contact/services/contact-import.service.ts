@@ -143,7 +143,12 @@ export class ContactImportService {
       select: ['email'],
     });
 
-    const existingEmails = new Set(existingContacts.map(c => c.email.toLowerCase()));
+    const existingEmails = new Set(
+      existingContacts
+        .map(c => c.email)
+        .filter((email): email is string => typeof email === 'string' && email.trim().length > 0)
+        .map(email => email.toLowerCase()),
+    );
     const importedEmails = new Set<string>();
     const referencedGroupIds = new Set<string>();
 

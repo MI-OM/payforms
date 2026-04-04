@@ -138,6 +138,10 @@ npm run dev
 # Dashboard available at http://localhost:3000
 ```
 
+## 🗺️ Planning Docs
+
+- Post-MVP features/modules (working draft): `post_mvp_features_modules.md`
+
 ## 📚 API Endpoints
 
 ### Authentication (Admin)
@@ -233,7 +237,11 @@ Widget browser events are emitted on `window` as `payforms-widget-event` with:
 ### Payments
 - `GET /payments` - List payments (`format=csv` for export)
 - `GET /payments/:id` - Get payment details
+- `GET /payments/verify/:reference` - Verify against Paystack and persist transaction completion
 - `POST /webhooks/paystack` - Paystack webhook handler
+
+### Public Payment Callback
+- `GET /public/payments/callback` - Redirect callback verification endpoint (supports `reference` or `trxref`)
 
 ### Transactions
 - `GET /transactions` - List filtered transactions (`format=csv` for export)

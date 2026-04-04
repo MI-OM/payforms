@@ -14,40 +14,40 @@ export class Contact {
   organization_id: string;
 
   @Column({ nullable: true })
-  first_name: string;
+  first_name: string | null;
 
   @Column({ nullable: true })
-  middle_name: string;
+  middle_name: string | null;
 
   @Column({ nullable: true })
-  last_name: string;
+  last_name: string | null;
 
   @Column({ nullable: true })
-  email: string;
+  email: string | null;
 
   @Column({ nullable: true })
-  phone: string;
+  phone: string | null;
 
   @Column({ type: 'varchar', nullable: true })
-  gender: string;
+  gender: string | null;
 
   @Column({ nullable: true })
-  student_id: string;
+  student_id: string | null;
 
   @Column({ nullable: true })
-  external_id: string;
+  external_id: string | null;
 
   @Column({ nullable: true })
-  guardian_name: string;
+  guardian_name: string | null;
 
   @Column({ nullable: true })
-  guardian_email: string;
+  guardian_email: string | null;
 
   @Column({ nullable: true })
-  guardian_phone: string;
+  guardian_phone: string | null;
 
   @Column({ nullable: true })
-  password_hash: string;
+  password_hash: string | null;
 
   @Column({ type: 'boolean', default: false })
   is_active: boolean;
@@ -61,10 +61,12 @@ export class Contact {
   @Column({ nullable: true, type: 'timestamp' })
   password_reset_expires_at: Date | null;
 
+  @Column({ nullable: true, type: 'timestamp' })
+  token_invalidated_at: Date | null;
+
   @CreateDateColumn()
   created_at: Date;
 
-  // Relations
   @ManyToOne(() => Organization, org => org.contacts, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'organization_id' })
   organization: Organization;

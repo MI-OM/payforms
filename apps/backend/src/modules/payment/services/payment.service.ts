@@ -41,10 +41,17 @@ export class PaymentService {
   async create(organizationId: string, dto: CreatePaymentDto) {
     const reference = dto.reference || `REF-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 
+    const org = await this.organizationRepository.findOne({ where: { id: organizationId } });
+    if (org?.partial_payment_limit && Number(dto.amount) < Number(org.partial_payment_limit)) {
+      throw new BadRequestException(`Payment total must be at least ${org.partial_payment_limit}`);
+    }
+
     const payment = this.paymentRepository.create({
       organization_id: organizationId,
       submission_id: dto.submission_id,
       amount: dto.amount,
+      amount_paid: 0,
+      balance_due: dto.amount,
       reference,
       status: 'PENDING',
     });
@@ -161,10 +168,45 @@ export class PaymentService {
   }
 
   async updateStatus(organizationId: string, id: string, dto: UpdatePaymentStatusDto) {
+    const payment = await this.findById(organizationId, id);
+    if (!payment) {
+      throw new NotFoundException('Payment not found');
+    }
+
+    let amount_paid = payment.amount_paid ?? 0;
+    let balance_due = payment.balance_due ?? payment.amount;
+
+    if (dto.status === 'PAID') {
+      amount_paid = payment.amount;
+      balance_due = 0;
+    } else if (dto.status === 'PARTIAL') {
+      if (dto.amount_paid !== undefined && dto.amount_paid !== null) {
+        amount_paid = Math.min(dto.amount_paid, payment.amount);
+      }
+      if (payment.amount !== undefined) {
+        balance_due = Math.max(payment.amount - amount_paid, 0);
+      }
+    } else if (dto.status === 'FAILED' || dto.status === 'PENDING') {
+      // keep existing payment tracking values
+      amount_paid = payment.amount_paid ?? 0;
+      balance_due = payment.balance_due ?? payment.amount;
+    }
+
+    const org = await this.organizationRepository.findOne({ where: { id: organizationId } });
+    if (dto.status === 'PARTIAL' && org?.partial_payment_limit !== null && org?.partial_payment_limit !== undefined) {
+      const partialLimit = Number(org.partial_payment_limit);
+      if (amount_paid < partialLimit) {
+        throw new BadRequestException(`Partial payment must be at least ${partialLimit}`);
+      }
+    }
+
     await this.paymentRepository.update({ id, organization_id: organizationId }, {
       status: dto.status,
-      paid_at: dto.status === 'PAID' ? (dto.paid_at ?? new Date()) : null,
+      paid_at: dto.status === 'PAID' || dto.status === 'PARTIAL' ? (dto.paid_at ?? new Date()) : null,
+      amount_paid,
+      balance_due,
     });
+
     return this.findById(organizationId, id);
   }
 
@@ -183,7 +225,7 @@ export class PaymentService {
           where: { id: submission.contact_id, organization_id: organizationId },
           select: ['email'],
         });
-        customerEmail = contact?.email;
+        customerEmail = contact?.email ?? undefined;
       }
     }
 
@@ -527,11 +569,25 @@ export class PaymentService {
 
     const previousStatus = payment.status;
     const status = this.mapPaystackStatusToPaymentStatus(paystackData?.status);
-    const paidAt = status === 'PAID' && paystackData?.paid_at
+    const paidAt = (status === 'PAID' || status === 'PARTIAL') && paystackData?.paid_at
       ? new Date(paystackData.paid_at)
       : undefined;
 
-    const updatedPayment = await this.updateStatus(organizationId, payment.id, { status, paid_at: paidAt });
+    const org = await this.organizationRepository.findOne({ where: { id: organizationId } });
+    const paystackAmount = paystackData?.amount ? Number(paystackData.amount) / 100 : undefined;
+
+    if (status === 'PARTIAL' && org?.partial_payment_limit != null && paystackAmount != null) {
+      const partialLimit = Number(org.partial_payment_limit);
+      if (paystackAmount < partialLimit) {
+        throw new BadRequestException(`Partial payment must be at least ${partialLimit}`);
+      }
+    }
+
+    const updatedPayment = await this.updateStatus(organizationId, payment.id, {
+      status,
+      paid_at: paidAt,
+      amount_paid: paystackAmount,
+    });
 
     await this.paymentLogRepository.save(
       this.paymentLogRepository.create({

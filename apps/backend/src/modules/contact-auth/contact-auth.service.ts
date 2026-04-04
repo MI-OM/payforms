@@ -128,6 +128,10 @@ export class ContactAuthService {
     const organization = contact.organization ||
       (await this.organizationRepository.findOne({ where: { id: contact.organization_id } }));
 
+    if (!contact.email) {
+      throw new BadRequestException('Contact email is required to send password reset');
+    }
+
     await this.notificationService.sendPasswordResetEmail(
       organization,
       contact.email,

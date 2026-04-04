@@ -77,23 +77,27 @@ export class AuthService {
 
   async inviteUser(inviter: User, dto: InviteUserDto) {
     const organizationId = inviter.organization_id;
+    const email = this.normalizeEmail(dto.email);
 
-    const existingUser = await this.userRepository.findOne({ where: { email: dto.email } });
+    const existingUser = await this.userRepository.findOne({ where: { email } });
     if (existingUser) {
       throw new BadRequestException('A user with this email already exists');
     }
 
     const existingInvite = await this.invitationRepository.findOne({
-      where: { email: dto.email, organization_id: organizationId, accepted: false },
+      where: { email, organization_id: organizationId, accepted: false },
     });
     if (existingInvite) {
+      if (existingInvite.expires_at && existingInvite.expires_at > new Date()) {
+        throw new BadRequestException('An active invitation already exists for this email');
+      }
       await this.invitationRepository.delete({ id: existingInvite.id });
     }
 
     const token = crypto.randomBytes(32).toString('hex');
     const invitation = this.invitationRepository.create({
       organization_id: organizationId,
-      email: dto.email,
+      email,
       first_name: dto.first_name.trim(),
       last_name: dto.last_name.trim(),
       role: 'STAFF',
@@ -458,5 +462,9 @@ export class AuthService {
     }
     const normalized = value.trim();
     return normalized.length ? normalized : null;
+  }
+
+  private normalizeEmail(email: string) {
+    return email.trim().toLowerCase();
   }
 }

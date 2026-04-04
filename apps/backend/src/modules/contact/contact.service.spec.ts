@@ -112,6 +112,26 @@ describe('ContactService', () => {
     expect(result).toEqual({ data: contacts, total: 1, page: 2, limit: 10 });
   });
 
+  it('lists contacts with filters aside from group', async () => {
+    const contacts = [{ id: 'contact-2' }];
+    queryBuilder.getManyAndCount.mockResolvedValue([contacts, 1]);
+
+    const result = await contactService.findByOrganization('org-1', 1, 20, 'group-1', {
+      student_id: 'STU',
+      first_name: 'Jane',
+      last_name: 'Doe',
+      email: 'john@example.com',
+      external_id: 'ext-1',
+    });
+
+    expect(queryBuilder.andWhere).toHaveBeenCalledWith('contact.student_id ILIKE :student_id', { student_id: '%STU%' });
+    expect(queryBuilder.andWhere).toHaveBeenCalledWith('contact.first_name ILIKE :first_name', { first_name: '%Jane%' });
+    expect(queryBuilder.andWhere).toHaveBeenCalledWith('contact.last_name ILIKE :last_name', { last_name: '%Doe%' });
+    expect(queryBuilder.andWhere).toHaveBeenCalledWith('contact.email ILIKE :email', { email: '%john@example.com%' });
+    expect(queryBuilder.andWhere).toHaveBeenCalledWith('contact.external_id ILIKE :external_id', { external_id: '%ext-1%' });
+    expect(result).toEqual({ data: contacts, total: 1, page: 1, limit: 20 });
+  });
+
   it('exports contacts as CSV', async () => {
     const contacts = [
       {

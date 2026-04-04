@@ -22,6 +22,12 @@ export class Payment {
   @Column({ type: 'decimal', precision: 10, scale: 2 })
   amount: number;
 
+  @Column({ type: 'decimal', precision: 10, scale: 2, default: 0 })
+  amount_paid: number;
+
+  @Column({ type: 'decimal', precision: 10, scale: 2, default: 0 })
+  balance_due: number;
+
   @Column({ type: 'varchar', enum: ['PENDING', 'PAID', 'PARTIAL', 'FAILED'], default: 'PENDING' })
   status: 'PENDING' | 'PAID' | 'PARTIAL' | 'FAILED';
 

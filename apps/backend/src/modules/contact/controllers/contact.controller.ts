@@ -31,6 +31,7 @@ export class ContactController {
       query.page ?? 1,
       query.limit ?? 20,
       query.group_id,
+      query,
     );
   }
 

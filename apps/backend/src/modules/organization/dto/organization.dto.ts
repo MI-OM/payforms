@@ -1,4 +1,4 @@
-import { IsString, IsEmail, IsOptional, IsBoolean } from 'class-validator';
+import { IsString, IsEmail, IsOptional, IsBoolean, IsNumber } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class CreateOrganizationDto {
@@ -51,6 +51,11 @@ export class UpdateOrganizationDto {
   @IsOptional()
   @IsBoolean()
   notify_payment_failure?: boolean;
+
+  @ApiPropertyOptional({ example: 500.00, description: 'Minimum allowed partial payment amount' })
+  @IsOptional()
+  @IsNumber()
+  partial_payment_limit?: number;
 }
 
 export class UpdateOrganizationKeysDto {

@@ -255,6 +255,73 @@ describe('AuthService', () => {
     );
   });
 
+  it('blocks duplicate active invites for same email and organization', async () => {
+    const inviter = {
+      id: 'user-admin',
+      organization_id: 'org-1',
+      role: 'ADMIN',
+    } as User;
+
+    userRepository.findOne.mockResolvedValue(null);
+    invitationRepository.findOne.mockResolvedValue({
+      id: 'invite-active',
+      email: 'new@acme.com',
+      organization_id: 'org-1',
+      accepted: false,
+      expires_at: new Date(Date.now() + 1000 * 60 * 60),
+    } as Invitation);
+
+    await expect(
+      authService.inviteUser(inviter, {
+        first_name: 'Janet',
+        last_name: 'Doe',
+        email: 'NEW@acme.com',
+      }),
+    ).rejects.toThrow(BadRequestException);
+
+    expect(invitationRepository.delete).not.toHaveBeenCalled();
+    expect(invitationRepository.save).not.toHaveBeenCalled();
+  });
+
+  it('replaces expired invite and creates a new one', async () => {
+    const inviter = {
+      id: 'user-admin',
+      organization_id: 'org-1',
+      role: 'ADMIN',
+    } as User;
+    const savedInvite = {
+      id: 'invite-new',
+      email: 'new@acme.com',
+      first_name: 'Janet',
+      last_name: 'Doe',
+      role: 'STAFF',
+      token: 'b'.repeat(64),
+      expires_at: new Date(Date.now() + 1000 * 60 * 60 * 24 * 7),
+      created_at: new Date(),
+    } as Invitation;
+
+    userRepository.findOne.mockResolvedValue(null);
+    invitationRepository.findOne.mockResolvedValue({
+      id: 'invite-old',
+      email: 'new@acme.com',
+      organization_id: 'org-1',
+      accepted: false,
+      expires_at: new Date(Date.now() - 1000 * 60),
+    } as Invitation);
+    invitationRepository.save.mockResolvedValue(savedInvite);
+    organizationRepository.findOne.mockResolvedValue({ id: 'org-1', name: 'Acme' });
+
+    const result = await authService.inviteUser(inviter, {
+      first_name: 'Janet',
+      last_name: 'Doe',
+      email: 'NEW@acme.com',
+    });
+
+    expect(invitationRepository.delete).toHaveBeenCalledWith({ id: 'invite-old' });
+    expect(invitationRepository.save).toHaveBeenCalled();
+    expect(result.email).toBe('new@acme.com');
+  });
+
   it('still creates invitation when invite email sending fails', async () => {
     const inviter = {
       id: 'user-admin',

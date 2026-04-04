@@ -1,0 +1,65 @@
+
+> backend@1.0.0 test
+> jest --runInBand --runInBand src/modules/contact-auth/services/contact-auth-hardening.service.spec.ts src/modules/billing/billing.service.spec.ts src/modules/compliance/compliance.service.spec.ts
+
+ts-jest[ts-jest-transformer] (WARN) Define `ts-jest` config under `globals` is deprecated. Please do
+transform: {
+    <transform_regex>: ['ts-jest', { /* ts-jest config goes here in Jest */ }],
+},
+See more at https://kulshekhar.github.io/ts-jest/docs/getting-started/presets#advanced
+FAIL src/modules/billing/billing.service.spec.ts (6.481 s)
+  ● BillingService › getUsageReport › should include upgrade recommendation for large contacts on free plan
+
+    expect(received).toContain(expected) // indexOf
+
+    Expected value: StringContaining "Starter plan recommended"
+    Received array: []
+
+      240 |       const report = await service.getUsageReport('org-123');
+      241 |
+    > 242 |       expect(report.recommendations).toContain(
+          |                                      ^
+      243 |         expect.stringContaining('Starter plan recommended'),
+      244 |       );
+      245 |     });
+
+      at Object.<anonymous> (src/modules/billing/billing.service.spec.ts:242:38)
+
+PASS src/modules/contact-auth/services/contact-auth-hardening.service.spec.ts
+PASS src/modules/compliance/compliance.service.spec.ts
+------------------------------------|---------|----------|---------|---------|-----------------------------------------------------
+File                                | % Stmts | % Branch | % Funcs | % Lines | Uncovered Line #s                                   
+------------------------------------|---------|----------|---------|---------|-----------------------------------------------------
+All files                           |   87.07 |    67.21 |   39.28 |   90.64 |                                                     
+ audit/entities                     |   84.61 |      100 |       0 |   87.87 |                                                     
+  activity-log.entity.ts            |   85.71 |      100 |       0 |   88.88 | 41,45                                               
+  payment-log.entity.ts             |   83.33 |      100 |       0 |   86.66 | 31,35                                               
+ auth/entities                      |    90.9 |      100 |       0 |   94.73 |                                                     
+  user.entity.ts                    |    90.9 |      100 |       0 |   94.73 | 51                                                  
+ billing                            |   85.05 |    48.38 |     100 |   84.52 |                                                     
+  billing.service.ts                |   85.05 |    48.38 |     100 |   84.52 | 215,218,221,224,227,240,243,246,251,293,338,340,346 
+ compliance                         |   95.49 |    68.05 |     100 |   95.41 |                                                     
+  compliance.service.ts             |   95.49 |    68.05 |     100 |   95.41 | 129,388,394,396,398                                 
+ contact-auth/services              |     100 |    94.73 |     100 |     100 |                                                     
+  contact-auth-hardening.service.ts |     100 |    94.73 |     100 |     100 | 302                                                 
+ contact/entities                   |    87.5 |      100 |       0 |   92.85 |                                                     
+  contact.entity.ts                 |    87.5 |      100 |       0 |   92.85 | 70,74                                               
+ form/entities                      |   82.81 |      100 |       0 |   88.67 |                                                     
+  form-field.entity.ts              |   88.23 |      100 |       0 |   92.85 | 35                                                  
+  form-target.entity.ts             |   84.61 |      100 |       0 |      90 | 22                                                  
+  form.entity.ts                    |   79.41 |      100 |       0 |    86.2 | 58,62,65,73                                         
+ group/entities                     |      68 |      100 |       0 |   78.94 |                                                     
+  group.entity.ts                   |      68 |      100 |       0 |   78.94 | 31,35,39,42                                         
+ organization/entities              |   76.47 |      100 |       0 |   86.04 |                                                     
+  organization.entity.ts            |   76.47 |      100 |       0 |   86.04 | 84,87,90,93,96,99                                   
+ payment/entities                   |   81.81 |      100 |       0 |   88.88 |                                                     
+  payment.entity.ts                 |   81.81 |      100 |       0 |   88.88 | 41,45                                               
+ submission/entities                |   77.77 |      100 |       0 |   85.71 |                                                     
+  submission.entity.ts              |   77.77 |      100 |       0 |   85.71 | 29,33                                               
+------------------------------------|---------|----------|---------|---------|-----------------------------------------------------
+
+Test Suites: 1 failed, 2 passed, 3 total
+Tests:       1 failed, 48 passed, 49 total
+Snapshots:   0 total
+Time:        7.972 s, estimated 68 s
+Ran all test suites matching /src\/modules\/contact-auth\/services\/contact-auth-hardening.service.spec.ts|src\/modules\/billing\/billing.service.spec.ts|src\/modules\/compliance\/compliance.service.spec.ts/i.

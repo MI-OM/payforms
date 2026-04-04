@@ -56,6 +56,27 @@ export class Organization {
   @Column({ type: 'boolean', default: true })
   notify_payment_failure: boolean;
 
+  @Column({ type: 'decimal', precision: 10, scale: 2, nullable: true })
+  partial_payment_limit: number | null;
+
+  @Column({ type: 'varchar', default: 'free' })
+  billing_plan_tier: string;
+
+  @Column({ type: 'integer', nullable: true, default: 1095 })
+  data_retention_contact_days: number;
+
+  @Column({ type: 'integer', nullable: true, default: 2555 })
+  data_retention_submission_days: number;
+
+  @Column({ type: 'integer', nullable: true, default: 2555 })
+  data_retention_audit_days: number;
+
+  @Column({ type: 'boolean', default: true })
+  auto_purge_retention_enabled: boolean;
+
+  @Column({ type: 'timestamp', nullable: true })
+  last_data_retention_purge_at: Date | null;
+
   @CreateDateColumn()
   created_at: Date;
 

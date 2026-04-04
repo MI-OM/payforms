@@ -63,7 +63,7 @@ describe('ContactController', () => {
 
     const result = await contactController.listContacts(req as any, query as any);
 
-    expect(contactService.findByOrganization).toHaveBeenCalledWith('org-1', 1, 20, undefined);
+    expect(contactService.findByOrganization).toHaveBeenCalledWith('org-1', 1, 20, undefined, query);
     expect(result).toEqual({ data: [], total: 0, page: 1, limit: 20 });
   });
 

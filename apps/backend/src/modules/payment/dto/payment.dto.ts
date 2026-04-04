@@ -80,6 +80,11 @@ export class UpdatePaymentStatusDto {
   @ApiPropertyOptional({ example: '2026-04-02T02:00:00.000Z' })
   @IsOptional()
   paid_at?: Date;
+
+  @ApiPropertyOptional({ example: 1500, description: 'Used for partial payment tracking' })
+  @IsOptional()
+  @IsNumber()
+  amount_paid?: number;
 }
 
 export class PaystackWebhookDto {

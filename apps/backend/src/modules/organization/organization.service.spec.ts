@@ -135,11 +135,16 @@ describe('OrganizationService', () => {
   it('uploads a logo and returns updated org', async () => {
     const updated = { id: 'org-1', logo_url: 'https://example.com/logo.png' } as Organization;
 
+    global.fetch = jest.fn().mockResolvedValue({
+      headers: { get: jest.fn().mockReturnValue('1024') },
+    }) as any;
+
     organizationRepository.update.mockResolvedValue(undefined);
     organizationRepository.findOne.mockResolvedValue(updated);
 
     const result = await service.uploadLogo('org-1', 'https://example.com/logo.png');
 
+    expect(global.fetch).toHaveBeenCalledWith('https://example.com/logo.png', expect.objectContaining({ method: 'HEAD' }));
     expect(organizationRepository.update).toHaveBeenCalledWith('org-1', { logo_url: 'https://example.com/logo.png' });
     expect(result).toEqual(updated);
   });

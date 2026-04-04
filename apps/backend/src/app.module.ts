@@ -14,6 +14,9 @@ import { NotificationModule } from './modules/notification/notification.module';
 import { ReportModule } from './modules/report/report.module';
 import { HealthModule } from './modules/health/health.module';
 import { StorageModule } from './modules/storage/storage.module';
+import { TenantResolverModule } from './modules/tenant/tenant-resolver.module';
+import { BillingModule } from './modules/billing/billing.module';
+import { ComplianceModule } from './modules/compliance/compliance.module';
 import { CacheModule } from './common/cache/cache.module';
 
 @Module({
@@ -58,6 +61,9 @@ import { CacheModule } from './common/cache/cache.module';
     StorageModule,
     ReportModule,
     HealthModule,
+    TenantResolverModule,
+    BillingModule,
+    ComplianceModule,
   ],
   controllers: [],
   providers: [],

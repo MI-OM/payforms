@@ -3,14 +3,17 @@
 ## Auth Endpoints
 
 - `POST /auth/register`
-  - Body: `{ organization_name, email, password, title?, designation? }`
+  - Body: `{ organization_name, email, password }`
 - `POST /auth/login`
   - Body: `{ email, password }`
 - `POST /auth/invite`
   - Auth: `Bearer <JWT>` (ADMIN only)
-  - Body: `{ email, role?, title?, designation? }`
+  - Body: `{ first_name, last_name, email }`
+  - Note: invited users are created with role `STAFF`
+  - Note: sends invitation email with acceptance link + token, and returns `invite_email_sent`
+  - Note: blocks duplicate active invitations for the same organization + email
 - `POST /auth/accept-invite`
-  - Body: `{ token, password, title?, designation? }`
+  - Body: `{ token, password }`
 - `POST /auth/refresh`
   - Body: `{ refresh_token }`
 - `POST /auth/password-reset/request`
@@ -25,9 +28,20 @@
   - Auth: `Bearer <JWT>`
 - `POST /auth/logout`
   - Auth: `Bearer <JWT>`
+- `GET /auth/profile`
+  - Auth: `Bearer <JWT>` (ADMIN or STAFF)
+  - Returns current user profile from DB
+- `PATCH /auth/profile`
+  - Auth: `Bearer <JWT>` (ADMIN or STAFF)
+  - Body values:
+    - `first_name?`
+    - `middle_name?`
+    - `last_name?`
+    - `title?`
+    - `designation?`
 - `GET /auth/me`
   - Auth: `Bearer <JWT>`
-  - Returns user profile including `title` and `designation` when set
+  - Returns current user profile (same shape as `/auth/profile`)
 
 ## Organization Endpoints
 
@@ -38,14 +52,24 @@
   - Body values:
     - `name?`
     - `email?`
+    - `subdomain?` (e.g. `school`)
+    - `custom_domain?` (e.g. `pay.myuni.com`)
     - `require_contact_login?`
     - `notify_submission_confirmation?`
     - `notify_payment_confirmation?`
     - `notify_payment_failure?`
 - `GET /organization/settings`
   - Auth: `Bearer <JWT>` (ADMIN or STAFF)
+  - Returns organization-level settings only:
+    - `name`, `email`, `email_verified`, `logo_url`
+    - `subdomain`, `custom_domain`
+    - `require_contact_login`
+    - `notify_submission_confirmation`
+    - `notify_payment_confirmation`
+    - `notify_payment_failure`
 - `PATCH /organization/settings`
   - Auth: `Bearer <JWT>` (ADMIN)
+  - Updates organization-level settings only (not user/admin profile)
 - `PATCH /organization/keys`
   - Auth: `Bearer <JWT>` (ADMIN)
   - Body values:
@@ -159,10 +183,21 @@
 - `POST /contacts`
   - Auth: `Bearer <JWT>`
   - Body:
-    - `name`
+    - `first_name?`
+    - `middle_name?`
+    - `last_name?`
     - `email`
     - `phone?`
+    - `gender?`
+    - `student_id?`
     - `external_id?`
+    - `guardian_name?`
+    - `guardian_email?`
+    - `guardian_phone?`
+    - `require_login?` (boolean, defaults to `true`)
+    - `must_reset_password?` (boolean override)
+  - Notes:
+    - Newly created contacts with `must_reset_password=true` receive password setup email automatically.
 - `GET /contacts`
   - Auth: `Bearer <JWT>`
   - Query: `group_id?`, `page?`, `limit?`
@@ -232,6 +267,8 @@
       - `require_login?` (boolean)
       - `is_active?` (boolean)
       - `must_reset_password?` (boolean override)
+  - Notes:
+    - Direct import sends password setup emails for newly created contacts that require reset/setup.
 - `POST /contacts/imports/validate`
   - Auth: `Bearer <JWT>`
   - Body: same shape as `/contacts/import`
@@ -252,19 +289,41 @@
 ## Contact Auth Endpoints
 
 - `POST /contact-auth/login`
-  - Body: `{ email, password }`
+  - Body:
+    - `email`
+    - `password`
+    - `organization_id?`
+    - `organization_subdomain?`
+    - `organization_domain?`
+  - Notes:
+    - `organization_id` is legacy/backward-compatible.
+    - For subdomain/custom-domain rollouts, tenant context can be inferred from request host when configured.
 - `POST /contact-auth/set-password`
-  - Body: `{ email, password }`
+  - Body: `{ token, password }`
 - `POST /contact-auth/reset/request`
-  - Body: `{ email }`
+  - Body:
+    - `email`
+    - `organization_id?`
+    - `organization_subdomain?`
+    - `organization_domain?`
 - `POST /contact-auth/reset/confirm`
   - Body: `{ token, password }`
 - `POST /contact-auth/password-reset/request`
-  - Body: `{ email }`
+  - Body:
+    - `email`
+    - `organization_id?`
+    - `organization_subdomain?`
+    - `organization_domain?`
 - `POST /contact-auth/password-reset/confirm`
   - Body: `{ token, password }`
 - `GET /contact-auth/me`
   - Auth: contact JWT
+- `GET /contact-auth/payments/:id/receipt`
+  - Auth: contact JWT
+  - Returns downloadable PDF receipt for the authenticated contact's own transaction
+- `GET /contact-auth/payments/reference/:reference/receipt`
+  - Auth: contact JWT
+  - Returns downloadable PDF receipt by payment reference for the authenticated contact
 
 ## Payment Endpoints
 
@@ -275,6 +334,9 @@
   - Auth: `Bearer <JWT>`
 - `GET /payments/verify/:reference`
   - Auth: `Bearer <JWT>`
+  - Verifies against Paystack and persists transaction completion:
+    - updates `payments.status` / `paid_at`
+    - writes payment event log
 - `POST /payments`
   - Auth: `Bearer <JWT>`
   - Body:
@@ -308,6 +370,9 @@
 
 - `GET /public/forms/:slug`
   - Header: `Authorization: Bearer <contact token>` optional for targeted forms
+- `GET /public/payments/callback`
+  - Query: `reference` or `trxref`
+  - Purpose: callback-safe verification endpoint used after Paystack redirect to finalize and log transaction status
 - `GET /public/forms/:slug/widget-config`
   - Header: `Authorization: Bearer <contact token>` optional for targeted forms
   - Returns:
@@ -351,12 +416,23 @@
   - Body:
     - `contact_ids: string[]`
     - `message?`
+- `POST /notifications/reminder/groups`
+  - Auth: `Bearer <JWT>`
+  - Body:
+    - `group_ids: string[]`
+    - `message?`
 - `POST /notifications/schedule`
   - Auth: `Bearer <JWT>`
   - Body:
     - `subject`
     - `body`
     - `recipients: string[]`
+- `POST /notifications/schedule/groups`
+  - Auth: `Bearer <JWT>`
+  - Body:
+    - `group_ids: string[]`
+    - `subject`
+    - `body`
 
 ## Audit Endpoints
 
@@ -375,6 +451,14 @@
 - `GET /reports/analytics`
   - Auth: `Bearer <JWT>`
   - Query: `start_date?`, `end_date?`
+- `GET /reports/forms/performance`
+  - Auth: `Bearer <JWT>`
+  - Query: `start_date?`, `end_date?`
+  - Returns per-form metrics:
+    - `submissions`, `payments`
+    - payment status counts (`paid`, `pending`, `failed`, `partial`)
+    - amount totals by status
+    - `completion_rate`, `collection_rate`
 - `GET /reports/export`
   - Auth: `Bearer <JWT>`
   - Query:

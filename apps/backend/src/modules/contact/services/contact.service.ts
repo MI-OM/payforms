@@ -6,7 +6,7 @@ import { Contact } from '../entities/contact.entity';
 import { Payment } from '../../payment/entities/payment.entity';
 import { Submission } from '../../submission/entities/submission.entity';
 import { Group } from '../../group/entities/group.entity';
-import { CreateContactDto, UpdateContactDto } from '../dto/contact.dto';
+import { CreateContactDto, UpdateContactDto, ContactQueryDto } from '../dto/contact.dto';
 
 type ContactImportInput = {
   first_name?: string;
@@ -69,6 +69,7 @@ export class ContactService {
     page: number = 1,
     limit: number = 20,
     groupId?: string,
+    filters: Partial<ContactQueryDto> = {},
   ) {
     const qb = this.contactRepository.createQueryBuilder('contact')
       .leftJoinAndSelect('contact.groups', 'group')
@@ -76,6 +77,26 @@ export class ContactService {
 
     if (groupId) {
       qb.andWhere('group.id = :groupId', { groupId });
+    }
+
+    if (filters.student_id) {
+      qb.andWhere('contact.student_id ILIKE :student_id', { student_id: `%${filters.student_id}%` });
+    }
+
+    if (filters.first_name) {
+      qb.andWhere('contact.first_name ILIKE :first_name', { first_name: `%${filters.first_name}%` });
+    }
+
+    if (filters.last_name) {
+      qb.andWhere('contact.last_name ILIKE :last_name', { last_name: `%${filters.last_name}%` });
+    }
+
+    if (filters.email) {
+      qb.andWhere('contact.email ILIKE :email', { email: `%${filters.email}%` });
+    }
+
+    if (filters.external_id) {
+      qb.andWhere('contact.external_id ILIKE :external_id', { external_id: `%${filters.external_id}%` });
     }
 
     const [data, total] = await qb

@@ -84,9 +84,43 @@ describe('PaymentService', () => {
 
     const result = await service.create('org-1', dto as any);
 
-    expect(paymentRepository.create).toHaveBeenCalledWith(expect.objectContaining({ organization_id: 'org-1', submission_id: 'submission-1', amount: 1000, status: 'PENDING' }));
+    expect(paymentRepository.create).toHaveBeenCalledWith(expect.objectContaining({ organization_id: 'org-1', submission_id: 'submission-1', amount: 1000, amount_paid: 0, balance_due: 1000, status: 'PENDING' }));
     expect(paymentRepository.save).toHaveBeenCalled();
     expect(result).toEqual(saved);
+  });
+
+  it('rejects payment creation when below org partial payment limit', async () => {
+    organizationRepository.findOne.mockResolvedValue({ id: 'org-1', partial_payment_limit: 500 } as Organization);
+
+    await expect(service.create('org-1', { submission_id: 'submission-1', amount: 400 } as any)).rejects.toThrow(BadRequestException);
+  });
+
+  it('updates payment status to PARTIAL and sets amount_paid/balance_due', async () => {
+    const payment = { id: 'payment-1', amount: 1000, amount_paid: 0, balance_due: 1000, status: 'PENDING' } as Payment;
+    paymentRepository.findOne.mockResolvedValue(payment);
+    paymentRepository.update.mockResolvedValue(undefined);
+
+    const result = await service.updateStatus('org-1', 'payment-1', { status: 'PARTIAL', amount_paid: 400 } as any);
+
+    expect(paymentRepository.update).toHaveBeenCalledWith(
+      { id: 'payment-1', organization_id: 'org-1' },
+      expect.objectContaining({ status: 'PARTIAL', paid_at: expect.any(Date), amount_paid: 400, balance_due: 600 }),
+    );
+    expect(result).toEqual(payment);
+  });
+
+  it('updates payment status to PAID and sets amount_paid to amount and balance_due to 0', async () => {
+    const payment = { id: 'payment-2', amount: 1500, amount_paid: 200, balance_due: 1300, status: 'PENDING' } as Payment;
+    paymentRepository.findOne.mockResolvedValue(payment);
+    paymentRepository.update.mockResolvedValue(undefined);
+
+    const result = await service.updateStatus('org-1', 'payment-2', { status: 'PAID' } as any);
+
+    expect(paymentRepository.update).toHaveBeenCalledWith(
+      { id: 'payment-2', organization_id: 'org-1' },
+      expect.objectContaining({ status: 'PAID', paid_at: expect.any(Date), amount_paid: 1500, balance_due: 0 }),
+    );
+    expect(result).toEqual(payment);
   });
 
   it('finds payments by organization', async () => {
