@@ -160,8 +160,8 @@ describe('ContactService', () => {
 
     const csv = await contactService.exportContacts('org-1', 'group-1');
 
-    expect(csv).toContain('id,first_name,middle_name,last_name,email,phone,gender,student_id,external_id,guardian_name,guardian_email,guardian_phone,status,is_active,require_login,must_reset_password,groups,group_paths,created_at');
-    expect(csv).toContain('contact-1');
+    expect(csv).toContain('first_name,middle_name,last_name,email,phone,gender,student_id,external_id,guardian_name,guardian_email,guardian_phone,status,is_active,require_login,must_reset_password,groups,group_paths,created_at');
+    expect(csv).toContain('Jane');
     expect(csv).toContain('Group A');
   });
 

@@ -132,7 +132,6 @@ export class ContactService {
       const requireLogin = contact.must_reset_password || !!contact.password_hash;
 
       return [
-        contact.id,
         contact.first_name ?? '',
         contact.middle_name ?? '',
         contact.last_name ?? '',
@@ -154,7 +153,7 @@ export class ContactService {
       ].map(value => this.escapeCsv(value)).join(',');
     });
 
-    return `id,first_name,middle_name,last_name,email,phone,gender,student_id,external_id,guardian_name,guardian_email,guardian_phone,status,is_active,require_login,must_reset_password,groups,group_paths,created_at\n${rows.join('\n')}`;
+    return `first_name,middle_name,last_name,email,phone,gender,student_id,external_id,guardian_name,guardian_email,guardian_phone,status,is_active,require_login,must_reset_password,groups,group_paths,created_at\n${rows.join('\n')}`;
   }
 
   async findById(organizationId: string, id: string) {
