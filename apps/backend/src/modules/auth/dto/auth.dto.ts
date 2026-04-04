@@ -1,5 +1,9 @@
-import { IsEmail, IsString, MinLength, IsOptional } from 'class-validator';
+import { IsEmail, IsString, MinLength, IsOptional, Matches } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+
+const PASSWORD_STRENGTH_REGEX = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^\w\s]).{12,}$/;
+const PASSWORD_STRENGTH_MESSAGE =
+  'Password must be at least 12 characters long and include uppercase, lowercase, number, and special character.';
 
 export class RegisterDto {
   @ApiProperty({ example: 'Acme Corp' })
@@ -13,7 +17,8 @@ export class RegisterDto {
 
   @ApiProperty({ example: 'StrongPass123!' })
   @IsString()
-  @MinLength(8)
+  @MinLength(12)
+  @Matches(PASSWORD_STRENGTH_REGEX, { message: PASSWORD_STRENGTH_MESSAGE })
   password: string;
 }
 
@@ -56,7 +61,8 @@ export class AcceptInviteDto {
 
   @ApiProperty({ example: 'StrongPass123!' })
   @IsString()
-  @MinLength(8)
+  @MinLength(12)
+  @Matches(PASSWORD_STRENGTH_REGEX, { message: PASSWORD_STRENGTH_MESSAGE })
   password: string;
 }
 
@@ -100,7 +106,8 @@ export class PasswordResetConfirmDto {
 
   @ApiProperty({ example: 'NewStrongPass123!' })
   @IsString()
-  @MinLength(8)
+  @MinLength(12)
+  @Matches(PASSWORD_STRENGTH_REGEX, { message: PASSWORD_STRENGTH_MESSAGE })
   password: string;
 }
 

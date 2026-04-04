@@ -131,7 +131,7 @@ describe('ContactAuthService', () => {
     contactRepository.findOne.mockResolvedValue(contact);
     contactRepository.save.mockImplementation(async updatedContact => updatedContact);
 
-    const result = await service.setPassword({ token: 'reset-token', password: 'NewPass123' } as any);
+    const result = await service.setPassword({ token: 'reset-token', password: 'NewPassword123!' } as any);
 
     expect(contactRepository.findOne).toHaveBeenCalledWith({ where: { password_reset_token: 'reset-token' } });
     expect(result.password_hash).toBeDefined();
@@ -209,7 +209,7 @@ describe('ContactAuthService', () => {
     contactRepository.findOne.mockResolvedValue(contact);
     contactRepository.save.mockImplementation(async updatedContact => updatedContact as any);
 
-    const result = await service.confirmPasswordReset({ token: 'reset-token', password: 'NewPass123' } as any);
+    const result = await service.confirmPasswordReset({ token: 'reset-token', password: 'NewPassword123!' } as any);
 
     expect(contactRepository.findOne).toHaveBeenCalledWith({ where: { password_reset_token: 'reset-token' } });
     expect(result.password_hash).toBeDefined();
@@ -217,5 +217,22 @@ describe('ContactAuthService', () => {
     expect(result.must_reset_password).toBe(false);
     expect(result.password_reset_token).toBeNull();
     expect(result.password_reset_expires_at).toBeNull();
+  });
+
+  it('throws BadRequestException for weak contact password reset passwords', async () => {
+    const futureDate = new Date(Date.now() + 1000 * 60 * 60);
+    const contact = {
+      id: 'contact-1',
+      password_reset_token: 'reset-token',
+      password_reset_expires_at: futureDate,
+      must_reset_password: true,
+      is_active: false,
+    } as unknown as Contact;
+
+    contactRepository.findOne.mockResolvedValue(contact);
+
+    await expect(
+      service.confirmPasswordReset({ token: 'reset-token', password: 'weakpass' } as any),
+    ).rejects.toThrow('Password must be at least 12 characters long');
   });
 });

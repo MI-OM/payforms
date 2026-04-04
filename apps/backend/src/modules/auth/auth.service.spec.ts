@@ -98,7 +98,7 @@ describe('AuthService', () => {
     const result = await authService.register({
       organization_name: 'Acme',
       email: 'admin@acme.com',
-      password: 'Password123',
+      password: 'StrongPass123!',
     });
 
     expect(organizationRepository.create).toHaveBeenCalledWith({
@@ -386,7 +386,7 @@ describe('AuthService', () => {
     invitationRepository.save.mockResolvedValue(invitation);
     userRepository.update.mockResolvedValue(undefined);
 
-    const result = await authService.acceptInvite({ token: 'token-123', password: 'Password123' });
+    const result = await authService.acceptInvite({ token: 'token-123', password: 'Password123!' });
 
     expect(result.user.email).toBe('invitee@acme.com');
     expect(result.access_token).toBe('access-token');
@@ -444,11 +444,23 @@ describe('AuthService', () => {
 
     const result = await authService.confirmPasswordReset({
       token: 'token-1',
-      password: 'NewPassword123',
+      password: 'NewPassword123!',
     });
 
     expect(result).toEqual({ success: true });
     expect(userRepository.save).toHaveBeenCalled();
+  });
+
+  it('throws BadRequestException for weak password during password reset', async () => {
+    await expect(
+      authService.confirmPasswordReset({ token: 'token-1', password: 'weakpass' }),
+    ).rejects.toThrow(BadRequestException);
+  });
+
+  it('throws BadRequestException when accepting invite with a weak password', async () => {
+    await expect(
+      authService.acceptInvite({ token: 'token-1', password: 'weakpass' }),
+    ).rejects.toThrow(BadRequestException);
   });
 
   it('gets profile for an existing user', async () => {

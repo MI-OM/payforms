@@ -20,6 +20,7 @@ import {
   VerifyOrganizationEmailDto,
 } from './dto/auth.dto';
 import { NotificationService } from '../notification/notification.service';
+import { validatePasswordStrength } from '../../common/security/password-policy';
 
 @Injectable()
 export class AuthService {
@@ -36,6 +37,8 @@ export class AuthService {
   ) {}
 
   async register(dto: RegisterDto) {
+    validatePasswordStrength(dto.password);
+
     // Create organization
     const organization = this.organizationRepository.create({
       name: dto.organization_name,
@@ -150,6 +153,8 @@ export class AuthService {
   }
 
   async acceptInvite(dto: AcceptInviteDto) {
+    validatePasswordStrength(dto.password);
+
     const invitation = await this.invitationRepository.findOne({
       where: { token: dto.token },
     });
@@ -310,6 +315,7 @@ export class AuthService {
   }
 
   async confirmPasswordReset(dto: PasswordResetConfirmDto) {
+    validatePasswordStrength(dto.password);
     const user = await this.userRepository.findOne({
       where: { password_reset_token: dto.token },
     });

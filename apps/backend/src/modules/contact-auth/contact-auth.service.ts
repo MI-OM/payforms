@@ -8,6 +8,7 @@ import { Contact } from '../contact/entities/contact.entity';
 import { Organization } from '../organization/entities/organization.entity';
 import { NotificationService } from '../notification/notification.service';
 import { ConfigService } from '@nestjs/config';
+import { validatePasswordStrength } from '../../common/security/password-policy';
 import {
   ContactLoginDto,
   ContactSetPasswordDto,
@@ -142,6 +143,7 @@ export class ContactAuthService {
   }
 
   async confirmPasswordReset(dto: ContactResetPasswordDto) {
+    validatePasswordStrength(dto.password);
     const contact = await this.contactRepository.findOne({
       where: { password_reset_token: dto.token },
     });
