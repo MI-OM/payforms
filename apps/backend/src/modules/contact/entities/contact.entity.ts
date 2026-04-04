@@ -10,43 +10,43 @@ export class Contact {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column({ type: 'varchar' })
+  @Column('varchar')
   organization_id: string;
 
-  @Column({ type: 'varchar', nullable: true })
+  @Column('varchar', { nullable: true })
   first_name: string | null;
 
-  @Column({ type: 'varchar', nullable: true })
+  @Column('varchar', { nullable: true })
   middle_name: string | null;
 
-  @Column({ type: 'varchar', nullable: true })
+  @Column('varchar', { nullable: true })
   last_name: string | null;
 
-  @Column({ type: 'varchar', nullable: true })
+  @Column('varchar', { nullable: true })
   email: string | null;
 
-  @Column({ type: 'varchar', nullable: true })
+  @Column('varchar', { nullable: true })
   phone: string | null;
 
-  @Column({ type: 'varchar', nullable: true })
+  @Column('varchar', { nullable: true })
   gender: string | null;
 
-  @Column({ type: 'varchar', nullable: true })
+  @Column('varchar', { nullable: true })
   student_id: string | null;
 
-  @Column({ type: 'varchar', nullable: true })
+  @Column('varchar', { nullable: true })
   external_id: string | null;
 
-  @Column({ type: 'varchar', nullable: true })
+  @Column('varchar', { nullable: true })
   guardian_name: string | null;
 
-  @Column({ type: 'varchar', nullable: true })
+  @Column('varchar', { nullable: true })
   guardian_email: string | null;
 
-  @Column({ type: 'varchar', nullable: true })
+  @Column('varchar', { nullable: true })
   guardian_phone: string | null;
 
-  @Column({ type: 'varchar', nullable: true })
+  @Column('varchar', { nullable: true })
   password_hash: string | null;
 
   @Column({ type: 'boolean', default: false })
