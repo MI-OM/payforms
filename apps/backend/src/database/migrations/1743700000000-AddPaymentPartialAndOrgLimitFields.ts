@@ -6,6 +6,16 @@ export class AddPaymentPartialAndOrgLimitFields1743700000000 implements Migratio
   public async up(queryRunner: QueryRunner): Promise<void> {
     await this.addColumnIfMissing(
       queryRunner,
+      'forms',
+      new TableColumn({
+        name: 'allow_partial',
+        type: 'boolean',
+        default: false,
+      }),
+    );
+
+    await this.addColumnIfMissing(
+      queryRunner,
       'payments',
       new TableColumn({
         name: 'total_amount',
@@ -58,6 +68,7 @@ export class AddPaymentPartialAndOrgLimitFields1743700000000 implements Migratio
     await this.dropColumnIfExists(queryRunner, 'payments', 'balance_due');
     await this.dropColumnIfExists(queryRunner, 'payments', 'amount_paid');
     await this.dropColumnIfExists(queryRunner, 'payments', 'total_amount');
+    await this.dropColumnIfExists(queryRunner, 'forms', 'allow_partial');
   }
 
   private async addColumnIfMissing(queryRunner: QueryRunner, tableName: string, column: TableColumn) {
