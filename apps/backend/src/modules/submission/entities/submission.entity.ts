@@ -1,6 +1,7 @@
 import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, ManyToOne, JoinColumn, OneToMany, Index } from 'typeorm';
 import { Organization } from '../../organization/entities/organization.entity';
 import { Payment } from '../../payment/entities/payment.entity';
+import { Contact } from '../../contact/entities/contact.entity';
 
 @Entity('submissions')
 @Index(['organization_id', 'form_id'])
@@ -29,6 +30,10 @@ export class Submission {
   @ManyToOne(() => Organization, org => org.activity_logs, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'organization_id' })
   organization: Organization;
+
+  @ManyToOne(() => Contact, contact => contact.submissions, { onDelete: 'SET NULL', nullable: true })
+  @JoinColumn({ name: 'contact_id' })
+  contact: Contact;
 
   @OneToMany(() => Payment, payment => payment.submission)
   payments: Payment[];

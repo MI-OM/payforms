@@ -1,6 +1,7 @@
-import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, ManyToOne, JoinColumn, ManyToMany, JoinTable, Index } from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, ManyToOne, JoinColumn, ManyToMany, JoinTable, OneToMany, Index } from 'typeorm';
 import { Organization } from '../../organization/entities/organization.entity';
 import { Group } from '../../group/entities/group.entity';
+import { Submission } from '../../submission/entities/submission.entity';
 
 @Entity('contacts')
 @Index(['organization_id', 'email'], { unique: true })
@@ -78,4 +79,7 @@ export class Contact {
     inverseJoinColumn: { name: 'group_id', referencedColumnName: 'id' },
   })
   groups: Group[];
+
+  @OneToMany(() => Submission, submission => submission.contact)
+  submissions: Submission[];
 }
