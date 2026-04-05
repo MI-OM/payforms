@@ -1,5 +1,33 @@
 # Payforms API Usage Workflows
 
+## What's New (April 2026)
+
+### Partial Payment Support
+- **New Feature**: Forms can now accept partial payments when `allow_partial` is enabled.
+- **Updated Endpoint**: `POST /public/forms/:slug/submit` now accepts `partial_amount` parameter.
+- **Impact**: Contacts can pay portions of form fees, with balance tracking across multiple payments.
+- **Developer Note**: Payment records now include `total_amount` for balance calculations. Status can be `PARTIAL` for incomplete payments.
+
+### Group Contributions Reporting
+- **New Endpoint**: `GET /reports/groups/contributions`
+- **Purpose**: Shows total contributions by each group to forms, including deficit calculations.
+- **Query Params**: `form_id?`, `start_date?`, `end_date?`
+- **Response**: Hierarchical group data with contribution amounts and deficits.
+
+### Form Performance Reporting
+- **New Endpoint**: `GET /reports/forms/performance`
+- **Purpose**: Provides per-form metrics including submissions, payments, and conversion rates.
+- **Query Params**: `start_date?`, `end_date?`
+- **Response**: Aggregate totals and per-form performance data.
+
+### Contact Import Validation Improvements
+- **Updated**: Contact import now accepts both `first_name`/`last_name` fields or legacy `name` field.
+- **Impact**: More flexible import formats supported without validation errors.
+
+### Group Hierarchy Aggregation
+- **Fixed**: Parent groups now correctly aggregate all contacts from subgroups.
+- **Impact**: Group contact counts and hierarchies reflect complete membership.
+
 This document describes the major Payforms API workflows, including each endpoint consumed and the process flow for typical frontend and backend scenarios.
 
 ## 1. Authentication Workflows

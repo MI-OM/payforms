@@ -1,5 +1,22 @@
 # Payforms Backend API Reference
 
+## What's New (April 2026)
+
+### Partial Payment Support
+- **Updated Endpoint**: `POST /public/forms/:slug/submit` now accepts `partial_amount` parameter for partial payments.
+- **New Fields**: Payment entities now include `total_amount` and `balance_due` for balance tracking.
+- **New Status**: Payments can have `PARTIAL` status for incomplete payments.
+
+### New Report Endpoints
+- `GET /reports/forms/performance`: Per-form performance metrics with conversion rates.
+- `GET /reports/groups/contributions`: Group-level contribution analysis with deficit calculations.
+
+### Contact Import Improvements
+- Contact import validation now accepts both `first_name`/`last_name` and legacy `name` fields.
+
+### Group Hierarchy Fixes
+- Group contact aggregation now includes all subgroup contacts in parent groups.
+
 ## Auth Endpoints
 
 - `POST /auth/register`
@@ -258,7 +275,8 @@
   - Body:
     - `contacts: [{ ... }]`
     - Per contact row fields:
-      - `name`
+      - `first_name?` or `name` (legacy)
+      - `last_name?`
       - `email`
       - `phone?`
       - `external_id?`
@@ -270,6 +288,7 @@
       - `must_reset_password?` (boolean override)
   - Notes:
     - Direct import sends password setup emails for newly created contacts that require reset/setup.
+    - Accepts either `first_name`/`last_name` or legacy `name` field.
 - `POST /contacts/imports/validate`
   - Auth: `Bearer <JWT>`
   - Body: same shape as `/contacts/import`
@@ -409,6 +428,7 @@
     - `data: { ...field values }`
     - `contact_email?`
     - `contact_name?`
+    - `partial_amount?` (number, for partial payments when form.allow_partial is true)
 
 ## Notification Endpoints
 
