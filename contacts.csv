@@ -1,0 +1,101 @@
+first_name,last_name,email,phone,gender,student_id,external_id,guardian_name,guardian_email,guardian_phone,groups,group_paths,require_login,is_active,must_reset_password
+Jane,Smith,jane1@example.com,+2348012345001,F,STU-001,EXT-101,Daniel Smith,guardian1@example.com,+2348098765001,"""Alumni""","""Faculty > Arts""",true,true,false
+Michael,Johnson,michael2@example.com,+2348012345002,M,STU-002,EXT-102,Olivia Johnson,guardian2@example.com,+2348098765002,"""Returning Students""","""Faculty > Science""",true,true,false
+Emily,Davis,emily3@example.com,+2348012345003,F,STU-003,EXT-103,James Davis,guardian3@example.com,+2348098765003,"""Priority""","""Faculty > Business""",true,true,true
+Daniel,Wilson,daniel4@example.com,+2348012345004,M,STU-004,EXT-104,Sophia Wilson,guardian4@example.com,+2348098765004,"""Returning Students; Priority""","""Faculty > Engineering""",true,true,false
+Olivia,Martinez,olivia5@example.com,+2348012345005,F,STU-005,EXT-105,Benjamin Martinez,guardian5@example.com,+2348098765005,"""Alumni""","""Faculty > Arts""",true,true,false
+James,Anderson,james6@example.com,+2348012345006,M,STU-006,EXT-106,Isabella Anderson,guardian6@example.com,+2348098765006,"""Returning Students""","""Faculty > Science""",true,true,true
+Sophia,Taylor,sophia7@example.com,+2348012345007,F,STU-007,EXT-107,Liam Taylor,guardian7@example.com,+2348098765007,"""Priority""","""Faculty > Business""",true,true,false
+Benjamin,Thomas,benjamin8@example.com,+2348012345008,M,STU-008,EXT-108,Ava Thomas,guardian8@example.com,+2348098765008,"""Returning Students; Priority""","""Faculty > Engineering""",true,true,false
+Isabella,Hernandez,isabella9@example.com,+2348012345009,F,STU-009,EXT-109,Noah Hernandez,guardian9@example.com,+2348098765009,"""Alumni""","""Faculty > Arts""",true,true,true
+Liam,Moore,liam10@example.com,+2348012345010,M,STU-010,EXT-110,Mia Moore,guardian10@example.com,+2348098765010,"""Returning Students""","""Faculty > Science""",true,true,false
+Ava,Martin,ava11@example.com,+2348012345011,F,STU-011,EXT-111,Ethan Martin,guardian11@example.com,+2348098765011,"""Priority""","""Faculty > Business""",true,true,false
+Noah,Jackson,noah12@example.com,+2348012345012,M,STU-012,EXT-112,Charlotte Jackson,guardian12@example.com,+2348098765012,"""Returning Students; Priority""","""Faculty > Engineering""",true,true,true
+Mia,Thompson,mia13@example.com,+2348012345013,F,STU-013,EXT-113,Lucas Thompson,guardian13@example.com,+2348098765013,"""Alumni""","""Faculty > Arts""",true,true,false
+Ethan,White,ethan14@example.com,+2348012345014,M,STU-014,EXT-114,Amelia White,guardian14@example.com,+2348098765014,"""Returning Students""","""Faculty > Science""",true,true,false
+Charlotte,Lopez,charlotte15@example.com,+2348012345015,F,STU-015,EXT-115,Mason Lopez,guardian15@example.com,+2348098765015,"""Priority""","""Faculty > Business""",true,true,true
+Lucas,Lee,lucas16@example.com,+2348012345016,M,STU-016,EXT-116,Harper Lee,guardian16@example.com,+2348098765016,"""Returning Students; Priority""","""Faculty > Engineering""",true,true,false
+Amelia,Gonzalez,amelia17@example.com,+2348012345017,F,STU-017,EXT-117,John Gonzalez,guardian17@example.com,+2348098765017,"""Alumni""","""Faculty > Arts""",true,true,false
+Mason,Clark,mason18@example.com,+2348012345018,M,STU-018,EXT-118,Jane Clark,guardian18@example.com,+2348098765018,"""Returning Students""","""Faculty > Science""",true,true,true
+Harper,Lewis,harper19@example.com,+2348012345019,F,STU-019,EXT-119,Michael Lewis,guardian19@example.com,+2348098765019,"""Priority""","""Faculty > Business""",true,true,false
+John,Doe,john20@example.com,+2348012345020,M,STU-020,EXT-120,Emily Doe,guardian20@example.com,+2348098765020,"""Returning Students; Priority""","""Faculty > Engineering""",true,true,false
+Jane,Smith,jane21@example.com,+2348012345021,F,STU-021,EXT-121,Daniel Smith,guardian21@example.com,+2348098765021,"""Alumni""","""Faculty > Arts""",true,true,true
+Michael,Johnson,michael22@example.com,+2348012345022,M,STU-022,EXT-122,Olivia Johnson,guardian22@example.com,+2348098765022,"""Returning Students""","""Faculty > Science""",true,true,false
+Emily,Davis,emily23@example.com,+2348012345023,F,STU-023,EXT-123,James Davis,guardian23@example.com,+2348098765023,"""Priority""","""Faculty > Business""",true,true,false
+Daniel,Wilson,daniel24@example.com,+2348012345024,M,STU-024,EXT-124,Sophia Wilson,guardian24@example.com,+2348098765024,"""Returning Students; Priority""","""Faculty > Engineering""",true,true,true
+Olivia,Martinez,olivia25@example.com,+2348012345025,F,STU-025,EXT-125,Benjamin Martinez,guardian25@example.com,+2348098765025,"""Alumni""","""Faculty > Arts""",true,true,false
+James,Anderson,james26@example.com,+2348012345026,M,STU-026,EXT-126,Isabella Anderson,guardian26@example.com,+2348098765026,"""Returning Students""","""Faculty > Science""",true,true,false
+Sophia,Taylor,sophia27@example.com,+2348012345027,F,STU-027,EXT-127,Liam Taylor,guardian27@example.com,+2348098765027,"""Priority""","""Faculty > Business""",true,true,true
+Benjamin,Thomas,benjamin28@example.com,+2348012345028,M,STU-028,EXT-128,Ava Thomas,guardian28@example.com,+2348098765028,"""Returning Students; Priority""","""Faculty > Engineering""",true,true,false
+Isabella,Hernandez,isabella29@example.com,+2348012345029,F,STU-029,EXT-129,Noah Hernandez,guardian29@example.com,+2348098765029,"""Alumni""","""Faculty > Arts""",true,true,false
+Liam,Moore,liam30@example.com,+2348012345030,M,STU-030,EXT-130,Mia Moore,guardian30@example.com,+2348098765030,"""Returning Students""","""Faculty > Science""",true,true,true
+Ava,Martin,ava31@example.com,+2348012345031,F,STU-031,EXT-131,Ethan Martin,guardian31@example.com,+2348098765031,"""Priority""","""Faculty > Business""",true,true,false
+Noah,Jackson,noah32@example.com,+2348012345032,M,STU-032,EXT-132,Charlotte Jackson,guardian32@example.com,+2348098765032,"""Returning Students; Priority""","""Faculty > Engineering""",true,true,false
+Mia,Thompson,mia33@example.com,+2348012345033,F,STU-033,EXT-133,Lucas Thompson,guardian33@example.com,+2348098765033,"""Alumni""","""Faculty > Arts""",true,true,true
+Ethan,White,ethan34@example.com,+2348012345034,M,STU-034,EXT-134,Amelia White,guardian34@example.com,+2348098765034,"""Returning Students""","""Faculty > Science""",true,true,false
+Charlotte,Lopez,charlotte35@example.com,+2348012345035,F,STU-035,EXT-135,Mason Lopez,guardian35@example.com,+2348098765035,"""Priority""","""Faculty > Business""",true,true,false
+Lucas,Lee,lucas36@example.com,+2348012345036,M,STU-036,EXT-136,Harper Lee,guardian36@example.com,+2348098765036,"""Returning Students; Priority""","""Faculty > Engineering""",true,true,true
+Amelia,Gonzalez,amelia37@example.com,+2348012345037,F,STU-037,EXT-137,John Gonzalez,guardian37@example.com,+2348098765037,"""Alumni""","""Faculty > Arts""",true,true,false
+Mason,Clark,mason38@example.com,+2348012345038,M,STU-038,EXT-138,Jane Clark,guardian38@example.com,+2348098765038,"""Returning Students""","""Faculty > Science""",true,true,false
+Harper,Lewis,harper39@example.com,+2348012345039,F,STU-039,EXT-139,Michael Lewis,guardian39@example.com,+2348098765039,"""Priority""","""Faculty > Business""",true,true,true
+John,Doe,john40@example.com,+2348012345040,M,STU-040,EXT-140,Emily Doe,guardian40@example.com,+2348098765040,"""Returning Students; Priority""","""Faculty > Engineering""",true,true,false
+Jane,Smith,jane41@example.com,+2348012345041,F,STU-041,EXT-141,Daniel Smith,guardian41@example.com,+2348098765041,"""Alumni""","""Faculty > Arts""",true,true,false
+Michael,Johnson,michael42@example.com,+2348012345042,M,STU-042,EXT-142,Olivia Johnson,guardian42@example.com,+2348098765042,"""Returning Students""","""Faculty > Science""",true,true,true
+Emily,Davis,emily43@example.com,+2348012345043,F,STU-043,EXT-143,James Davis,guardian43@example.com,+2348098765043,"""Priority""","""Faculty > Business""",true,true,false
+Daniel,Wilson,daniel44@example.com,+2348012345044,M,STU-044,EXT-144,Sophia Wilson,guardian44@example.com,+2348098765044,"""Returning Students; Priority""","""Faculty > Engineering""",true,true,false
+Olivia,Martinez,olivia45@example.com,+2348012345045,F,STU-045,EXT-145,Benjamin Martinez,guardian45@example.com,+2348098765045,"""Alumni""","""Faculty > Arts""",true,true,true
+James,Anderson,james46@example.com,+2348012345046,M,STU-046,EXT-146,Isabella Anderson,guardian46@example.com,+2348098765046,"""Returning Students""","""Faculty > Science""",true,true,false
+Sophia,Taylor,sophia47@example.com,+2348012345047,F,STU-047,EXT-147,Liam Taylor,guardian47@example.com,+2348098765047,"""Priority""","""Faculty > Business""",true,true,false
+Benjamin,Thomas,benjamin48@example.com,+2348012345048,M,STU-048,EXT-148,Ava Thomas,guardian48@example.com,+2348098765048,"""Returning Students; Priority""","""Faculty > Engineering""",true,true,true
+Isabella,Hernandez,isabella49@example.com,+2348012345049,F,STU-049,EXT-149,Noah Hernandez,guardian49@example.com,+2348098765049,"""Alumni""","""Faculty > Arts""",true,true,false
+Liam,Moore,liam50@example.com,+2348012345050,M,STU-050,EXT-150,Mia Moore,guardian50@example.com,+2348098765050,"""Returning Students""","""Faculty > Science""",true,true,false
+Ava,Martin,ava51@example.com,+2348012345051,F,STU-051,EXT-151,Ethan Martin,guardian51@example.com,+2348098765051,"""Priority""","""Faculty > Business""",true,true,true
+Noah,Jackson,noah52@example.com,+2348012345052,M,STU-052,EXT-152,Charlotte Jackson,guardian52@example.com,+2348098765052,"""Returning Students; Priority""","""Faculty > Engineering""",true,true,false
+Mia,Thompson,mia53@example.com,+2348012345053,F,STU-053,EXT-153,Lucas Thompson,guardian53@example.com,+2348098765053,"""Alumni""","""Faculty > Arts""",true,true,false
+Ethan,White,ethan54@example.com,+2348012345054,M,STU-054,EXT-154,Amelia White,guardian54@example.com,+2348098765054,"""Returning Students""","""Faculty > Science""",true,true,true
+Charlotte,Lopez,charlotte55@example.com,+2348012345055,F,STU-055,EXT-155,Mason Lopez,guardian55@example.com,+2348098765055,"""Priority""","""Faculty > Business""",true,true,false
+Lucas,Lee,lucas56@example.com,+2348012345056,M,STU-056,EXT-156,Harper Lee,guardian56@example.com,+2348098765056,"""Returning Students; Priority""","""Faculty > Engineering""",true,true,false
+Amelia,Gonzalez,amelia57@example.com,+2348012345057,F,STU-057,EXT-157,John Gonzalez,guardian57@example.com,+2348098765057,"""Alumni""","""Faculty > Arts""",true,true,true
+Mason,Clark,mason58@example.com,+2348012345058,M,STU-058,EXT-158,Jane Clark,guardian58@example.com,+2348098765058,"""Returning Students""","""Faculty > Science""",true,true,false
+Harper,Lewis,harper59@example.com,+2348012345059,F,STU-059,EXT-159,Michael Lewis,guardian59@example.com,+2348098765059,"""Priority""","""Faculty > Business""",true,true,false
+John,Doe,john60@example.com,+2348012345060,M,STU-060,EXT-160,Emily Doe,guardian60@example.com,+2348098765060,"""Returning Students; Priority""","""Faculty > Engineering""",true,true,true
+Jane,Smith,jane61@example.com,+2348012345061,F,STU-061,EXT-161,Daniel Smith,guardian61@example.com,+2348098765061,"""Alumni""","""Faculty > Arts""",true,true,false
+Michael,Johnson,michael62@example.com,+2348012345062,M,STU-062,EXT-162,Olivia Johnson,guardian62@example.com,+2348098765062,"""Returning Students""","""Faculty > Science""",true,true,false
+Emily,Davis,emily63@example.com,+2348012345063,F,STU-063,EXT-163,James Davis,guardian63@example.com,+2348098765063,"""Priority""","""Faculty > Business""",true,true,true
+Daniel,Wilson,daniel64@example.com,+2348012345064,M,STU-064,EXT-164,Sophia Wilson,guardian64@example.com,+2348098765064,"""Returning Students; Priority""","""Faculty > Engineering""",true,true,false
+Olivia,Martinez,olivia65@example.com,+2348012345065,F,STU-065,EXT-165,Benjamin Martinez,guardian65@example.com,+2348098765065,"""Alumni""","""Faculty > Arts""",true,true,false
+James,Anderson,james66@example.com,+2348012345066,M,STU-066,EXT-166,Isabella Anderson,guardian66@example.com,+2348098765066,"""Returning Students""","""Faculty > Science""",true,true,true
+Sophia,Taylor,sophia67@example.com,+2348012345067,F,STU-067,EXT-167,Liam Taylor,guardian67@example.com,+2348098765067,"""Priority""","""Faculty > Business""",true,true,false
+Benjamin,Thomas,benjamin68@example.com,+2348012345068,M,STU-068,EXT-168,Ava Thomas,guardian68@example.com,+2348098765068,"""Returning Students; Priority""","""Faculty > Engineering""",true,true,false
+Isabella,Hernandez,isabella69@example.com,+2348012345069,F,STU-069,EXT-169,Noah Hernandez,guardian69@example.com,+2348098765069,"""Alumni""","""Faculty > Arts""",true,true,true
+Liam,Moore,liam70@example.com,+2348012345070,M,STU-070,EXT-170,Mia Moore,guardian70@example.com,+2348098765070,"""Returning Students""","""Faculty > Science""",true,true,false
+Ava,Martin,ava71@example.com,+2348012345071,F,STU-071,EXT-171,Ethan Martin,guardian71@example.com,+2348098765071,"""Priority""","""Faculty > Business""",true,true,false
+Noah,Jackson,noah72@example.com,+2348012345072,M,STU-072,EXT-172,Charlotte Jackson,guardian72@example.com,+2348098765072,"""Returning Students; Priority""","""Faculty > Engineering""",true,true,true
+Mia,Thompson,mia73@example.com,+2348012345073,F,STU-073,EXT-173,Lucas Thompson,guardian73@example.com,+2348098765073,"""Alumni""","""Faculty > Arts""",true,true,false
+Ethan,White,ethan74@example.com,+2348012345074,M,STU-074,EXT-174,Amelia White,guardian74@example.com,+2348098765074,"""Returning Students""","""Faculty > Science""",true,true,false
+Charlotte,Lopez,charlotte75@example.com,+2348012345075,F,STU-075,EXT-175,Mason Lopez,guardian75@example.com,+2348098765075,"""Priority""","""Faculty > Business""",true,true,true
+Lucas,Lee,lucas76@example.com,+2348012345076,M,STU-076,EXT-176,Harper Lee,guardian76@example.com,+2348098765076,"""Returning Students; Priority""","""Faculty > Engineering""",true,true,false
+Amelia,Gonzalez,amelia77@example.com,+2348012345077,F,STU-077,EXT-177,John Gonzalez,guardian77@example.com,+2348098765077,"""Alumni""","""Faculty > Arts""",true,true,false
+Mason,Clark,mason78@example.com,+2348012345078,M,STU-078,EXT-178,Jane Clark,guardian78@example.com,+2348098765078,"""Returning Students""","""Faculty > Science""",true,true,true
+Harper,Lewis,harper79@example.com,+2348012345079,F,STU-079,EXT-179,Michael Lewis,guardian79@example.com,+2348098765079,"""Priority""","""Faculty > Business""",true,true,false
+John,Doe,john80@example.com,+2348012345080,M,STU-080,EXT-180,Emily Doe,guardian80@example.com,+2348098765080,"""Returning Students; Priority""","""Faculty > Engineering""",true,true,false
+Jane,Smith,jane81@example.com,+2348012345081,F,STU-081,EXT-181,Daniel Smith,guardian81@example.com,+2348098765081,"""Alumni""","""Faculty > Arts""",true,true,true
+Michael,Johnson,michael82@example.com,+2348012345082,M,STU-082,EXT-182,Olivia Johnson,guardian82@example.com,+2348098765082,"""Returning Students""","""Faculty > Science""",true,true,false
+Emily,Davis,emily83@example.com,+2348012345083,F,STU-083,EXT-183,James Davis,guardian83@example.com,+2348098765083,"""Priority""","""Faculty > Business""",true,true,false
+Daniel,Wilson,daniel84@example.com,+2348012345084,M,STU-084,EXT-184,Sophia Wilson,guardian84@example.com,+2348098765084,"""Returning Students; Priority""","""Faculty > Engineering""",true,true,true
+Olivia,Martinez,olivia85@example.com,+2348012345085,F,STU-085,EXT-185,Benjamin Martinez,guardian85@example.com,+2348098765085,"""Alumni""","""Faculty > Arts""",true,true,false
+James,Anderson,james86@example.com,+2348012345086,M,STU-086,EXT-186,Isabella Anderson,guardian86@example.com,+2348098765086,"""Returning Students""","""Faculty > Science""",true,true,false
+Sophia,Taylor,sophia87@example.com,+2348012345087,F,STU-087,EXT-187,Liam Taylor,guardian87@example.com,+2348098765087,"""Priority""","""Faculty > Business""",true,true,true
+Benjamin,Thomas,benjamin88@example.com,+2348012345088,M,STU-088,EXT-188,Ava Thomas,guardian88@example.com,+2348098765088,"""Returning Students; Priority""","""Faculty > Engineering""",true,true,false
+Isabella,Hernandez,isabella89@example.com,+2348012345089,F,STU-089,EXT-189,Noah Hernandez,guardian89@example.com,+2348098765089,"""Alumni""","""Faculty > Arts""",true,true,false
+Liam,Moore,liam90@example.com,+2348012345090,M,STU-090,EXT-190,Mia Moore,guardian90@example.com,+2348098765090,"""Returning Students""","""Faculty > Science""",true,true,true
+Ava,Martin,ava91@example.com,+2348012345091,F,STU-091,EXT-191,Ethan Martin,guardian91@example.com,+2348098765091,"""Priority""","""Faculty > Business""",true,true,false
+Noah,Jackson,noah92@example.com,+2348012345092,M,STU-092,EXT-192,Charlotte Jackson,guardian92@example.com,+2348098765092,"""Returning Students; Priority""","""Faculty > Engineering""",true,true,false
+Mia,Thompson,mia93@example.com,+2348012345093,F,STU-093,EXT-193,Lucas Thompson,guardian93@example.com,+2348098765093,"""Alumni""","""Faculty > Arts""",true,true,true
+Ethan,White,ethan94@example.com,+2348012345094,M,STU-094,EXT-194,Amelia White,guardian94@example.com,+2348098765094,"""Returning Students""","""Faculty > Science""",true,true,false
+Charlotte,Lopez,charlotte95@example.com,+2348012345095,F,STU-095,EXT-195,Mason Lopez,guardian95@example.com,+2348098765095,"""Priority""","""Faculty > Business""",true,true,false
+Lucas,Lee,lucas96@example.com,+2348012345096,M,STU-096,EXT-196,Harper Lee,guardian96@example.com,+2348098765096,"""Returning Students; Priority""","""Faculty > Engineering""",true,true,true
+Amelia,Gonzalez,amelia97@example.com,+2348012345097,F,STU-097,EXT-197,John Gonzalez,guardian97@example.com,+2348098765097,"""Alumni""","""Faculty > Arts""",true,true,false
+Mason,Clark,mason98@example.com,+2348012345098,M,STU-098,EXT-198,Jane Clark,guardian98@example.com,+2348098765098,"""Returning Students""","""Faculty > Science""",true,true,false
+Harper,Lewis,harper99@example.com,+2348012345099,F,STU-099,EXT-199,Michael Lewis,guardian99@example.com,+2348098765099,"""Priority""","""Faculty > Business""",true,true,true
+John,Doe,john100@example.com,+2348012345100,M,STU-100,EXT-200,Emily Doe,guardian100@example.com,+2348098765100,"""Returning Students; Priority""","""Faculty > Engineering""",true,true,false

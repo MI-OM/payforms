@@ -63,8 +63,12 @@ export class ContactImportService {
   ) {
     const errors: string[] = [];
 
-    if (!row.name || typeof row.name !== 'string' || !row.name.trim()) {
-      errors.push('Name is required');
+    const hasName = row.name && typeof row.name === 'string' && row.name.trim();
+    const hasFirstOrLastName = (row.first_name && typeof row.first_name === 'string' && row.first_name.trim()) ||
+                               (row.last_name && typeof row.last_name === 'string' && row.last_name.trim());
+
+    if (!hasName && !hasFirstOrLastName) {
+      errors.push('Name is required (provide either name or first_name/last_name)');
     }
 
     if (!row.email || typeof row.email !== 'string' || !row.email.trim()) {
