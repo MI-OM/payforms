@@ -46,12 +46,16 @@ export class PaymentService {
       throw new BadRequestException(`Payment total must be at least ${org.partial_payment_limit}`);
     }
 
+    const totalAmount = dto.total_amount || dto.amount;
+    const balanceDue = dto.total_amount ? dto.total_amount : dto.amount; // For partial payments, balance_due starts as total_amount, for full payments as amount
+
     const payment = this.paymentRepository.create({
       organization_id: organizationId,
       submission_id: dto.submission_id,
       amount: dto.amount,
+      total_amount: dto.total_amount || null,
       amount_paid: 0,
-      balance_due: dto.amount,
+      balance_due: balanceDue,
       reference,
       status: 'PENDING',
     });
@@ -174,22 +178,23 @@ export class PaymentService {
     }
 
     let amount_paid = payment.amount_paid ?? 0;
-    let balance_due = payment.balance_due ?? payment.amount;
+    const totalAmount = payment.total_amount ?? payment.amount;
+    let balance_due = totalAmount - amount_paid;
 
     if (dto.status === 'PAID') {
-      amount_paid = payment.amount;
-      balance_due = 0;
+      amount_paid = payment.amount; // Amount charged in this transaction
+      balance_due = Math.max(totalAmount - (payment.amount_paid + payment.amount), 0);
     } else if (dto.status === 'PARTIAL') {
       if (dto.amount_paid !== undefined && dto.amount_paid !== null) {
-        amount_paid = Math.min(dto.amount_paid, payment.amount);
+        amount_paid = Math.min(dto.amount_paid, totalAmount);
+      } else {
+        amount_paid = payment.amount; // Assume the charged amount was paid
       }
-      if (payment.amount !== undefined) {
-        balance_due = Math.max(payment.amount - amount_paid, 0);
-      }
+      balance_due = Math.max(totalAmount - amount_paid, 0);
     } else if (dto.status === 'FAILED' || dto.status === 'PENDING') {
       // keep existing payment tracking values
       amount_paid = payment.amount_paid ?? 0;
-      balance_due = payment.balance_due ?? payment.amount;
+      balance_due = payment.balance_due ?? totalAmount;
     }
 
     const org = await this.organizationRepository.findOne({ where: { id: organizationId } });

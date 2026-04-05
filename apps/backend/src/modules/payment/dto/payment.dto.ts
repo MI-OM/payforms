@@ -11,6 +11,11 @@ export class CreatePaymentDto {
   @IsNumber()
   amount: number;
 
+  @ApiPropertyOptional({ example: 100000, description: 'Total amount owed (for partial payments)' })
+  @IsOptional()
+  @IsNumber()
+  total_amount?: number;
+
   @ApiPropertyOptional({ example: 'PAY_2026_0001' })
   @IsOptional()
   @IsString()

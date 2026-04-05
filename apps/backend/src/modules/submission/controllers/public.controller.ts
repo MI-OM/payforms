@@ -200,9 +200,23 @@ export class PublicController {
 
     this.validateSubmissionData(dto.data, form.fields);
 
-    const amount = form.payment_type === 'VARIABLE' ? dto.data.amount : form.amount;
-    if (form.payment_type === 'VARIABLE' && (amount === undefined || amount === null)) {
+    const totalAmount = form.payment_type === 'VARIABLE' ? dto.data.amount : form.amount;
+    if (form.payment_type === 'VARIABLE' && (totalAmount === undefined || totalAmount === null)) {
       throw new BadRequestException('Amount is required for variable payment forms');
+    }
+
+    // Handle partial payments
+    let paymentAmount = totalAmount;
+    if (form.allow_partial && dto.partial_amount !== undefined) {
+      if (dto.partial_amount <= 0) {
+        throw new BadRequestException('Partial amount must be greater than 0');
+      }
+      if (dto.partial_amount > totalAmount) {
+        throw new BadRequestException('Partial amount cannot exceed total amount');
+      }
+      paymentAmount = dto.partial_amount;
+    } else if (dto.partial_amount !== undefined && !form.allow_partial) {
+      throw new BadRequestException('This form does not allow partial payments');
     }
 
     const tokenContactId = await this.ensurePublicFormAccess(form, authorization);
@@ -243,7 +257,8 @@ export class PublicController {
 
     const payment = await this.paymentService.create(form.organization_id, {
       submission_id: submission.id,
-      amount,
+      amount: paymentAmount,
+      total_amount: totalAmount, // Track the full amount owed
     });
 
     let paymentAuthorization: any;
@@ -274,7 +289,7 @@ export class PublicController {
           form.organization,
           confirmationEmail,
           form.title,
-          amount,
+          paymentAmount,
           payment.reference,
         );
       } catch (error) {

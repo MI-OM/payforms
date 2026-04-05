@@ -774,11 +774,17 @@ This document describes the major Payforms API workflows, including each endpoin
   - `data: { ...field values }`
   - `contact_email?`
   - `contact_name?`
+  - `partial_amount?` (number, for partial payments when form.allow_partial is true)
 - Flow:
   1. User submits the public form.
-  2. Frontend posts submission payload.
-  3. Backend records submission, validates fields, and returns success.
-  4. If payment is required, redirect or callback occurs via Paystack flow.
+  2. If `partial_amount` is provided and form allows partial payments:
+     - Validates partial_amount > 0 and ≤ total amount
+     - Creates payment for partial_amount
+     - Tracks total_amount for balance calculation
+  3. If no `partial_amount`, creates payment for full amount.
+  4. Frontend posts submission payload.
+  5. Backend records submission, validates fields, and returns success.
+  6. If payment is required, redirect or callback occurs via Paystack flow.
 
 ### 10.6 Payment Callback
 

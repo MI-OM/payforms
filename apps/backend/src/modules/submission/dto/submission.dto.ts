@@ -1,4 +1,4 @@
-import { IsString, IsOptional, IsObject, IsEmail } from 'class-validator';
+import { IsString, IsOptional, IsObject, IsEmail, IsNumber } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class CreateSubmissionDto {
@@ -26,4 +26,9 @@ export class PublicSubmitFormDto {
   @IsOptional()
   @IsString()
   contact_name?: string;
+
+  @ApiPropertyOptional({ example: 50000, description: 'Amount to pay now for partial payments' })
+  @IsOptional()
+  @IsNumber()
+  partial_amount?: number;
 }
