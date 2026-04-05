@@ -896,7 +896,15 @@ This document describes the major Payforms API workflows, including each endpoin
 - Query: `start_date?`, `end_date?`
 - Flow:
   1. Frontend requests per-form metrics.
-  2. Backend returns submission counts, payments, and conversion rates.
+  2. Backend returns submission counts, payments, amount totals, and conversion rates.
+- Response includes:
+  - `range`: request date range
+  - `totals`: aggregate forms, submissions, payments, amount_total, paid_amount_total
+  - `data[]`: per-form rows with
+    - `form_id`, `title`, `slug`, `is_active`, `created_at`
+    - `submissions`, `payments`, `paid_payments`, `pending_payments`, `failed_payments`, `partial_payments`
+    - `amount_total`, `paid_amount_total`, `pending_amount_total`, `failed_amount_total`, `partial_amount_total`
+    - `completion_rate`, `collection_rate`
 
 ### 14.4 Export Reports
 

@@ -177,6 +177,7 @@
 - `GET /groups/:id/contacts`
   - Auth: `Bearer <JWT>`
   - Query: `page?`, `limit?`
+  - Returns contacts for the specified group AND all its subgroups (recursive)
 
 ## Contact Endpoints
 
@@ -459,6 +460,14 @@
     - payment status counts (`paid`, `pending`, `failed`, `partial`)
     - amount totals by status
     - `completion_rate`, `collection_rate`
+- `GET /reports/groups/contributions`
+  - Auth: `Bearer <JWT>`
+  - Query: `form_id?`, `start_date?`, `end_date?`
+  - Returns group-level contribution metrics for forms:
+    - Per group: contact count, submissions, payments, amounts by status
+    - For fixed-amount forms: expected total, deficit, collection rate
+    - Includes contacts from subgroups in parent group calculations
+    - Organization-wide summary totals
 - `GET /reports/export`
   - Auth: `Bearer <JWT>`
   - Query:

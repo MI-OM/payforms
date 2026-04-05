@@ -5,6 +5,7 @@ import { Form } from '../../form/entities/form.entity';
 import { Submission } from '../../submission/entities/submission.entity';
 import { Payment } from '../../payment/entities/payment.entity';
 import { Contact } from '../../contact/entities/contact.entity';
+import { Group } from '../../group/entities/group.entity';
 
 @Injectable()
 export class ReportService {
@@ -13,6 +14,7 @@ export class ReportService {
     @InjectRepository(Submission) private submissionRepository: Repository<Submission>,
     @InjectRepository(Payment) private paymentRepository: Repository<Payment>,
     @InjectRepository(Contact) private contactRepository: Repository<Contact>,
+    @InjectRepository(Group) private groupRepository: Repository<Group>,
   ) {}
 
   private parseDateRange(startDate?: string, endDate?: string) {
@@ -140,27 +142,43 @@ export class ReportService {
     const forms = await this.formRepository.find({
       where: { organization_id: organizationId },
       select: ['id', 'title', 'slug', 'is_active', 'created_at'],
-      order: { created_at: 'DESC' },
     });
 
-    const submissionsQuery = this.submissionRepository
+    if (forms.length === 0) {
+      return {
+        range: {
+          start: start?.toISOString() ?? null,
+          end: end?.toISOString() ?? null,
+        },
+        totals: {
+          forms: 0,
+          submissions: 0,
+          payments: 0,
+          amount_total: 0,
+          paid_amount_total: 0,
+        },
+        data: [],
+      };
+    }
+
+    const submissionQuery = this.submissionRepository
       .createQueryBuilder('submission')
       .select('submission.form_id', 'form_id')
       .addSelect('COUNT(submission.id)', 'submissions')
       .where('submission.organization_id = :organizationId', { organizationId });
 
     if (start) {
-      submissionsQuery.andWhere('submission.created_at >= :start', { start });
+      submissionQuery.andWhere('submission.created_at >= :start', { start });
     }
     if (end) {
-      submissionsQuery.andWhere('submission.created_at <= :end', { end });
+      submissionQuery.andWhere('submission.created_at <= :end', { end });
     }
 
-    const submissionsByForm = await submissionsQuery
+    const submissionsByForm = await submissionQuery
       .groupBy('submission.form_id')
       .getRawMany();
 
-    const paymentsQuery = this.paymentRepository
+    const paymentQuery = this.paymentRepository
       .createQueryBuilder('payment')
       .innerJoin('payment.submission', 'submission')
       .select('submission.form_id', 'form_id')
@@ -178,48 +196,40 @@ export class ReportService {
       .setParameters({ paid: 'PAID', pending: 'PENDING', failed: 'FAILED', partial: 'PARTIAL' });
 
     if (start) {
-      paymentsQuery.andWhere('payment.created_at >= :start', { start });
+      paymentQuery.andWhere('payment.created_at >= :start', { start });
     }
     if (end) {
-      paymentsQuery.andWhere('payment.created_at <= :end', { end });
+      paymentQuery.andWhere('payment.created_at <= :end', { end });
     }
 
-    const paymentsByForm = await paymentsQuery
+    const paymentsByForm = await paymentQuery
       .groupBy('submission.form_id')
       .getRawMany();
 
-    const submissionMap = new Map(submissionsByForm.map(row => [row.form_id, Number(row.submissions || 0)]));
+    const submissionMap = new Map(submissionsByForm.map(row => [row.form_id, Number(row.submissions)]));
     const paymentMap = new Map(paymentsByForm.map(row => [row.form_id, row]));
 
     const data = forms.map(form => {
-      const submissionCount = submissionMap.get(form.id) || 0;
-      const paymentRow = paymentMap.get(form.id) || {};
-
-      const payments = Number(paymentRow.payments || 0);
-      const paidPayments = Number(paymentRow.paid_payments || 0);
-      const pendingPayments = Number(paymentRow.pending_payments || 0);
-      const failedPayments = Number(paymentRow.failed_payments || 0);
-      const partialPayments = Number(paymentRow.partial_payments || 0);
-      const amountTotal = Number(paymentRow.amount_total || 0);
-      const paidAmountTotal = Number(paymentRow.paid_amount_total || 0);
-      const pendingAmountTotal = Number(paymentRow.pending_amount_total || 0);
-      const failedAmountTotal = Number(paymentRow.failed_amount_total || 0);
-      const partialAmountTotal = Number(paymentRow.partial_amount_total || 0);
-
-      const completionRate = submissionCount > 0
-        ? Number(((paidPayments / submissionCount) * 100).toFixed(2))
-        : 0;
-      const collectionRate = amountTotal > 0
-        ? Number(((paidAmountTotal / amountTotal) * 100).toFixed(2))
-        : 0;
+      const paymentsRow = paymentMap.get(form.id) ?? {} as any;
+      const submissions = submissionMap.get(form.id) ?? 0;
+      const payments = Number(paymentsRow.payments || 0);
+      const paidPayments = Number(paymentsRow.paid_payments || 0);
+      const pendingPayments = Number(paymentsRow.pending_payments || 0);
+      const failedPayments = Number(paymentsRow.failed_payments || 0);
+      const partialPayments = Number(paymentsRow.partial_payments || 0);
+      const amountTotal = Number(paymentsRow.amount_total || 0);
+      const paidAmountTotal = Number(paymentsRow.paid_amount_total || 0);
+      const pendingAmountTotal = Number(paymentsRow.pending_amount_total || 0);
+      const failedAmountTotal = Number(paymentsRow.failed_amount_total || 0);
+      const partialAmountTotal = Number(paymentsRow.partial_amount_total || 0);
 
       return {
         form_id: form.id,
         title: form.title,
         slug: form.slug,
         is_active: form.is_active,
-        created_at: form.created_at?.toISOString() ?? null,
-        submissions: submissionCount,
+        created_at: form.created_at.toISOString(),
+        submissions,
         payments,
         paid_payments: paidPayments,
         pending_payments: pendingPayments,
@@ -230,19 +240,20 @@ export class ReportService {
         pending_amount_total: pendingAmountTotal,
         failed_amount_total: failedAmountTotal,
         partial_amount_total: partialAmountTotal,
-        completion_rate: completionRate,
-        collection_rate: collectionRate,
+        completion_rate: submissions > 0 ? Number(((paidPayments / submissions) * 100).toFixed(2)) : 0,
+        collection_rate: amountTotal > 0 ? Number(((paidAmountTotal / amountTotal) * 100).toFixed(2)) : 0,
       };
     });
 
     const totals = data.reduce(
-      (acc, row) => ({
-        submissions: acc.submissions + row.submissions,
-        payments: acc.payments + row.payments,
-        amount_total: acc.amount_total + row.amount_total,
-        paid_amount_total: acc.paid_amount_total + row.paid_amount_total,
+      (acc, item) => ({
+        forms: acc.forms + 1,
+        submissions: acc.submissions + item.submissions,
+        payments: acc.payments + item.payments,
+        amount_total: acc.amount_total + item.amount_total,
+        paid_amount_total: acc.paid_amount_total + item.paid_amount_total,
       }),
-      { submissions: 0, payments: 0, amount_total: 0, paid_amount_total: 0 },
+      { forms: 0, submissions: 0, payments: 0, amount_total: 0, paid_amount_total: 0 },
     );
 
     return {
@@ -250,15 +261,160 @@ export class ReportService {
         start: start?.toISOString() ?? null,
         end: end?.toISOString() ?? null,
       },
-      totals: {
-        forms: forms.length,
-        submissions: totals.submissions,
-        payments: totals.payments,
-        amount_total: totals.amount_total,
-        paid_amount_total: totals.paid_amount_total,
-      },
+      totals,
       data,
     };
+  }
+
+  async getGroupContributions(organizationId: string, formId?: string, startDate?: string, endDate?: string) {
+    const { start, end } = this.parseDateRange(startDate, endDate);
+
+    // Get form details if specified
+    let formDetails: Form | null = null;
+    if (formId) {
+      formDetails = await this.formRepository.findOne({
+        where: { id: formId, organization_id: organizationId },
+        select: ['id', 'title', 'amount', 'payment_type'],
+      });
+      if (!formDetails) {
+        throw new BadRequestException('Form not found');
+      }
+    }
+
+    // Get all groups and their subgroup hierarchies
+    const allGroups = await this.groupRepository.find({
+      where: { organization_id: organizationId },
+      select: ['id', 'name', 'parent_group_id'],
+    });
+
+    // Create a map of group to all its subgroup IDs (including itself)
+    const groupHierarchyMap = new Map<string, string[]>();
+    for (const group of allGroups) {
+      const allSubgroupIds = await this.getAllSubgroupIdsForGroup(organizationId, group.id);
+      allSubgroupIds.push(group.id); // Include the group itself
+      groupHierarchyMap.set(group.id, allSubgroupIds);
+    }
+
+    // Query for group contributions using the hierarchy
+    const contributionsQuery = this.paymentRepository
+      .createQueryBuilder('payment')
+      .innerJoin('payment.submission', 'submission')
+      .innerJoin('submission.contact', 'contact')
+      .innerJoin('contact.groups', 'group')
+      .select('group.id', 'group_id')
+      .addSelect('group.name', 'group_name')
+      .addSelect('COUNT(DISTINCT contact.id)', 'contact_count')
+      .addSelect('COUNT(DISTINCT submission.id)', 'submission_count')
+      .addSelect('COUNT(payment.id)', 'payment_count')
+      .addSelect('SUM(payment.amount)', 'total_amount')
+      .addSelect('SUM(CASE WHEN payment.status = :paid THEN payment.amount ELSE 0 END)', 'paid_amount')
+      .addSelect('SUM(CASE WHEN payment.status = :pending THEN payment.amount ELSE 0 END)', 'pending_amount')
+      .addSelect('SUM(CASE WHEN payment.status = :failed THEN payment.amount ELSE 0 END)', 'failed_amount')
+      .addSelect('SUM(CASE WHEN payment.status = :partial THEN payment.amount ELSE 0 END)', 'partial_amount')
+      .where('payment.organization_id = :organizationId', { organizationId })
+      .setParameters({ paid: 'PAID', pending: 'PENDING', failed: 'FAILED', partial: 'PARTIAL' });
+
+    if (formId) {
+      contributionsQuery.andWhere('submission.form_id = :formId', { formId });
+    }
+
+    if (start) {
+      contributionsQuery.andWhere('payment.created_at >= :start', { start });
+    }
+    if (end) {
+      contributionsQuery.andWhere('payment.created_at <= :end', { end });
+    }
+
+    const contributions = await contributionsQuery
+      .groupBy('group.id')
+      .addGroupBy('group.name')
+      .orderBy('total_amount', 'DESC')
+      .getRawMany();
+
+    // Calculate deficits for fixed amount forms
+    const result = contributions.map(row => {
+      const totalAmount = Number(row.total_amount || 0);
+      const paidAmount = Number(row.paid_amount || 0);
+      const contactCount = Number(row.contact_count || 0);
+
+      let deficit = 0;
+      let expectedTotal = 0;
+
+      if (formDetails && formDetails.payment_type === 'FIXED' && formDetails.amount) {
+        expectedTotal = contactCount * formDetails.amount;
+        deficit = Math.max(0, expectedTotal - paidAmount);
+      }
+
+      return {
+        group_id: row.group_id,
+        group_name: row.group_name,
+        contact_count: contactCount,
+        submission_count: Number(row.submission_count || 0),
+        payment_count: Number(row.payment_count || 0),
+        total_amount: totalAmount,
+        paid_amount: paidAmount,
+        pending_amount: Number(row.pending_amount || 0),
+        failed_amount: Number(row.failed_amount || 0),
+        partial_amount: Number(row.partial_amount || 0),
+        expected_total: expectedTotal,
+        deficit: deficit,
+        collection_rate: expectedTotal > 0 ? Number(((paidAmount / expectedTotal) * 100).toFixed(2)) : 0,
+      };
+    });
+
+    return {
+      form: formDetails ? {
+        id: formDetails.id,
+        title: formDetails.title,
+        amount: formDetails.amount,
+        payment_type: formDetails.payment_type,
+      } : null,
+      range: {
+        start: start?.toISOString() ?? null,
+        end: end?.toISOString() ?? null,
+      },
+      groups: result,
+      summary: result.reduce(
+        (acc, group) => ({
+          total_groups: acc.total_groups + 1,
+          total_contacts: acc.total_contacts + group.contact_count,
+          total_submissions: acc.total_submissions + group.submission_count,
+          total_payments: acc.total_payments + group.payment_count,
+          total_amount: acc.total_amount + group.total_amount,
+          total_paid: acc.total_paid + group.paid_amount,
+          total_expected: acc.total_expected + group.expected_total,
+          total_deficit: acc.total_deficit + group.deficit,
+        }),
+        {
+          total_groups: 0,
+          total_contacts: 0,
+          total_submissions: 0,
+          total_payments: 0,
+          total_amount: 0,
+          total_paid: 0,
+          total_expected: 0,
+          total_deficit: 0,
+        },
+      ),
+    };
+  }
+
+  private async getAllSubgroupIdsForGroup(organizationId: string, parentGroupId: string): Promise<string[]> {
+    const subgroupIds: string[] = [];
+
+    const subgroups = await this.groupRepository.find({
+      where: { parent_group_id: parentGroupId, organization_id: organizationId },
+      select: ['id'],
+    });
+
+    for (const subgroup of subgroups) {
+      subgroupIds.push(subgroup.id);
+      // Recursively get subgroups of subgroups
+      const nestedSubgroupIds = await this.getAllSubgroupIdsForGroup(organizationId, subgroup.id);
+      subgroupIds.push(...nestedSubgroupIds);
+    }
+
+    return subgroupIds;
   }
 
   async exportReport(organizationId: string, type: 'summary' | 'analytics', format: 'csv' | 'pdf', startDate?: string, endDate?: string) {

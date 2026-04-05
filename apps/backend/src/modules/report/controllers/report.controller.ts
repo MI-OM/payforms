@@ -38,6 +38,16 @@ export class ReportController {
     return this.reportService.getFormPerformance(req.user.organization_id, startDate, endDate);
   }
 
+  @Get('groups/contributions')
+  async getGroupContributions(
+    @Request() req,
+    @Query('form_id') formId?: string,
+    @Query('start_date') startDate?: string,
+    @Query('end_date') endDate?: string,
+  ) {
+    return this.reportService.getGroupContributions(req.user.organization_id, formId, startDate, endDate);
+  }
+
   @Get('export')
   async exportReport(
     @Request() req,

@@ -124,14 +124,36 @@ export class GroupService {
       throw new NotFoundException('Group not found');
     }
 
+    // Get all subgroup IDs recursively
+    const allGroupIds = await this.getAllSubgroupIds(organizationId, groupId);
+    allGroupIds.push(groupId); // Include the parent group itself
+
     const [contacts, total] = await this.contactRepository
       .createQueryBuilder('contact')
-      .innerJoin('contact.groups', 'group', 'group.id = :groupId', { groupId })
+      .innerJoin('contact.groups', 'group', 'group.id IN (:...groupIds)', { groupIds: allGroupIds })
       .where('contact.organization_id = :organizationId', { organizationId })
       .skip((page - 1) * limit)
       .take(limit)
       .getManyAndCount();
 
     return { data: contacts, total, page, limit };
+  }
+
+  private async getAllSubgroupIds(organizationId: string, parentGroupId: string): Promise<string[]> {
+    const subgroupIds: string[] = [];
+
+    const subgroups = await this.groupRepository.find({
+      where: { parent_group_id: parentGroupId, organization_id: organizationId },
+      select: ['id'],
+    });
+
+    for (const subgroup of subgroups) {
+      subgroupIds.push(subgroup.id);
+      // Recursively get subgroups of subgroups
+      const nestedSubgroupIds = await this.getAllSubgroupIds(organizationId, subgroup.id);
+      subgroupIds.push(...nestedSubgroupIds);
+    }
+
+    return subgroupIds;
   }
 }

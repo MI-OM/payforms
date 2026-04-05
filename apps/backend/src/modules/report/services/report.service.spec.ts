@@ -32,18 +32,21 @@ describe('ReportService', () => {
   let submissionRepository: MockRepository;
   let paymentRepository: MockRepository;
   let contactRepository: MockRepository;
+  let groupRepository: MockRepository;
 
   beforeEach(() => {
-    formRepository = { count: jest.fn(), find: jest.fn() };
+    formRepository = { count: jest.fn(), find: jest.fn(), findOne: jest.fn() };
     submissionRepository = { createQueryBuilder: jest.fn() };
     paymentRepository = { createQueryBuilder: jest.fn() };
     contactRepository = { count: jest.fn() };
+    groupRepository = { find: jest.fn() };
 
     service = new ReportService(
       formRepository as any,
       submissionRepository as any,
       paymentRepository as any,
       contactRepository as any,
+      groupRepository as any,
     );
   });
 
@@ -129,7 +132,7 @@ describe('ReportService', () => {
     expect(result.payment_status_breakdown).toEqual([{ status: 'PAID', count: 2, total_amount: 1500 }]);
   });
 
-  it('returns per-form performance metrics', async () => {
+  it('returns form performance metrics with totals', async () => {
     formRepository.find.mockResolvedValue([
       { id: 'form-1', title: 'School Fees', slug: 'school-fees', is_active: true, created_at: new Date('2026-01-01T00:00:00.000Z') },
       { id: 'form-2', title: 'Hostel Fees', slug: 'hostel-fees', is_active: false, created_at: new Date('2026-01-02T00:00:00.000Z') },
