@@ -151,6 +151,36 @@ describe('NotificationService', () => {
     );
   });
 
+  it('sends email with attachment via SendGrid API', async () => {
+    mockConfig({
+      EMAIL_PROVIDER: 'sendgrid',
+      SENDGRID_API_KEY: 'key',
+      SENDGRID_FROM_EMAIL: 'from@example.com',
+    });
+    (axios.post as any).mockResolvedValue({});
+
+    await service.sendEmail(
+      ['a@example.com'],
+      'Subject',
+      '<p>html</p>',
+      [{ filename: 'receipt.pdf', content: Buffer.from('pdf-content'), type: 'application/pdf' }],
+    );
+
+    expect(axios.post).toHaveBeenCalledWith(
+      'https://api.sendgrid.com/v3/mail/send',
+      expect.objectContaining({
+        attachments: [
+          expect.objectContaining({
+            filename: 'receipt.pdf',
+            type: 'application/pdf',
+            disposition: 'attachment',
+          }),
+        ],
+      }),
+      expect.any(Object),
+    );
+  });
+
   it('sends email via Mailgun API', async () => {
     mockConfig({
       EMAIL_PROVIDER: 'mailgun',
@@ -176,6 +206,28 @@ describe('NotificationService', () => {
         'Content-Type': 'application/x-www-form-urlencoded',
       },
     });
+  });
+
+  it('sends email with attachment via Mailgun API', async () => {
+    mockConfig({
+      EMAIL_PROVIDER: 'mailgun',
+      MAILGUN_API_KEY: 'mailgun-key',
+      MAILGUN_DOMAIN: 'mg.example.com',
+      EMAIL_FROM: 'noreply@example.com',
+    });
+    (axios.post as any).mockResolvedValue({});
+
+    await service.sendEmail(
+      ['a@example.com'],
+      'Subject',
+      '<p>html</p>',
+      [{ filename: 'receipt.pdf', content: Buffer.from('pdf-content'), type: 'application/pdf' }],
+    );
+
+    const [url, body, config] = (axios.post as any).mock.calls[0];
+    expect(url).toBe('https://api.mailgun.net/v3/mg.example.com/messages');
+    expect(body.getHeaders).toBeDefined();
+    expect(config.auth).toEqual({ username: 'api', password: 'mailgun-key' });
   });
 
   it('auto-selects mailgun when EMAIL_PROVIDER is not set but Mailgun config exists', async () => {
@@ -223,6 +275,36 @@ describe('NotificationService', () => {
     );
   });
 
+  it('sends email with attachment via Brevo API', async () => {
+    mockConfig({
+      EMAIL_PROVIDER: 'brevo',
+      BREVO_API_KEY: 'brevo-key',
+      EMAIL_FROM: 'noreply@example.com',
+      EMAIL_FROM_NAME: 'Payforms Team',
+    });
+    (axios.post as any).mockResolvedValue({});
+
+    await service.sendEmail(
+      ['a@example.com'],
+      'Subject',
+      '<p>html</p>',
+      [{ filename: 'receipt.pdf', content: Buffer.from('pdf-content'), type: 'application/pdf' }],
+    );
+
+    expect(axios.post).toHaveBeenCalledWith(
+      'https://api.brevo.com/v3/smtp/email',
+      expect.objectContaining({
+        attachment: [
+          expect.objectContaining({
+            name: 'receipt.pdf',
+            type: 'application/pdf',
+          }),
+        ],
+      }),
+      expect.any(Object),
+    );
+  });
+
   it('throws InternalServerErrorException when axios call fails', async () => {
     mockConfig({
       EMAIL_PROVIDER: 'sendgrid',
@@ -244,6 +326,7 @@ describe('NotificationService', () => {
       ['a@example.com'],
       'Org Payment Confirmation',
       expect.stringContaining('Thank you for your payment to Org'),
+      undefined,
     );
   });
 

@@ -459,9 +459,11 @@
 
 - `GET /audit/logs`
   - Auth: `Bearer <JWT>`
+  - Role: `ADMIN` only
   - Query: `page?`, `limit?`, `action?`, `entity_type?`, `entity_id?`, `user_id?`, `ip_address?`, `user_agent?`, `keyword?`, `from?`, `to?`
 - `GET /audit/payment-logs/:payment_id`
   - Auth: `Bearer <JWT>`
+  - Role: `ADMIN` only
   - Query: `page?`, `limit?`, `event?`, `event_id?`, `keyword?`, `from?`, `to?`
 
 ## Report Endpoints

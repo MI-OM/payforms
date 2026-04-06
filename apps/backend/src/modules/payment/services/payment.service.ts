@@ -638,11 +638,13 @@ export class PaymentService {
 
     try {
       if (nextStatus === 'PAID' && org.notify_payment_confirmation) {
+        const receiptAttachment = await this.buildReceiptAttachmentIfAvailable(organizationId, payment);
         await this.notificationService.sendPaymentConfirmation(
           org,
           recipientEmail,
           payment.amount,
           payment.reference,
+          receiptAttachment ? [receiptAttachment] : undefined,
         );
       } else if (nextStatus === 'FAILED' && org.notify_payment_failure) {
         await this.notificationService.sendFailedPaymentReminder(
@@ -671,6 +673,30 @@ export class PaymentService {
     }
 
     return recipientEmail;
+  }
+
+  private async buildReceiptAttachmentIfAvailable(
+    organizationId: string,
+    payment: Payment,
+  ): Promise<{ filename: string; content: Buffer; type: string } | null> {
+    if (!payment.submission?.contact_id) {
+      return null;
+    }
+
+    try {
+      const receipt = await this.generateContactReceiptByPaymentId(
+        organizationId,
+        payment.submission.contact_id,
+        payment.id,
+      );
+      return {
+        filename: receipt.fileName,
+        content: receipt.content,
+        type: 'application/pdf',
+      };
+    } catch (error) {
+      return null;
+    }
   }
 
   private buildVerificationEventId(source: 'manual_verify' | 'callback_redirect', reference: string, paystackId?: string | number) {

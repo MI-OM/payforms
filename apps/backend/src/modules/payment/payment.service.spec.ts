@@ -289,7 +289,14 @@ describe('PaymentService', () => {
   });
 
   it('handles webhook event and creates a payment log', async () => {
-    const payment = { id: 'payment-1', reference: 'ref-1', amount: 500, organization_id: 'org-1', submission: { contact_id: 'contact-1' } } as any;
+    const payment = {
+      id: 'payment-1',
+      reference: 'ref-1',
+      amount: 500,
+      status: 'PENDING',
+      organization_id: 'org-1',
+      submission: { contact_id: 'contact-1' },
+    } as any;
     const org = { id: 'org-1', notify_payment_confirmation: true, paystack_secret_key: 'secret' } as Organization;
     const contact = { email: 'customer@example.com' };
 
@@ -300,11 +307,25 @@ describe('PaymentService', () => {
     paymentRepository.update.mockResolvedValue(undefined);
     paymentLogRepository.create.mockReturnValue({});
     paymentLogRepository.save.mockResolvedValue({});
+    queryBuilder.getOne.mockResolvedValue({ ...payment, status: 'PAID', paid_at: new Date() });
+
+    const receiptSpy = jest.spyOn(service as any, 'buildReceiptAttachmentIfAvailable');
 
     const result = await service.handleWebhookEvent('org-1', 'charge.success', { reference: 'ref-1', status: 'success', customer: { email: 'customer@example.com' } }, 'event-1');
 
     expect(paymentLogRepository.save).toHaveBeenCalled();
-    expect(notificationService.sendPaymentConfirmation).toHaveBeenCalledWith(org, 'customer@example.com', 500, 'ref-1');
+    expect(receiptSpy).toHaveBeenCalledWith('org-1', expect.any(Object));
+    const receiptPromise = receiptSpy.mock.results[0].value;
+    expect(await receiptPromise).not.toBeNull();
+    expect(notificationService.sendPaymentConfirmation).toHaveBeenCalledWith(
+      org,
+      'customer@example.com',
+      500,
+      'ref-1',
+      expect.arrayContaining([
+        expect.objectContaining({ filename: 'receipt-ref-1.pdf' }),
+      ]),
+    );
     expect(result).toEqual({ success: true, payment });
   });
 

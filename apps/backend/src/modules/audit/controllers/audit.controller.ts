@@ -2,11 +2,14 @@ import { Controller, Get, Query, Param, UseGuards, Request } from '@nestjs/commo
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { AuditService } from '../services/audit.service';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../../auth/guards/roles.guard';
+import { Roles } from '../../auth/decorators/roles.decorator';
 
 @ApiTags('Audit')
 @Controller('audit')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
 @ApiBearerAuth()
+@Roles('ADMIN')
 export class AuditController {
   constructor(private auditService: AuditService) {}
 
@@ -25,7 +28,7 @@ export class AuditController {
     @Query('from') from?: string,
     @Query('to') to?: string,
   ) {
-    return this.auditService.listActivityLogs(req.user.organization_id, page, limit, {
+    const result = await this.auditService.listActivityLogs(req.user.organization_id, page, limit, {
       action,
       entity_type,
       entity_id,
@@ -36,6 +39,16 @@ export class AuditController {
       from,
       to,
     });
+
+    return {
+      ...result,
+      data: result.data.map(item => ({
+        ...item,
+        timestamp: item.created_at,
+        entity: item.entity_type,
+        user: item.user_id || 'System',
+      })),
+    };
   }
 
   @Get('payment-logs/:payment_id')

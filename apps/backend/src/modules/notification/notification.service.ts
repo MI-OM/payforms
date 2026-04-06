@@ -8,6 +8,12 @@ import { Contact } from '../contact/entities/contact.entity';
 
 type EmailProvider = 'sendgrid' | 'mailgun' | 'brevo';
 
+type EmailAttachment = {
+  filename: string;
+  content: Buffer | string;
+  type?: string;
+};
+
 @Injectable()
 export class NotificationService {
   constructor(
@@ -110,26 +116,44 @@ export class NotificationService {
     return fromAddress;
   }
 
-  private async sendViaSendGrid(apiKey: string, recipients: string[], subject: string, html: string) {
+  private async sendViaSendGrid(
+    apiKey: string,
+    recipients: string[],
+    subject: string,
+    html: string,
+    attachments?: EmailAttachment[],
+  ) {
     const fromAddress = this.getFromAddress();
+    const payload: any = {
+      personalizations: [
+        {
+          to: recipients.map(email => ({ email })),
+          subject,
+        },
+      ],
+      from: { email: fromAddress },
+      content: [
+        {
+          type: 'text/html',
+          value: html,
+        },
+      ],
+    };
+
+    if (attachments?.length) {
+      payload.attachments = attachments.map(att => ({
+        content: typeof att.content === 'string'
+          ? Buffer.from(att.content, 'utf-8').toString('base64')
+          : att.content.toString('base64'),
+        filename: att.filename,
+        type: att.type || 'application/pdf',
+        disposition: 'attachment',
+      }));
+    }
 
     await axios.post(
       'https://api.sendgrid.com/v3/mail/send',
-      {
-        personalizations: [
-          {
-            to: recipients.map(email => ({ email })),
-            subject,
-          },
-        ],
-        from: { email: fromAddress },
-        content: [
-          {
-            type: 'text/html',
-            value: html,
-          },
-        ],
-      },
+      payload,
       {
         headers: {
           Authorization: `Bearer ${apiKey}`,
@@ -139,7 +163,13 @@ export class NotificationService {
     );
   }
 
-  private async sendViaMailgun(apiKey: string, recipients: string[], subject: string, html: string) {
+  private async sendViaMailgun(
+    apiKey: string,
+    recipients: string[],
+    subject: string,
+    html: string,
+    attachments?: EmailAttachment[],
+  ) {
     const domain = this.configService.get<string>('MAILGUN_DOMAIN');
     if (!domain) {
       throw new BadRequestException('MAILGUN_DOMAIN is not configured');
@@ -150,7 +180,29 @@ export class NotificationService {
     const baseUrl = (this.configService.get<string>('MAILGUN_BASE_URL') || 'https://api.mailgun.net/v3').replace(/\/$/, '');
     const endpoint = `${baseUrl}/${domain}/messages`;
 
-    const form = new URLSearchParams();
+    if (!attachments?.length) {
+      const form = new URLSearchParams();
+      form.append('from', fromAddress);
+      for (const recipient of recipients) {
+        form.append('to', recipient);
+      }
+      form.append('subject', subject);
+      form.append('html', html);
+
+      await axios.post(endpoint, form.toString(), {
+        auth: {
+          username: 'api',
+          password: apiKey,
+        },
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+      });
+      return;
+    }
+
+    const FormData = require('form-data');
+    const form = new FormData();
     form.append('from', fromAddress);
     for (const recipient of recipients) {
       form.append('to', recipient);
@@ -158,35 +210,60 @@ export class NotificationService {
     form.append('subject', subject);
     form.append('html', html);
 
-    await axios.post(endpoint, form.toString(), {
+    for (const attachment of attachments) {
+      form.append('attachment', attachment.content, {
+        filename: attachment.filename,
+        contentType: attachment.type || 'application/pdf',
+      });
+    }
+
+    await axios.post(endpoint, form, {
       auth: {
         username: 'api',
         password: apiKey,
       },
       headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
+        ...form.getHeaders(),
       },
     });
   }
 
-  private async sendViaBrevo(apiKey: string, recipients: string[], subject: string, html: string) {
+  private async sendViaBrevo(
+    apiKey: string,
+    recipients: string[],
+    subject: string,
+    html: string,
+    attachments?: EmailAttachment[],
+  ) {
     const fromAddress =
       this.configService.get<string>('BREVO_FROM') || this.getFromAddress();
     const fromName = this.configService.get<string>('EMAIL_FROM_NAME') || 'Payforms';
     const baseUrl = (this.configService.get<string>('BREVO_API_BASE_URL') || 'https://api.brevo.com/v3').replace(/\/$/, '');
     const endpoint = `${baseUrl}/smtp/email`;
 
+    const payload: any = {
+      sender: {
+        email: fromAddress,
+        name: fromName,
+      },
+      to: recipients.map(email => ({ email })),
+      subject,
+      htmlContent: html,
+    };
+
+    if (attachments?.length) {
+      payload.attachment = attachments.map(att => ({
+        content: typeof att.content === 'string'
+          ? Buffer.from(att.content, 'utf-8').toString('base64')
+          : att.content.toString('base64'),
+        name: att.filename,
+        type: att.type || 'application/pdf',
+      }));
+    }
+
     await axios.post(
       endpoint,
-      {
-        sender: {
-          email: fromAddress,
-          name: fromName,
-        },
-        to: recipients.map(email => ({ email })),
-        subject,
-        htmlContent: html,
-      },
+      payload,
       {
         headers: {
           'api-key': apiKey,
@@ -196,7 +273,7 @@ export class NotificationService {
     );
   }
 
-  async sendEmail(recipients: string[], subject: string, html: string) {
+  async sendEmail(recipients: string[], subject: string, html: string, attachments?: EmailAttachment[]) {
     if (!recipients.length) {
       throw new BadRequestException('At least one email recipient is required');
     }
@@ -206,16 +283,16 @@ export class NotificationService {
 
     try {
       if (provider === 'mailgun') {
-        await this.sendViaMailgun(apiKey, recipients, subject, html);
+        await this.sendViaMailgun(apiKey, recipients, subject, html, attachments);
         return;
       }
 
       if (provider === 'brevo') {
-        await this.sendViaBrevo(apiKey, recipients, subject, html);
+        await this.sendViaBrevo(apiKey, recipients, subject, html, attachments);
         return;
       }
 
-      await this.sendViaSendGrid(apiKey, recipients, subject, html);
+      await this.sendViaSendGrid(apiKey, recipients, subject, html, attachments);
     } catch (error) {
       if (error instanceof BadRequestException) {
         throw error;
@@ -230,7 +307,13 @@ export class NotificationService {
     }
   }
 
-  async sendPaymentConfirmation(organization: Organization, recipientEmail: string, amount: number, reference: string) {
+  async sendPaymentConfirmation(
+    organization: Organization,
+    recipientEmail: string,
+    amount: number,
+    reference: string,
+    attachments?: EmailAttachment[],
+  ) {
     const subject = `${organization.name} Payment Confirmation`;
     const html = `
       <p>Thank you for your payment to ${organization.name}.</p>
@@ -238,7 +321,7 @@ export class NotificationService {
       <p><strong>Amount:</strong> ₦${amount.toFixed(2)}</p>
       ${organization.logo_url ? `<img src="${organization.logo_url}" alt="${organization.name}" style="max-width: 200px;"/>` : ''}
     `;
-    return this.sendEmail([recipientEmail], subject, html);
+    return this.sendEmail([recipientEmail], subject, html, attachments);
   }
 
   async sendSubmissionConfirmation(organization: Organization, recipientEmail: string, formTitle: string, amount: number, reference: string) {
