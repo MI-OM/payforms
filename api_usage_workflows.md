@@ -237,13 +237,17 @@ This document describes the major Payforms API workflows, including each endpoin
   - `description?`
   - `note?`
   - `slug`
-  - `payment_type`: `FIXED` or `VARIABLE`
-  - `amount?`
-  - `allow_partial`
+  - `payment_type?`: `FIXED` or `VARIABLE` (omit or null for free forms with no payment)
+  - `amount?`: Required if `payment_type` is `FIXED`; null/omitted for free forms
+  - `allow_partial?`: Enable partial payments when true and payment_type is set
 - Flow:
   1. Admin configures a form in the dashboard.
   2. Frontend submits form metadata to `/forms`.
   3. Backend creates a form record and returns form info.
+  4. **Payment Model**:
+     - Forms with no `payment_type` or null `amount` are **free forms** (no payment required, Paystack not used)
+     - Forms with `payment_type: FIXED` and `amount` > 0 require full payment
+     - Forms with `allow_partial: true` allow users to make partial payments and settle balance later
 
 ### 3.2 List Forms
 
@@ -805,14 +809,25 @@ This document describes the major Payforms API workflows, including each endpoin
   - `partial_amount?` (number, for partial payments when form.allow_partial is true)
 - Flow:
   1. User submits the public form.
-  2. If `partial_amount` is provided and form allows partial payments:
-     - Validates partial_amount > 0 and ≤ total amount
-     - Creates payment for partial_amount
-     - Tracks total_amount for balance calculation
-  3. If no `partial_amount`, creates payment for full amount.
-  4. Frontend posts submission payload.
-  5. Backend records submission, validates fields, and returns success.
-  6. If payment is required, redirect or callback occurs via Paystack flow.
+  2. Backend records submission and validates all fields.
+  3. **Payment Processing Decision**:
+     - **If form has NO payment requirement** (amount is 0 or null, or payment_type not set):
+       - Submission is recorded with status `COMPLETED`
+       - No payment object is created
+       - Paystack page is NOT shown
+       - Response includes `submission_id` and direct success confirmation
+     - **If form HAS payment requirement**:
+       - If `partial_amount` is provided and form.allow_partial is true:
+         - Validates partial_amount > 0 and ≤ total form amount
+         - Creates payment record for partial_amount
+         - Tracks total_amount for balance calculation across multiple payments
+       - If no `partial_amount`, creates payment for full form amount
+       - Paystack payment authorization is initiated
+       - Response includes `authorization_url` from Paystack
+       - User is redirected to Paystack hosted payment page
+  4. Frontend handles response:
+     - For payment-free forms: show success message
+     - For payment forms: redirect to `authorization_url` for payment
 
 ### 10.6 Payment Callback
 
@@ -992,14 +1007,29 @@ This document describes the major Payforms API workflows, including each endpoin
 5. Backend returns contact JWT.
 6. Contact uses `GET /contact-auth/me` to load profile.
 
-### 16.3 Public Form Submission with Payment
+### 16.3 Public Form Submission (With and Without Payment)
 
+#### Scenario A: Form with No Payment Requirement
 1. User loads widget via `GET /public/forms/:slug/widget-config` or `/embed.js`.
 2. Browser renders form to the public.
 3. User submits data to `POST /public/forms/:slug/submit`.
-4. Backend validates submission and creates a pending transaction if payment is required.
-5. Paystack redirects to `GET /public/payments/callback` after payment.
-6. Backend verifies payment with `GET /payments/verify/:reference` and updates status.
+4. Backend validates submission and records it with status `COMPLETED`.
+5. No payment object is created.
+6. No Paystack page is shown.
+7. Frontend receives success response with `submission_id` and displays confirmation message.
+
+#### Scenario B: Form with Payment Requirement
+1. User loads widget via `GET /public/forms/:slug/widget-config` or `/embed.js`.
+2. Browser renders form to the public.
+3. User submits data to `POST /public/forms/:slug/submit` (optionally with `partial_amount` for partial payments).
+4. Backend validates submission and creates a payment record.
+5. Backend initiates Paystack payment authorization and returns `authorization_url`.
+6. Frontend redirects user to Paystack hosted payment page (`authorization_url`).
+7. User completes payment on Paystack (card, transfer, USSD, bank account, etc.).
+8. Paystack redirects back to `GET /public/payments/callback` after payment completion.
+9. Backend verifies payment reference and updates payment status (`PAID` or `PARTIAL`).
+10. Submission status is updated accordingly.
+11. User receives confirmation.
 
 ### 16.4 Retrieve Payment History and Receipts
 
@@ -1016,6 +1046,11 @@ This document describes the major Payforms API workflows, including each endpoin
 - `GET /public/forms/:slug` and submit endpoints support optional contact token authorization for targeted forms.
 - Use `format=csv` on list endpoints where available to download CSV exports.
 - Always validate import data first via `/contacts/imports/validate` before calling commit.
+- **Payment Flow Handling**:
+  - Not all forms require payment. If form has no `payment_type` or `amount`, Paystack is NOT used.
+  - Check the form response to determine if a payment is required before redirecting to authorization_url.
+  - For partial payments, validate that `allow_partial` is true before allowing partial_amount parameter in submission.
+  - Free forms (no payment) show success response directly; payment forms redirect to Paystack.
 
 ## 18. API Usage Patterns
 

@@ -245,15 +245,24 @@ export class PublicController {
       }
     }
 
-    const callback = callbackUrl || this.configService.get('PAYSTACK_CALLBACK_URL');
-    if (!callback) {
-      throw new BadRequestException('Callback URL is required');
-    }
-
     const submission = await this.submissionService.create(form.organization_id, form.id, {
       data: dto.data,
       contact_id: contactId,
     });
+
+    // Check if payment is required
+    const requiresPayment = totalAmount && totalAmount > 0;
+
+    if (!requiresPayment) {
+      // Free form - no payment required
+      return { submission };
+    }
+
+    // Payment required - create payment and initialize Paystack
+    const callback = callbackUrl || this.configService.get('PAYSTACK_CALLBACK_URL');
+    if (!callback) {
+      throw new BadRequestException('Callback URL is required');
+    }
 
     const payment = await this.paymentService.create(form.organization_id, {
       submission_id: submission.id,

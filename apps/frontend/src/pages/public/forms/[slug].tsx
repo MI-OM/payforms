@@ -101,17 +101,23 @@ export default function PublicForm() {
 
     setSubmitting(true);
     try {
-      const response = await axios.post(`/api/public/forms/${slug}/submit`, {
+      // Include callback_url to redirect to success page after payment
+      const callbackUrl = `${window.location.origin}/payment/success`;
+      const response = await axios.post(`/api/public/forms/${slug}/submit?callback_url=${encodeURIComponent(callbackUrl)}`, {
         data,
         contact_email: data.contact_email,
         contact_name: data.contact_name,
       });
 
-      const { authorization } = response.data;
+      const { authorization, submission } = response.data;
 
-      // Redirect to Paystack
+      // Check if payment is required
       if (authorization?.authorization_url) {
+        // Redirect to Paystack for payment
         window.location.href = authorization.authorization_url;
+      } else {
+        // Free form - redirect to success page directly
+        router.push('/payment/success');
       }
     } catch (error: any) {
       console.error('Submission failed:', error);
