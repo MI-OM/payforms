@@ -545,18 +545,20 @@ describe('PublicController', () => {
   });
 
   it('returns ignored callback response when payment reference is unknown', async () => {
+    const mockRes = {
+      redirect: jest.fn(),
+    };
     paymentService.findByReferenceGlobal.mockResolvedValue(null);
 
-    const result = await controller.handlePaymentCallback('ref-1', undefined);
+    await controller.handlePaymentCallback(mockRes as any, 'ref-1', undefined);
 
-    expect(result).toEqual({
-      status: 'ignored',
-      reason: 'payment_not_found',
-      reference: 'ref-1',
-    });
+    expect(mockRes.redirect).toHaveBeenCalledWith('http://localhost:3000/payment/success?error=payment_not_found');
   });
 
   it('processes callback response when payment reference is found', async () => {
+    const mockRes = {
+      redirect: jest.fn(),
+    };
     paymentService.findByReferenceGlobal.mockResolvedValue({
       id: 'payment-1',
       organization_id: 'org-1',
@@ -569,20 +571,14 @@ describe('PublicController', () => {
       verified: { status: 'success' },
     });
 
-    const result = await controller.handlePaymentCallback('ref-1', undefined);
+    await controller.handlePaymentCallback(mockRes as any, 'ref-1', undefined);
 
     expect(paymentService.verifyAndFinalizePayment).toHaveBeenCalledWith(
       'org-1',
       'ref-1',
       'callback_redirect',
     );
-    expect(result).toEqual({
-      status: 'processed',
-      reference: 'ref-1',
-      skipped: false,
-      payment: { id: 'payment-1', status: 'PAID' },
-      verified: { status: 'success' },
-    });
+    expect(mockRes.redirect).toHaveBeenCalledWith('http://localhost:3000/payment/success?reference=ref-1&status=true');
   });
 
   it('validates required submission field and throws BadRequestException', async () => {

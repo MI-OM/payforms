@@ -834,9 +834,10 @@ This document describes the major Payforms API workflows, including each endpoin
 - Endpoint: `GET /public/payments/callback`
 - Query: `reference` or `trxref`
 - Flow:
-  1. Paystack redirects back after payment.
-  2. Frontend or browser hits callback endpoint.
-  3. Backend verifies payment and finalizes transaction status.
+  1. Paystack redirects back after payment completion (to backend callback URL).
+  2. Backend verifies payment reference and updates payment status.
+  3. Backend redirects user to frontend success page with payment status.
+  4. Frontend displays appropriate success/failure message based on query parameters.
 
 ## 11. Webhook Workflow
 
@@ -1026,10 +1027,10 @@ This document describes the major Payforms API workflows, including each endpoin
 5. Backend initiates Paystack payment authorization and returns `authorization_url`.
 6. Frontend redirects user to Paystack hosted payment page (`authorization_url`).
 7. User completes payment on Paystack (card, transfer, USSD, bank account, etc.).
-8. Paystack redirects back to `GET /public/payments/callback` after payment completion.
+8. Paystack redirects back to `GET /public/payments/callback` (backend endpoint).
 9. Backend verifies payment reference and updates payment status (`PAID` or `PARTIAL`).
-10. Submission status is updated accordingly.
-11. User receives confirmation.
+10. Backend redirects user to frontend success page (`/payment/success`) with status parameters.
+11. Frontend displays success/failure message based on payment verification result.
 
 ### 16.4 Retrieve Payment History and Receipts
 
@@ -1051,6 +1052,7 @@ This document describes the major Payforms API workflows, including each endpoin
   - Check the form response to determine if a payment is required before redirecting to authorization_url.
   - For partial payments, validate that `allow_partial` is true before allowing partial_amount parameter in submission.
   - Free forms (no payment) show success response directly; payment forms redirect to Paystack.
+  - After Paystack payment, users are redirected to backend callback which then redirects to frontend success page.
 
 ## 18. API Usage Patterns
 

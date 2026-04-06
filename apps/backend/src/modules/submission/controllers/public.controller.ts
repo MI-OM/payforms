@@ -1,4 +1,5 @@
-import { Controller, Get, Post, Body, Param, Query, HttpCode, HttpStatus, BadRequestException, NotFoundException, UnauthorizedException, Headers, Header, Req } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, Query, HttpCode, HttpStatus, BadRequestException, NotFoundException, UnauthorizedException, Headers, Header, Req, Res } from '@nestjs/common';
+import { Response } from 'express';
 import { ApiTags } from '@nestjs/swagger';
 import { FormService } from '../../form/services/form.service';
 import { SubmissionService } from '../services/submission.service';
@@ -141,21 +142,18 @@ export class PublicController {
 
   @Get('payments/callback')
   async handlePaymentCallback(
+    @Res() res: Response,
     @Query('reference') reference?: string,
     @Query('trxref') trxref?: string,
   ) {
     const resolvedReference = reference || trxref;
     if (!resolvedReference) {
-      throw new BadRequestException('Payment reference is required');
+      return res.redirect(`${this.configService.get('FRONTEND_URL', 'http://localhost:3000')}/payment/success?error=no_reference`);
     }
 
     const payment = await this.paymentService.findByReferenceGlobal(resolvedReference);
     if (!payment) {
-      return {
-        status: 'ignored',
-        reason: 'payment_not_found',
-        reference: resolvedReference,
-      };
+      return res.redirect(`${this.configService.get('FRONTEND_URL', 'http://localhost:3000')}/payment/success?error=payment_not_found`);
     }
 
     try {
@@ -165,19 +163,14 @@ export class PublicController {
         'callback_redirect',
       );
 
-      return {
-        status: 'processed',
-        reference: resolvedReference,
-        skipped: !!result.skipped,
-        payment: result.payment,
-        verified: result.verified,
-      };
+      // Redirect to frontend success page with payment status
+      const frontendUrl = this.configService.get('FRONTEND_URL', 'http://localhost:3000');
+      const redirectUrl = `${frontendUrl}/payment/success?reference=${resolvedReference}&status=${result.verified ? 'success' : 'failed'}`;
+
+      return res.redirect(redirectUrl);
     } catch (error: any) {
-      return {
-        status: 'error',
-        reference: resolvedReference,
-        message: error?.message || 'Verification failed',
-      };
+      const frontendUrl = this.configService.get('FRONTEND_URL', 'http://localhost:3000');
+      return res.redirect(`${frontendUrl}/payment/success?error=verification_failed`);
     }
   }
 
