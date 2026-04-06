@@ -179,6 +179,7 @@ export class PublicController {
   async submitPublicForm(
     @Param('slug') slug: string,
     @Body() dto: PublicSubmitFormDto,
+    @Req() req: Request,
     @Query('callback_url') callbackUrl?: string,
     @Headers('authorization') authorization?: string,
   ) {
@@ -252,7 +253,8 @@ export class PublicController {
     }
 
     // Payment required - create payment and initialize Paystack
-    const callback = callbackUrl || this.configService.get('PAYSTACK_CALLBACK_URL');
+    const baseUrl = this.resolvePublicBaseUrl(req);
+    const callback = callbackUrl || `${baseUrl}/public/payments/callback`;
     if (!callback) {
       throw new BadRequestException('Callback URL is required');
     }

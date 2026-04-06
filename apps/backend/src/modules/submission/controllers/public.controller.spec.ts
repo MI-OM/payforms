@@ -44,11 +44,23 @@ const mockNotificationService = () => ({
 });
 
 const mockConfigService = () => ({
-  get: jest.fn(),
+  get: jest.fn((key: string, defaultValue?: any) => {
+    if (key === 'FRONTEND_URL') return defaultValue || 'http://localhost:3000';
+    return defaultValue;
+  }),
 });
 
 const mockJwtService = () => ({
   verify: jest.fn(),
+});
+
+const mockRequest = () => ({
+  protocol: 'https',
+  get: jest.fn((header: string) => {
+    if (header === 'host') return 'api.payforms.vercel.app';
+    return undefined;
+  }),
+  headers: {},
 });
 
 describe('PublicController', () => {
@@ -60,6 +72,7 @@ describe('PublicController', () => {
   let notificationService: MockNotificationService;
   let configService: MockConfigService;
   let jwtService: MockJwtService;
+  let request: ReturnType<typeof mockRequest>;
 
   beforeEach(() => {
     formService = mockFormService();
@@ -69,6 +82,7 @@ describe('PublicController', () => {
     notificationService = mockNotificationService();
     configService = mockConfigService();
     jwtService = mockJwtService();
+    request = mockRequest();
 
     controller = new PublicController(
       formService as any,
@@ -152,7 +166,7 @@ describe('PublicController', () => {
 
     formService.findBySlug.mockResolvedValue(form);
 
-    await expect(controller.submitPublicForm('test', dto as any, 'https://callback', undefined)).rejects.toThrow(BadRequestException);
+    await expect(controller.submitPublicForm('test', dto as any, request as any, 'https://callback', undefined)).rejects.toThrow(BadRequestException);
   });
 
   it('rejects submit when identity validation mode is CONTACT_EMAIL and email is not registered', async () => {
@@ -173,7 +187,7 @@ describe('PublicController', () => {
     formService.findBySlug.mockResolvedValue(form);
     contactService.findByEmail.mockResolvedValue(null);
 
-    await expect(controller.submitPublicForm('test', dto as any, 'https://callback', undefined)).rejects.toThrow(BadRequestException);
+    await expect(controller.submitPublicForm('test', dto as any, request as any, 'https://callback', undefined)).rejects.toThrow(BadRequestException);
   });
 
   it('rejects submit when identity validation mode is CONTACT_EXTERNAL_ID and external ID field is missing', async () => {
@@ -193,7 +207,7 @@ describe('PublicController', () => {
 
     formService.findBySlug.mockResolvedValue(form);
 
-    await expect(controller.submitPublicForm('test', dto as any, 'https://callback', undefined)).rejects.toThrow(BadRequestException);
+    await expect(controller.submitPublicForm('test', dto as any, request as any, 'https://callback', undefined)).rejects.toThrow(BadRequestException);
   });
 
   it('rejects submit when identity validation mode is CONTACT_EXTERNAL_ID and external ID is invalid', async () => {
@@ -214,7 +228,7 @@ describe('PublicController', () => {
     formService.findBySlug.mockResolvedValue(form);
     contactService.findByExternalId.mockResolvedValue(null);
 
-    await expect(controller.submitPublicForm('test', dto as any, 'https://callback', undefined)).rejects.toThrow(BadRequestException);
+    await expect(controller.submitPublicForm('test', dto as any, request as any, 'https://callback', undefined)).rejects.toThrow(BadRequestException);
   });
 
   it('returns widget config for public form', async () => {
@@ -475,7 +489,7 @@ describe('PublicController', () => {
     paymentService.initializePaystack.mockResolvedValue(authorization);
     notificationService.sendSubmissionConfirmation.mockResolvedValue(undefined);
 
-    const result = await controller.submitPublicForm('test', dto as any, 'https://callback', undefined);
+    const result = await controller.submitPublicForm('test', dto as any, request as any, 'https://callback', undefined);
 
     expect(result).toEqual({ submission, payment, authorization });
     expect(notificationService.sendSubmissionConfirmation).toHaveBeenCalledWith(
@@ -502,22 +516,35 @@ describe('PublicController', () => {
     configService.get.mockReturnValue('https://callback');
     paymentService.initializePaystack.mockResolvedValue(authorization);
 
-    const result = await controller.submitPublicForm('test', dto as any, 'https://callback', undefined);
+    const result = await controller.submitPublicForm('test', dto as any, request as any, 'https://callback', undefined);
 
     expect(contactService.createFromPublic).toHaveBeenCalledWith('org-1', 'Jane', 'Doe', 'jane@example.com');
     expect(result).toEqual({ submission, payment, authorization });
   });
 
-  it('throws BadRequestException if callback URL is missing', async () => {
+  it('generates callback URL dynamically when not provided', async () => {
     const form = { id: 'form-1', organization_id: 'org-1', title: 'Test', payment_type: 'FIXED', amount: 100, allow_partial: false, fields: [], targets: [], organization: { notify_submission_confirmation: false } } as any;
-    const dto = { data: { name: 'Jane Doe' } };
+    const dto = { data: { name: 'Jane Doe' }, contact_email: 'jane@example.com' };
+    const submission = { id: 'submission-1' };
+    const payment = { id: 'payment-1', reference: 'ref-1', amount: 100 };
+    const authorization = { authorization_url: 'https://paystack.com/pay' };
 
     formService.findBySlug.mockResolvedValue(form);
-    submissionService.create.mockResolvedValue({ id: 'submission-1' });
-    paymentService.create.mockResolvedValue({ id: 'payment-1' });
-    configService.get.mockReturnValue(null);
+    contactService.findByEmail.mockResolvedValue({ id: 'contact-1' });
+    submissionService.create.mockResolvedValue(submission);
+    paymentService.create.mockResolvedValue(payment);
+    paymentService.initializePaystack.mockResolvedValue(authorization);
+    configService.get.mockReturnValue(null); // No configured callback
 
-    await expect(controller.submitPublicForm('test', dto as any, undefined, undefined)).rejects.toThrow(BadRequestException);
+    const result = await controller.submitPublicForm('test', dto as any, request as any, undefined, undefined);
+
+    expect(paymentService.initializePaystack).toHaveBeenCalledWith(
+      'org-1',
+      payment,
+      'https://api.payforms.vercel.app/public/payments/callback', // Dynamically generated
+      'jane@example.com',
+    );
+    expect(result).toEqual({ submission, payment, authorization });
   });
 
   it('marks payment as failed when paystack initialization fails', async () => {
@@ -534,7 +561,7 @@ describe('PublicController', () => {
     paymentService.markInitializationFailed.mockResolvedValue({ ...payment, status: 'FAILED' });
 
     await expect(
-      controller.submitPublicForm('test', dto as any, 'https://callback', undefined),
+      controller.submitPublicForm('test', dto as any, request as any, 'https://callback', undefined),
     ).rejects.toThrow(BadRequestException);
 
     expect(paymentService.markInitializationFailed).toHaveBeenCalledWith(
@@ -578,7 +605,7 @@ describe('PublicController', () => {
       'ref-1',
       'callback_redirect',
     );
-    expect(mockRes.redirect).toHaveBeenCalledWith('http://localhost:3000/payment/success?reference=ref-1&status=true');
+    expect(mockRes.redirect).toHaveBeenCalledWith('http://localhost:3000/payment/success?reference=ref-1&status=success');
   });
 
   it('validates required submission field and throws BadRequestException', async () => {
@@ -587,7 +614,7 @@ describe('PublicController', () => {
 
     formService.findBySlug.mockResolvedValue(form);
 
-    await expect(controller.submitPublicForm('test', dto as any, 'https://callback', undefined)).rejects.toThrow(BadRequestException);
+    await expect(controller.submitPublicForm('test', dto as any, request as any, 'https://callback', undefined)).rejects.toThrow(BadRequestException);
   });
 
   it('allows targeted form access with valid contact token and eligibility', async () => {
@@ -605,7 +632,7 @@ describe('PublicController', () => {
     configService.get.mockReturnValue('https://callback');
     paymentService.initializePaystack.mockResolvedValue(authorization);
 
-    const result = await controller.submitPublicForm('test', dto as any, 'https://callback', 'Bearer valid-token');
+    const result = await controller.submitPublicForm('test', dto as any, request as any, 'https://callback', 'Bearer valid-token');
 
     expect(formService.isContactEligible).toHaveBeenCalledWith(form, 'contact-1');
     expect(result).toEqual({ submission, payment, authorization });
