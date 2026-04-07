@@ -174,6 +174,32 @@ export class PublicController {
     }
   }
 
+  @Get('payments/verify')
+  async verifyPublicPayment(
+    @Query('reference') reference?: string,
+    @Query('trxref') trxref?: string,
+  ) {
+    const resolvedReference = reference || trxref;
+    if (!resolvedReference) {
+      throw new BadRequestException('Payment reference is required');
+    }
+
+    const payment = await this.paymentService.findByReferenceGlobal(resolvedReference);
+    if (!payment) {
+      return { success: false, message: 'Payment not found' };
+    }
+
+    try {
+      return await this.paymentService.verifyAndFinalizePayment(
+        payment.organization_id,
+        resolvedReference,
+        'callback_redirect',
+      );
+    } catch (error: any) {
+      return { success: false, message: 'Payment verification failed' };
+    }
+  }
+
   @Post('forms/:slug/submit')
   @HttpCode(HttpStatus.OK)
   async submitPublicForm(

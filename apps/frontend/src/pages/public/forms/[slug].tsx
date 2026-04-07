@@ -102,9 +102,9 @@ export default function PublicForm() {
 
     setSubmitting(true);
     try {
-      // Include callback_url to redirect to success page after payment
+      // Include callback_url so Paystack returns to the frontend callback page
       // Use environment-configured URL instead of window.location.origin to support Vercel deployments
-      const callbackUrl = getCallbackUrl('/payment/success');
+      const callbackUrl = getCallbackUrl('/paystack/callback');
       const response = await axios.post(`/api/public/forms/${slug}/submit?callback_url=${encodeURIComponent(callbackUrl)}`, {
         data,
         contact_email: data.contact_email,

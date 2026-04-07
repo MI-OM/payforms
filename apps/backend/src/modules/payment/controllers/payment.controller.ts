@@ -1,8 +1,10 @@
-import { Controller, Get, Post, Body, UseGuards, Request, Param, Query, Res, NotFoundException } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Body, UseGuards, Request, Param, Query, Res, NotFoundException } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { PaymentService } from '../services/payment.service';
 import { CreatePaymentDto, UpdatePaymentStatusDto } from '../dto/payment.dto';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../../auth/guards/roles.guard';
+import { Roles } from '../../auth/decorators/roles.decorator';
 import { Response } from 'express';
 
 @ApiTags('Payments')
@@ -63,7 +65,9 @@ export class PaymentController {
   }
 
   @Post(':id/status')
-  @UseGuards(JwtAuthGuard)
+  @Patch(':id/status')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN')
   @ApiBearerAuth()
   async updatePaymentStatus(
     @Request() req,
