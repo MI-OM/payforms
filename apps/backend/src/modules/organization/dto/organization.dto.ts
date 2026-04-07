@@ -68,6 +68,11 @@ export class UpdateOrganizationKeysDto {
   @IsOptional()
   @IsString()
   paystack_secret_key?: string;
+
+  @ApiPropertyOptional({ example: 'https://api.payforms.com.ng/webhooks/paystack' })
+  @IsOptional()
+  @IsString()
+  paystack_webhook_url?: string;
 }
 
 export class UploadLogoDto {

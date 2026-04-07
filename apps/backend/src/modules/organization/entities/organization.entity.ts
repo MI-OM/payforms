@@ -36,6 +36,9 @@ export class Organization {
   paystack_secret_key: string;
 
   @Column({ nullable: true })
+  paystack_webhook_url: string;
+
+  @Column({ nullable: true })
   logo_url: string;
 
   @Column({ type: 'varchar', nullable: true })

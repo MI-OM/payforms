@@ -115,6 +115,45 @@ export class ReportService {
       .orderBy('day', 'ASC')
       .getRawMany();
 
+    const paymentsByDayDetailed = await this.paymentRepository
+      .createQueryBuilder('payment')
+      .select("DATE_TRUNC('day', payment.created_at)", 'day')
+      .addSelect('payment.status', 'status')
+      .addSelect('COUNT(payment.id)', 'count')
+      .addSelect('SUM(payment.amount)', 'total')
+      .where('payment.organization_id = :organizationId', { organizationId })
+      .andWhere('payment.created_at BETWEEN :queryStart AND :queryEnd', { queryStart, queryEnd })
+      .groupBy('day')
+      .addGroupBy('payment.status')
+      .orderBy('day', 'ASC')
+      .getRawMany();
+
+    // Group payments by day with status breakdown
+    const paymentsByDayMap = new Map<string, any>();
+    paymentsByDayDetailed.forEach(row => {
+      const day = row.day.toISOString().slice(0, 10);
+      if (!paymentsByDayMap.has(day)) {
+        paymentsByDayMap.set(day, { day, paid: { count: 0, total: 0 }, pending: { count: 0, total: 0 }, failed: { count: 0, total: 0 }, partial: { count: 0, total: 0 } });
+      }
+      const dayData = paymentsByDayMap.get(day);
+      const status = row.status.toLowerCase();
+      if (status === 'paid') {
+        dayData.paid.count += Number(row.count);
+        dayData.paid.total += Number(row.total || 0);
+      } else if (status === 'pending') {
+        dayData.pending.count += Number(row.count);
+        dayData.pending.total += Number(row.total || 0);
+      } else if (status === 'failed') {
+        dayData.failed.count += Number(row.count);
+        dayData.failed.total += Number(row.total || 0);
+      } else if (status === 'partial') {
+        dayData.partial.count += Number(row.count);
+        dayData.partial.total += Number(row.total || 0);
+      }
+    });
+
+    const paymentsByDayWithStatus = Array.from(paymentsByDayMap.values());
+
     const paymentStatusBreakdown = await this.paymentRepository
       .createQueryBuilder('payment')
       .select('payment.status', 'status')
@@ -131,7 +170,7 @@ export class ReportService {
         end: queryEnd.toISOString(),
       },
       submissions_by_day: submissionsByDay.map(row => ({ day: row.day.toISOString().slice(0, 10), count: Number(row.count) })),
-      payments_by_day: paymentsByDay.map(row => ({ day: row.day.toISOString().slice(0, 10), total: Number(row.total), count: Number(row.count) })),
+      payments_by_day: paymentsByDayWithStatus,
       payment_status_breakdown: paymentStatusBreakdown.map(row => ({ status: row.status, count: Number(row.count), total_amount: Number(row.total_amount) })),
     };
   }
