@@ -6,7 +6,8 @@
   "scripts": {
     "start": "node dist/main",
     "start:dev": "ts-node src/main.ts",
-    "build": "tsc",
+    "build": "tsc -p tsconfig.prod.json",
+    "build:prod": "tsc --skipLibCheck --exclude \"src/**/*.spec.ts\" --exclude \"src/**/*.test.ts\"",
     "migration:run": "npx typeorm-ts-node-commonjs migration:run -d ./src/data-source.ts",
     "migration:run:prod": "node ./node_modules/typeorm/cli.js migration:run -d dist/data-source.js",
     "migration:revert": "npx typeorm-ts-node-commonjs migration:revert -d ./src/data-source.ts",
