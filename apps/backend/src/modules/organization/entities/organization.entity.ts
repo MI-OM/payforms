@@ -35,7 +35,7 @@ export class Organization {
   @Column({ nullable: true })
   paystack_secret_key: string;
 
-  @Column({ nullable: true, select: false })
+  @Column({ nullable: true, select: false, insert: false, update: false })
   paystack_webhook_url: string;
 
   @Column({ nullable: true })

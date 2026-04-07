@@ -520,7 +520,7 @@ export class PaymentService {
   }): Promise<Buffer> {
     return new Promise((resolve, reject) => {
       const PDFDocument = require('pdfkit');
-      const pdf = new PDFDocument({ margin: 36 });
+      const pdf = new PDFDocument({ margin: 40 });
       const chunks: Buffer[] = [];
 
       pdf.on('data', chunk => chunks.push(chunk));
@@ -528,23 +528,51 @@ export class PaymentService {
       pdf.on('error', reject);
 
       const { organization, contact, payment } = payload;
-      const contactName = [contact.first_name, contact.last_name].filter(Boolean).join(' ').trim();
+      const contactName = [contact.first_name, contact.last_name].filter(Boolean).join(' ').trim() || 'N/A';
       const amount = Number(payment.amount || 0);
+      const paidAt = payment.paid_at ? payment.paid_at.toISOString().replace('T', ' ').replace('Z', '') : 'N/A';
+      const createdAt = payment.created_at ? payment.created_at.toISOString().replace('T', ' ').replace('Z', '') : 'N/A';
+      const paymentType = payment.total_amount && Number(payment.amount) < Number(payment.total_amount) ? 'Partial' : 'Full';
 
-      pdf.fontSize(20).text('Payment Receipt', { align: 'center' });
-      pdf.moveDown();
-      pdf.fontSize(12).text(`Organization: ${organization.name}`);
-      pdf.text(`Organization Email: ${organization.email || '-'}`);
-      pdf.text(`Contact: ${contactName || '-'}`);
-      pdf.text(`Contact Email: ${contact.email || '-'}`);
+      pdf.fillColor('#333').fontSize(22).text('Payment Receipt', { align: 'center' });
       pdf.moveDown(0.5);
-      pdf.text(`Reference: ${payment.reference}`);
-      pdf.text(`Amount: NGN ${amount.toFixed(2)}`);
-      pdf.text(`Status: ${payment.status}`);
-      pdf.text(`Paid At: ${payment.paid_at ? payment.paid_at.toISOString() : '-'}`);
-      pdf.text(`Created At: ${payment.created_at ? payment.created_at.toISOString() : '-'}`);
-      pdf.text(`Form ID: ${payment.submission?.form_id || '-'}`);
-      pdf.text(`Submission ID: ${payment.submission_id || '-'}`);
+      pdf.strokeColor('#e2e8f0').lineWidth(1).moveTo(40, pdf.y).lineTo(555, pdf.y).stroke();
+      pdf.moveDown(1);
+
+      pdf.fontSize(10).fillColor('#718096');
+      pdf.text(`Date: ${createdAt}`, { align: 'right' });
+      pdf.moveDown(1);
+
+      pdf.fillColor('#2d3748').fontSize(12).text(organization.name, { continued: true });
+      pdf.fontSize(10).fillColor('#718096').text(`  |  Receipt`, { continued: false });
+      pdf.moveDown(1);
+
+      pdf.fontSize(11).fillColor('#4a5568');
+      pdf.text('Transaction Details', { underline: true });
+      pdf.moveDown(0.5);
+
+      const row = (label: string, value: string) => {
+        pdf.fillColor('#718096').fontSize(10).text(label, { continued: true, width: 180 });
+        pdf.fillColor('#2d3748').fontSize(10).text(value);
+      };
+
+      row('Reference:', payment.reference);
+      row('Status:', payment.status);
+      row('Payment Type:', paymentType);
+      row('Payment Gateway:', 'Paystack');
+      row('Amount:', `₦${amount.toFixed(2)}`);
+      row('Paid At:', paidAt);
+      row('Form ID:', payment.submission?.form_id || 'N/A');
+      row('Submission ID:', payment.submission_id || 'N/A');
+      row('Contact:', contactName);
+      row('Contact Email:', contact.email || 'N/A');
+
+      pdf.moveDown(1);
+      pdf.fillColor('#2d3748').fontSize(11).text('Notes', { underline: true });
+      pdf.moveDown(0.5);
+      pdf.fillColor('#4a5568').fontSize(10).text(
+        'Thank you for your payment. Please keep this receipt for your records. If you need assistance, contact the receiving organization directly.',
+      );
 
       pdf.end();
     });

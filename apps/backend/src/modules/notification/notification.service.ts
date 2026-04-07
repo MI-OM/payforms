@@ -31,6 +31,14 @@ export class NotificationService {
     return normalized.length ? normalized : null;
   }
 
+  private formatAmount(amount: number | string) {
+    const value = typeof amount === 'string' ? Number(amount) : amount;
+    if (Number.isNaN(value) || typeof value !== 'number') {
+      return `₦${amount}`;
+    }
+    return `₦${value.toFixed(2)}`;
+  }
+
   async getContactEmail(organizationId: string, contactId: string) {
     const contact = await this.contactRepository.findOne({
       where: { id: contactId, organization_id: organizationId },
@@ -310,38 +318,126 @@ export class NotificationService {
   async sendPaymentConfirmation(
     organization: Organization,
     recipientEmail: string,
-    amount: number,
+    amount: number | string,
     reference: string,
     attachments?: EmailAttachment[],
   ) {
-    const subject = `${organization.name} Payment Confirmation`;
+    const subject = `${organization.name} Payment Receipt`;
+    const transactionDate = new Date().toUTCString();
+    const gateway = 'Paystack';
+
+    const organizationContact = organization.email ? `<p style="margin: 0; color: #4a5568;">If you need help, please contact <strong>${organization.name}</strong> at <a href="mailto:${organization.email}" style="color: #2b6cb0; text-decoration: none;">${organization.email}</a>.</p>` : '<p style="margin: 0; color: #4a5568;">If you need help, please contact the recipient organization directly or reply to this email.</p>';
+
     const html = `
-      <p>Thank you for your payment to ${organization.name}.</p>
-      <p><strong>Reference:</strong> ${reference}</p>
-      <p><strong>Amount:</strong> ₦${amount.toFixed(2)}</p>
-      ${organization.logo_url ? `<img src="${organization.logo_url}" alt="${organization.name}" style="max-width: 200px;"/>` : ''}
+      <div style="font-family: Arial, sans-serif; color: #2d3748; background: #f7fafc; padding: 24px;">
+        <div style="max-width: 600px; margin: 0 auto; background: #ffffff; border-radius: 16px; overflow: hidden; border: 1px solid #e2e8f0; box-shadow: 0 8px 24px rgba(45, 55, 72, 0.08);">
+          <div style="padding: 24px; background: #1a202c; color: #ffffff; display: flex; justify-content: space-between; align-items: center; gap: 16px;">
+            <div>
+              <h1 style="margin: 0; font-size: 22px; letter-spacing: 0.4px;">Payment Receipt</h1>
+              <p style="margin: 6px 0 0 0; font-size: 14px; color: #cbd5e0;">Reference: ${reference}</p>
+            </div>
+            ${organization.logo_url ? `<img src="${organization.logo_url}" alt="${organization.name}" style="max-height: 48px; object-fit: contain;"/>` : ''}
+          </div>
+
+          <div style="padding: 24px;">
+            <p style="margin: 0 0 24px 0; font-size: 16px; color: #4a5568;">Your payment has been successfully processed. Below is a summary of the transaction.</p>
+
+            <table style="width: 100%; border-collapse: collapse; margin-bottom: 24px;">
+              <tbody>
+                <tr style="background: #f7fafc;">
+                  <td style="padding: 14px 16px; color: #718096; width: 45%;"><strong>Transaction Date</strong></td>
+                  <td style="padding: 14px 16px; color: #2d3748;">${transactionDate}</td>
+                </tr>
+                <tr>
+                  <td style="padding: 14px 16px; border-top: 1px solid #edf2f7; color: #718096;"><strong>Payment Gateway</strong></td>
+                  <td style="padding: 14px 16px; border-top: 1px solid #edf2f7; color: #2d3748;">${gateway}</td>
+                </tr>
+                <tr style="background: #f7fafc;">
+                  <td style="padding: 14px 16px; border-top: 1px solid #edf2f7; color: #718096;"><strong>Organization</strong></td>
+                  <td style="padding: 14px 16px; border-top: 1px solid #edf2f7; color: #2d3748;">${organization.name}</td>
+                </tr>
+                <tr>
+                  <td style="padding: 14px 16px; border-top: 1px solid #edf2f7; color: #718096;"><strong>Amount Paid</strong></td>
+                  <td style="padding: 14px 16px; border-top: 1px solid #edf2f7; color: #2d3748; font-weight: 600;">${this.formatAmount(amount)}</td>
+                </tr>
+              </tbody>
+            </table>
+
+            ${organizationContact}
+          </div>
+        </div>
+      </div>
     `;
+
     return this.sendEmail([recipientEmail], subject, html, attachments);
   }
 
-  async sendSubmissionConfirmation(organization: Organization, recipientEmail: string, formTitle: string, amount: number, reference: string) {
+  async sendSubmissionConfirmation(
+    organization: Organization,
+    recipientEmail: string,
+    formTitle: string,
+    amount: number | string,
+    reference: string,
+  ) {
     const subject = `${organization.name} Submission Received`;
     const html = `
-      <p>Your submission for <strong>${formTitle}</strong> has been received.</p>
-      <p>Amount due: ₦${amount.toFixed(2)}</p>
-      <p>Payment reference: <strong>${reference}</strong></p>
-      ${organization.logo_url ? `<img src="${organization.logo_url}" alt="${organization.name}" style="max-width: 200px;"/>` : ''}
+      <div style="font-family: Arial, sans-serif; color: #2d3748; background: #f7fafc; padding: 24px;">
+        <div style="max-width: 600px; margin: 0 auto; background: #ffffff; border-radius: 12px; overflow: hidden; border: 1px solid #e2e8f0;">
+          <div style="padding: 24px; background: #1a202c; color: #ffffff;">
+            <h1 style="margin: 0; font-size: 20px;">Submission Confirmed</h1>
+          </div>
+          <div style="padding: 24px;">
+            <p style="margin: 0 0 16px 0; font-size: 16px; color: #4a5568;">Your submission for <strong>${formTitle}</strong> has been received successfully.</p>
+            <table style="width: 100%; border-collapse: collapse;">
+              <tbody>
+                <tr>
+                  <td style="padding: 12px 16px; border-bottom: 1px solid #edf2f7; color: #718096; width: 45%;"><strong>Amount due</strong></td>
+                  <td style="padding: 12px 16px; border-bottom: 1px solid #edf2f7; color: #2d3748;">${this.formatAmount(amount)}</td>
+                </tr>
+                <tr>
+                  <td style="padding: 12px 16px; color: #718096;"><strong>Reference</strong></td>
+                  <td style="padding: 12px 16px; color: #2d3748;">${reference}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
     `;
     return this.sendEmail([recipientEmail], subject, html);
   }
 
-  async sendFailedPaymentReminder(organization: Organization, recipientEmail: string, amount: number, reference: string) {
+  async sendFailedPaymentReminder(
+    organization: Organization,
+    recipientEmail: string,
+    amount: number | string,
+    reference: string,
+  ) {
     const subject = `${organization.name} Payment Attempt Failed`;
     const html = `
-      <p>Your payment attempt for ${organization.name} was not successful.</p>
-      <p>Amount: ₦${amount.toFixed(2)}</p>
-      <p>Reference: <strong>${reference}</strong></p>
-      <p>Please retry your payment using the original link or contact the form owner for support.</p>
+      <div style="font-family: Arial, sans-serif; color: #2d3748; background: #f7fafc; padding: 24px;">
+        <div style="max-width: 600px; margin: 0 auto; background: #ffffff; border-radius: 12px; overflow: hidden; border: 1px solid #e2e8f0;">
+          <div style="padding: 24px; background: #c53030; color: #ffffff;">
+            <h1 style="margin: 0; font-size: 20px;">Payment Failed</h1>
+          </div>
+          <div style="padding: 24px;">
+            <p style="margin: 0 0 16px 0; font-size: 16px; color: #4a5568;">We were unable to process your payment.</p>
+            <table style="width: 100%; border-collapse: collapse;">
+              <tbody>
+                <tr>
+                  <td style="padding: 12px 16px; border-bottom: 1px solid #edf2f7; color: #718096; width: 45%;"><strong>Amount</strong></td>
+                  <td style="padding: 12px 16px; border-bottom: 1px solid #edf2f7; color: #2d3748;">${this.formatAmount(amount)}</td>
+                </tr>
+                <tr>
+                  <td style="padding: 12px 16px; color: #718096;"><strong>Reference</strong></td>
+                  <td style="padding: 12px 16px; color: #2d3748;">${reference}</td>
+                </tr>
+              </tbody>
+            </table>
+            <p style="margin: 16px 0 0 0; color: #4a5568;">Please retry your payment or contact the form owner for assistance.</p>
+          </div>
+        </div>
+      </div>
     `;
     return this.sendEmail([recipientEmail], subject, html);
   }
