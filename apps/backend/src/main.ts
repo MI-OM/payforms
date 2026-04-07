@@ -18,6 +18,7 @@ async function bootstrap() {
     origin: [
       'http://localhost:5701',
       'https://payforms.com.ng',
+      'https://www.payforms.com.ng',
       /https:\/\/.*\.vercel\.app$/,
     ],
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
