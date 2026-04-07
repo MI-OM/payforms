@@ -64,7 +64,7 @@ export class FormService {
 
     const form = await this.formRepository.findOne({
       where: { slug, is_active: true },
-      relations: ['fields', 'organization', 'targets'],
+      relations: ['fields', 'targets'], // Removed 'organization' relation for public forms
     });
 
     if (form) {
