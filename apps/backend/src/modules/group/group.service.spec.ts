@@ -195,6 +195,7 @@ describe('GroupService', () => {
     const contacts = [{ id: 'contact-1' }];
 
     groupRepository.findOne.mockResolvedValue(group);
+    groupRepository.find.mockResolvedValue([]); // No subgroups
     queryBuilder.getManyAndCount.mockResolvedValue([contacts, 1]);
 
     const result = await groupService.getGroupContacts('org-1', 'group-1', 1, 10);

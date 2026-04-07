@@ -1,4 +1,4 @@
-import { Controller, Post, Body, UseGuards, Request } from '@nestjs/common';
+import { Controller, Post, Body, UseGuards, Request, Get, Query } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { NotificationService } from './notification.service';
 import {
@@ -54,5 +54,20 @@ export class NotificationController {
     );
 
     return this.notificationService.sendEmail(recipients, dto.subject, dto.body);
+  }
+
+  @Get('scheduled')
+  async getScheduledNotifications(
+    @Request() req,
+    @Query('page') page: number = 1,
+    @Query('limit') limit: number = 20,
+  ) {
+    // For MVP, return empty list as scheduling is immediate
+    return {
+      data: [],
+      total: 0,
+      page,
+      limit,
+    };
   }
 }

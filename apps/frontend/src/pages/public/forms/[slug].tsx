@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import axios from 'axios';
+import { getCallbackUrl } from '../../../utils/config';
 
 interface FormField {
   id: string;
@@ -102,7 +103,8 @@ export default function PublicForm() {
     setSubmitting(true);
     try {
       // Include callback_url to redirect to success page after payment
-      const callbackUrl = `${window.location.origin}/payment/success`;
+      // Use environment-configured URL instead of window.location.origin to support Vercel deployments
+      const callbackUrl = getCallbackUrl('/payment/success');
       const response = await axios.post(`/api/public/forms/${slug}/submit?callback_url=${encodeURIComponent(callbackUrl)}`, {
         data,
         contact_email: data.contact_email,

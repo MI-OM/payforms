@@ -454,6 +454,10 @@
     - `group_ids: string[]`
     - `subject`
     - `body`
+- `GET /notifications/scheduled`
+  - Auth: `Bearer <JWT>`
+  - Query: `page?`, `limit?`
+  - Returns list of scheduled notifications (MVP: returns empty list as scheduling is immediate)
 
 ## Audit Endpoints
 
