@@ -5,7 +5,7 @@ services:
     plan: free
     branch: main
     rootDir: apps/backend
-    buildCommand: npm install && npm run build
+    buildCommand: npm install --include=dev && npx tsc -p tsconfig.prod.json
     startCommand: npm run migration:run:prod && npm run start
     autoDeploy: true
     healthCheckPath: /health
