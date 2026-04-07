@@ -55,10 +55,10 @@ export class ReportService {
     const paymentQuery = this.paymentRepository.createQueryBuilder('payment')
       .select('COUNT(payment.id)', 'count')
       .addSelect('SUM(payment.amount)', 'total')
-      .addSelect('SUM(CASE WHEN payment.status = :paid THEN payment.amount ELSE 0 END)', 'paid_total')
-      .addSelect('SUM(CASE WHEN payment.status = :pending THEN payment.amount ELSE 0 END)', 'pending_total')
-      .addSelect('SUM(CASE WHEN payment.status = :failed THEN payment.amount ELSE 0 END)', 'failed_total')
-      .addSelect('SUM(CASE WHEN payment.status = :partial THEN payment.amount ELSE 0 END)', 'partial_total')
+      .addSelect('SUM(CASE WHEN UPPER(payment.status) = :paid THEN payment.amount ELSE 0 END)', 'paid_total')
+      .addSelect('SUM(CASE WHEN UPPER(payment.status) = :pending THEN payment.amount ELSE 0 END)', 'pending_total')
+      .addSelect('SUM(CASE WHEN UPPER(payment.status) = :failed THEN payment.amount ELSE 0 END)', 'failed_total')
+      .addSelect('SUM(CASE WHEN UPPER(payment.status) = :partial THEN payment.amount ELSE 0 END)', 'partial_total')
       .where('payment.organization_id = :organizationId', { organizationId })
       .setParameters({ paid: 'PAID', pending: 'PENDING', failed: 'FAILED', partial: 'PARTIAL' });
 
@@ -118,13 +118,13 @@ export class ReportService {
     const paymentsByDayDetailed = await this.paymentRepository
       .createQueryBuilder('payment')
       .select("DATE_TRUNC('day', payment.created_at)", 'day')
-      .addSelect('payment.status', 'status')
+      .addSelect('UPPER(payment.status)', 'status')
       .addSelect('COUNT(payment.id)', 'count')
       .addSelect('SUM(payment.amount)', 'total')
       .where('payment.organization_id = :organizationId', { organizationId })
       .andWhere('payment.created_at BETWEEN :queryStart AND :queryEnd', { queryStart, queryEnd })
       .groupBy('day')
-      .addGroupBy('payment.status')
+      .addGroupBy('UPPER(payment.status)')
       .orderBy('day', 'ASC')
       .getRawMany();
 
@@ -156,12 +156,12 @@ export class ReportService {
 
     const paymentStatusBreakdown = await this.paymentRepository
       .createQueryBuilder('payment')
-      .select('payment.status', 'status')
+      .select('UPPER(payment.status)', 'status')
       .addSelect('COUNT(payment.id)', 'count')
       .addSelect('SUM(payment.amount)', 'total_amount')
       .where('payment.organization_id = :organizationId', { organizationId })
       .andWhere('payment.created_at BETWEEN :queryStart AND :queryEnd', { queryStart, queryEnd })
-      .groupBy('payment.status')
+      .groupBy('UPPER(payment.status)')
       .getRawMany();
 
     return {
@@ -171,7 +171,7 @@ export class ReportService {
       },
       submissions_by_day: submissionsByDay.map(row => ({ day: row.day.toISOString().slice(0, 10), count: Number(row.count) })),
       payments_by_day: paymentsByDayWithStatus,
-      payment_status_breakdown: paymentStatusBreakdown.map(row => ({ status: row.status, count: Number(row.count), total_amount: Number(row.total_amount) })),
+      payment_status_breakdown: paymentStatusBreakdown.map(row => ({ status: String(row.status).toUpperCase(), count: Number(row.count), total_amount: Number(row.total_amount) })),
     };
   }
 
@@ -222,15 +222,15 @@ export class ReportService {
       .innerJoin('payment.submission', 'submission')
       .select('submission.form_id', 'form_id')
       .addSelect('COUNT(payment.id)', 'payments')
-      .addSelect('SUM(CASE WHEN payment.status = :paid THEN 1 ELSE 0 END)', 'paid_payments')
-      .addSelect('SUM(CASE WHEN payment.status = :pending THEN 1 ELSE 0 END)', 'pending_payments')
-      .addSelect('SUM(CASE WHEN payment.status = :failed THEN 1 ELSE 0 END)', 'failed_payments')
-      .addSelect('SUM(CASE WHEN payment.status = :partial THEN 1 ELSE 0 END)', 'partial_payments')
+      .addSelect('SUM(CASE WHEN UPPER(payment.status) = :paid THEN 1 ELSE 0 END)', 'paid_payments')
+      .addSelect('SUM(CASE WHEN UPPER(payment.status) = :pending THEN 1 ELSE 0 END)', 'pending_payments')
+      .addSelect('SUM(CASE WHEN UPPER(payment.status) = :failed THEN 1 ELSE 0 END)', 'failed_payments')
+      .addSelect('SUM(CASE WHEN UPPER(payment.status) = :partial THEN 1 ELSE 0 END)', 'partial_payments')
       .addSelect('SUM(payment.amount)', 'amount_total')
-      .addSelect('SUM(CASE WHEN payment.status = :paid THEN payment.amount ELSE 0 END)', 'paid_amount_total')
-      .addSelect('SUM(CASE WHEN payment.status = :pending THEN payment.amount ELSE 0 END)', 'pending_amount_total')
-      .addSelect('SUM(CASE WHEN payment.status = :failed THEN payment.amount ELSE 0 END)', 'failed_amount_total')
-      .addSelect('SUM(CASE WHEN payment.status = :partial THEN payment.amount ELSE 0 END)', 'partial_amount_total')
+      .addSelect('SUM(CASE WHEN UPPER(payment.status) = :paid THEN payment.amount ELSE 0 END)', 'paid_amount_total')
+      .addSelect('SUM(CASE WHEN UPPER(payment.status) = :pending THEN payment.amount ELSE 0 END)', 'pending_amount_total')
+      .addSelect('SUM(CASE WHEN UPPER(payment.status) = :failed THEN payment.amount ELSE 0 END)', 'failed_amount_total')
+      .addSelect('SUM(CASE WHEN UPPER(payment.status) = :partial THEN payment.amount ELSE 0 END)', 'partial_amount_total')
       .where('payment.organization_id = :organizationId', { organizationId })
       .setParameters({ paid: 'PAID', pending: 'PENDING', failed: 'FAILED', partial: 'PARTIAL' });
 
@@ -346,10 +346,10 @@ export class ReportService {
       .addSelect('COUNT(DISTINCT submission.id)', 'submission_count')
       .addSelect('COUNT(payment.id)', 'payment_count')
       .addSelect('SUM(payment.amount)', 'total_amount')
-      .addSelect('SUM(CASE WHEN payment.status = :paid THEN payment.amount ELSE 0 END)', 'paid_amount')
-      .addSelect('SUM(CASE WHEN payment.status = :pending THEN payment.amount ELSE 0 END)', 'pending_amount')
-      .addSelect('SUM(CASE WHEN payment.status = :failed THEN payment.amount ELSE 0 END)', 'failed_amount')
-      .addSelect('SUM(CASE WHEN payment.status = :partial THEN payment.amount ELSE 0 END)', 'partial_amount')
+      .addSelect('SUM(CASE WHEN UPPER(payment.status) = :paid THEN payment.amount ELSE 0 END)', 'paid_amount')
+      .addSelect('SUM(CASE WHEN UPPER(payment.status) = :pending THEN payment.amount ELSE 0 END)', 'pending_amount')
+      .addSelect('SUM(CASE WHEN UPPER(payment.status) = :failed THEN payment.amount ELSE 0 END)', 'failed_amount')
+      .addSelect('SUM(CASE WHEN UPPER(payment.status) = :partial THEN payment.amount ELSE 0 END)', 'partial_amount')
       .where('payment.organization_id = :organizationId', { organizationId })
       .setParameters({ paid: 'PAID', pending: 'PENDING', failed: 'FAILED', partial: 'PARTIAL' });
 
