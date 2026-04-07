@@ -642,7 +642,7 @@ export class PaymentService {
         await this.notificationService.sendPaymentConfirmation(
           org,
           recipientEmail,
-          payment.amount,
+          Number(payment.amount),
           payment.reference,
           receiptAttachment ? [receiptAttachment] : undefined,
         );
@@ -650,7 +650,7 @@ export class PaymentService {
         await this.notificationService.sendFailedPaymentReminder(
           org,
           recipientEmail,
-          payment.amount,
+          Number(payment.amount),
           payment.reference,
         );
       }
