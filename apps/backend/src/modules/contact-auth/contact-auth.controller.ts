@@ -115,6 +115,11 @@ export class ContactAuthController {
   }
 
   private resolveRequestHost(req: any): string | null {
+    const originHost = this.extractHostFromUrl(req?.headers?.origin || req?.headers?.referer);
+    if (originHost) {
+      return originHost;
+    }
+
     const header =
       req?.headers?.['x-forwarded-host'] ||
       req?.headers?.host ||
@@ -129,6 +134,19 @@ export class ContactAuthController {
       .trim();
 
     return firstValue || null;
+  }
+
+  private extractHostFromUrl(value: string | string[] | undefined) {
+    const raw = Array.isArray(value) ? value[0] : value;
+    if (!raw) {
+      return null;
+    }
+
+    try {
+      return new URL(raw).host;
+    } catch {
+      return null;
+    }
   }
 
   private setContactCookie(res: Response, accessToken: string) {

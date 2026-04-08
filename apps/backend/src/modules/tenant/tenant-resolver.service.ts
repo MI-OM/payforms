@@ -44,7 +44,7 @@ export class TenantResolverService {
     if (normalizedHost.endsWith(`.${baseDomain}`) || normalizedHost === baseDomain) {
       const subdomain = normalizedHost === baseDomain ? undefined : normalizedHost.split('.')[0];
 
-      if (subdomain) {
+      if (subdomain && !this.isReservedPlatformSubdomain(subdomain)) {
         org = await this.organizationRepository.findOne({
           where: { subdomain },
         });
@@ -67,6 +67,15 @@ export class TenantResolverService {
     }
 
     return null;
+  }
+
+  private isReservedPlatformSubdomain(subdomain: string) {
+    const reserved = (process.env.RESERVED_PLATFORM_SUBDOMAINS || 'api,www')
+      .split(',')
+      .map(value => value.trim().toLowerCase())
+      .filter(Boolean);
+
+    return reserved.includes(subdomain.toLowerCase());
   }
 
   /**

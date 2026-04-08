@@ -247,7 +247,20 @@ export class ContactAuthService {
       return null;
     }
 
+    if (this.isReservedPlatformSubdomain(candidate)) {
+      return null;
+    }
+
     return this.normalizeSubdomain(candidate);
+  }
+
+  private isReservedPlatformSubdomain(subdomain: string) {
+    const reserved = (this.configService.get<string>('RESERVED_PLATFORM_SUBDOMAINS') || 'api,www')
+      .split(',')
+      .map(value => value.trim().toLowerCase())
+      .filter(Boolean);
+
+    return reserved.includes(subdomain.toLowerCase());
   }
 
   private async resolveOrganizationId(input: OrganizationContextInput) {

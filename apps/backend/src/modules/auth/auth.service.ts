@@ -571,7 +571,20 @@ export class AuthService {
     }
 
     const candidate = host.slice(0, -suffix.length);
-    return !!candidate && !candidate.includes('.');
+    if (!candidate || candidate.includes('.')) {
+      return false;
+    }
+
+    return !this.isReservedPlatformSubdomain(candidate);
+  }
+
+  private isReservedPlatformSubdomain(subdomain: string) {
+    const reserved = (this.configService.get<string>('RESERVED_PLATFORM_SUBDOMAINS') || 'api,www')
+      .split(',')
+      .map(value => value.trim().toLowerCase())
+      .filter(Boolean);
+
+    return reserved.includes(subdomain.toLowerCase());
   }
 
   private async resolveLoginOrganizationId(dto: LoginDto, requestHost?: string | null) {
