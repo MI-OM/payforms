@@ -9,6 +9,7 @@ import { Organization } from '../organization/entities/organization.entity';
 import { NotificationService } from '../notification/notification.service';
 import { ConfigService } from '@nestjs/config';
 import { validatePasswordStrength } from '../../common/security/password-policy';
+import { TenantResolverService } from '../tenant/tenant-resolver.service';
 import {
   ContactLoginDto,
   ContactSetPasswordDto,
@@ -35,6 +36,7 @@ export class ContactAuthService {
     private jwtService: JwtService,
     private configService: ConfigService,
     private notificationService: NotificationService,
+    private tenantResolverService: TenantResolverService,
   ) {}
 
   async login(dto: ContactLoginDto, requestHost?: string | null) {
@@ -249,10 +251,17 @@ export class ContactAuthService {
   }
 
   private async resolveOrganizationId(input: OrganizationContextInput) {
-    const explicitOrganizationId = this.normalizeOptionalValue(input.organization_id);
-    if (explicitOrganizationId) {
-      return explicitOrganizationId;
+    const requestHost = this.extractHost(input.request_host);
+    const resolvedHostOrganization = requestHost
+      ? await this.tenantResolverService.resolveOrganizationFromHost(requestHost)
+      : null;
+
+    if (requestHost && this.extractSubdomainFromHost(requestHost) && !resolvedHostOrganization) {
+      throw new BadRequestException('Unknown organization subdomain');
     }
+
+    const explicitOrganizationId = this.normalizeOptionalValue(input.organization_id);
+    let resolvedExplicitOrganizationId: string | null = explicitOrganizationId;
 
     const explicitSubdomain = this.normalizeSubdomain(input.organization_subdomain);
     if (explicitSubdomain) {
@@ -263,7 +272,7 @@ export class ContactAuthService {
       if (!org) {
         throw new BadRequestException('Invalid organization context');
       }
-      return org.id;
+      resolvedExplicitOrganizationId = org.id;
     }
 
     const explicitDomain = this.normalizeDomain(input.organization_domain);
@@ -275,29 +284,23 @@ export class ContactAuthService {
       if (!org) {
         throw new BadRequestException('Invalid organization context');
       }
-      return org.id;
+      resolvedExplicitOrganizationId = org.id;
     }
 
-    const requestHost = this.extractHost(input.request_host);
-    if (requestHost) {
-      const orgByDomain = await this.organizationRepository.findOne({
-        where: { custom_domain: requestHost },
-        select: ['id'],
-      });
-      if (orgByDomain) {
-        return orgByDomain.id;
-      }
+    if (
+      resolvedHostOrganization &&
+      resolvedExplicitOrganizationId &&
+      resolvedHostOrganization.organization_id !== resolvedExplicitOrganizationId
+    ) {
+      throw new BadRequestException('Organization context mismatch with request host');
+    }
 
-      const hostSubdomain = this.extractSubdomainFromHost(requestHost);
-      if (hostSubdomain) {
-        const orgBySubdomain = await this.organizationRepository.findOne({
-          where: { subdomain: hostSubdomain },
-          select: ['id'],
-        });
-        if (orgBySubdomain) {
-          return orgBySubdomain.id;
-        }
-      }
+    if (resolvedHostOrganization) {
+      return resolvedHostOrganization.organization_id;
+    }
+
+    if (resolvedExplicitOrganizationId) {
+      return resolvedExplicitOrganizationId;
     }
 
     throw new BadRequestException(

@@ -2,9 +2,11 @@ import { Injectable, BadRequestException, InternalServerErrorException } from '@
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import axios from 'axios';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import { Organization } from '../organization/entities/organization.entity';
 import { Contact } from '../contact/entities/contact.entity';
+import { User } from '../auth/entities/user.entity';
+import { InternalNotification } from './entities/internal-notification.entity';
 
 type EmailProvider = 'sendgrid' | 'mailgun' | 'brevo';
 
@@ -20,6 +22,10 @@ export class NotificationService {
     private configService: ConfigService,
     @InjectRepository(Contact)
     private contactRepository: Repository<Contact>,
+    @InjectRepository(User)
+    private userRepository: Repository<User>,
+    @InjectRepository(InternalNotification)
+    private internalNotificationRepository: Repository<InternalNotification>,
   ) {}
 
   private trimOptionalValue(value?: string | null) {
@@ -456,6 +462,105 @@ export class NotificationService {
     return this.sendEmail(recipients, subject, html);
   }
 
+  async createInternalNotification(
+    organizationId: string,
+    createdByUserId: string,
+    input: { title: string; body: string; user_ids?: string[] },
+  ) {
+    const title = this.trimOptionalValue(input.title);
+    const body = this.trimOptionalValue(input.body);
+    const userIds = Array.from(new Set(
+      (input.user_ids || [])
+        .map(userId => this.trimOptionalValue(userId))
+        .filter((userId): userId is string => !!userId),
+    ));
+
+    if (!title || !body) {
+      throw new BadRequestException('title and body are required');
+    }
+
+    if (userIds.length) {
+      const users = await this.userRepository.find({
+        where: { organization_id: organizationId, id: In(userIds) },
+        select: ['id'],
+      });
+      if (users.length !== userIds.length) {
+        throw new BadRequestException('One or more user_ids are invalid for this organization');
+      }
+    }
+
+    const notification = await this.internalNotificationRepository.save(
+      this.internalNotificationRepository.create({
+        organization_id: organizationId,
+        created_by_user_id: createdByUserId,
+        title,
+        body,
+        audience_type: userIds.length ? 'SELECTED_USERS' : 'ALL_USERS',
+        target_user_ids: userIds.length ? userIds : null,
+        read_by_user_ids: [createdByUserId],
+        metadata: null,
+      }),
+    );
+
+    return this.mapInternalNotification(notification, createdByUserId);
+  }
+
+  async listInternalNotifications(
+    organizationId: string,
+    userId: string,
+    page: number,
+    limit: number,
+    unreadOnly = false,
+  ) {
+    const safePage = Number.isFinite(page) && page > 0 ? page : 1;
+    const safeLimit = Number.isFinite(limit) && limit > 0 ? Math.min(limit, 100) : 20;
+
+    const query = this.internalNotificationRepository
+      .createQueryBuilder('notification')
+      .where('notification.organization_id = :organizationId', { organizationId })
+      .andWhere(`(
+        notification.audience_type = 'ALL_USERS'
+        OR :userId = ANY(COALESCE(notification.target_user_ids, ARRAY[]::uuid[]))
+      )`, { userId });
+
+    if (unreadOnly) {
+      query.andWhere('NOT (:userId = ANY(COALESCE(notification.read_by_user_ids, ARRAY[]::uuid[])))', { userId });
+    }
+
+    const [notifications, total] = await query
+      .orderBy('notification.created_at', 'DESC')
+      .skip((safePage - 1) * safeLimit)
+      .take(safeLimit)
+      .getManyAndCount();
+
+    return {
+      data: notifications.map(notification => this.mapInternalNotification(notification, userId)),
+      total,
+      page: safePage,
+      limit: safeLimit,
+    };
+  }
+
+  async markInternalNotificationRead(organizationId: string, userId: string, notificationId: string) {
+    const notification = await this.internalNotificationRepository
+      .createQueryBuilder('notification')
+      .where('notification.id = :notificationId', { notificationId })
+      .andWhere('notification.organization_id = :organizationId', { organizationId })
+      .andWhere(`(
+        notification.audience_type = 'ALL_USERS'
+        OR :userId = ANY(COALESCE(notification.target_user_ids, ARRAY[]::uuid[]))
+      )`, { userId })
+      .getOne();
+
+    if (!notification) {
+      throw new BadRequestException('Internal notification not found');
+    }
+
+    notification.read_by_user_ids = Array.from(new Set([...(notification.read_by_user_ids || []), userId]));
+    const saved = await this.internalNotificationRepository.save(notification);
+    return this.mapInternalNotification(saved, userId);
+  }
+
   async sendPasswordResetEmail(organization: Organization | null, recipientEmail: string, resetLink: string) {
     const subject = `${organization?.name || 'Payforms'} Password Reset Request`;
     const html = `
@@ -476,5 +581,19 @@ export class NotificationService {
       <p>If you did not request this, ignore this email.</p>
     `;
     return this.sendEmail([recipientEmail], subject, html);
+  }
+
+  private mapInternalNotification(notification: InternalNotification, userId: string) {
+    return {
+      id: notification.id,
+      title: notification.title,
+      body: notification.body,
+      audience_type: notification.audience_type,
+      target_user_ids: notification.target_user_ids || [],
+      is_read: (notification.read_by_user_ids || []).includes(userId),
+      created_by_user_id: notification.created_by_user_id,
+      created_at: notification.created_at,
+      metadata: notification.metadata,
+    };
   }
 }

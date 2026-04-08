@@ -30,6 +30,21 @@ export class LoginDto {
   @ApiProperty({ example: 'StrongPass123!' })
   @IsString()
   password: string;
+
+  @ApiPropertyOptional({ example: 'org-uuid' })
+  @IsOptional()
+  @IsString()
+  organization_id?: string;
+
+  @ApiPropertyOptional({ example: 'acme-school' })
+  @IsOptional()
+  @IsString()
+  organization_subdomain?: string;
+
+  @ApiPropertyOptional({ example: 'pay.acme.com' })
+  @IsOptional()
+  @IsString()
+  organization_domain?: string;
 }
 
 export class RefreshTokenDto {

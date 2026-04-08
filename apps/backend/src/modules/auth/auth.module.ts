@@ -11,6 +11,7 @@ import { AuthController } from './auth.controller';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { RolesGuard } from './guards/roles.guard';
 import { NotificationModule } from '../notification/notification.module';
+import { TenantResolverModule } from '../tenant/tenant-resolver.module';
 
 @Module({
   imports: [
@@ -26,6 +27,7 @@ import { NotificationModule } from '../notification/notification.module';
       }),
     }),
     NotificationModule,
+    TenantResolverModule,
   ],
   controllers: [AuthController],
   providers: [AuthService, JwtStrategy, RolesGuard],

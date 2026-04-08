@@ -54,3 +54,19 @@ export class GroupScheduleNotificationDto {
   @IsString({ each: true })
   group_ids: string[];
 }
+
+export class CreateInternalNotificationDto {
+  @ApiProperty({ example: 'Billing alert' })
+  @IsString()
+  title: string;
+
+  @ApiProperty({ example: 'Monthly email threshold is close to limit.' })
+  @IsString()
+  body: string;
+
+  @ApiPropertyOptional({ type: [String], example: ['user-uuid-1', 'user-uuid-2'] })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  user_ids?: string[];
+}

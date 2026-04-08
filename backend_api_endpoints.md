@@ -1,610 +1,564 @@
 # Payforms Backend API Reference
 
-## What's New (April 2026)
+This is the FE-facing API contract for the current backend codebase.
 
-### Partial Payment Support
-- **Updated Endpoint**: `POST /public/forms/:slug/submit` now accepts `partial_amount` parameter for partial payments.
-- **New Fields**: Payment entities now include `total_amount` and `balance_due` for balance tracking.
-- **New Status**: Payments can have `PARTIAL` status for incomplete payments.
+Every endpoint below includes:
+- endpoint
+- parameters
+- how to use it from FE
+- whether it is new or updated where relevant
 
-### New Report Endpoints
-- `GET /reports/forms/performance`: Per-form performance metrics with conversion rates.
-- `GET /reports/groups/contributions`: Group-level contribution analysis with deficit calculations.
+## Change Log
 
-### Contact Import Improvements
-- Contact import validation now accepts both `first_name`/`last_name` and legacy `name` fields.
-
-### Group Hierarchy Fixes
-- Group contact aggregation now includes all subgroup contacts in parent groups.
-
-### Submission Export Endpoint
-- `GET /submissions/export` now supports filtered submission export in `csv` and `pdf` formats.
-
-### Group Membership Removal
-- `DELETE /groups/:id/contacts` now removes one or multiple contacts from a group directly.
-
-### Group Detach Endpoint
-- `PATCH /groups/:id/detach` now detaches a group from its parent while preserving the group and its contacts.
-
-## Auth Endpoints
-
-- `POST /auth/register`
-  - Body: `{ organization_name, email, password }`
-- `POST /auth/login`
-  - Body: `{ email, password }`
-- `POST /auth/invite`
-  - Auth: `Bearer <JWT>` (ADMIN only)
-  - Body: `{ first_name, last_name, email }`
-  - Note: invited users are created with role `STAFF`
-  - Note: sends invitation email with acceptance link + token, and returns `invite_email_sent`
-  - Note: blocks duplicate active invitations for the same organization + email
-- `POST /auth/accept-invite`
-  - Body: `{ token, password }`
-- `POST /auth/refresh`
-  - Body: `{ refresh_token }`
-- `POST /auth/password-reset/request`
-  - Body: `{ email }`
-- `POST /auth/password-reset/confirm`
-  - Body: `{ token, password }`
-- `POST /auth/organization-email/verify`
-  - Body: `{ token }`
-- `POST /auth/organization-email/request-verification`
-  - Auth: `Bearer <JWT>` (ADMIN only)
-- `GET /auth/organization-email/status`
-  - Auth: `Bearer <JWT>`
-  - Returns current verification status for the authenticated user's organization email
-- `POST /auth/logout`
-  - Auth: `Bearer <JWT>`
-- `GET /auth/profile`
-  - Auth: `Bearer <JWT>` (ADMIN or STAFF)
-  - Returns current user profile from DB
-- `PATCH /auth/profile`
-  - Auth: `Bearer <JWT>` (ADMIN or STAFF)
-  - Body values:
-    - `first_name?`
-    - `middle_name?`
-    - `last_name?`
-    - `title?`
-    - `designation?`
-- `GET /auth/me`
-  - Auth: `Bearer <JWT>`
-  - Returns current user profile (same shape as `/auth/profile`)
-
-## Organization Endpoints
-
-- `GET /organization`
-  - Auth: `Bearer <JWT>` (ADMIN or STAFF)
-- `PATCH /organization`
-  - Auth: `Bearer <JWT>` (ADMIN)
-  - Body values:
-    - `name?`
-    - `email?`
-    - `subdomain?` (e.g. `school`)
-    - `custom_domain?` (e.g. `pay.myuni.com`)
-    - `require_contact_login?`
-    - `notify_submission_confirmation?`
-    - `notify_payment_confirmation?`
-    - `notify_payment_failure?`
-- `GET /organization/settings`
-  - Auth: `Bearer <JWT>` (ADMIN or STAFF)
-  - Returns organization-level settings only:
-    - `name`, `email`, `email_verified`, `logo_url`
-    - `subdomain`, `custom_domain`
-    - `require_contact_login`
-    - `notify_submission_confirmation`
-    - `notify_payment_confirmation`
-    - `notify_payment_failure`
-- `PATCH /organization/settings`
-  - Auth: `Bearer <JWT>` (ADMIN)
-  - Updates organization-level settings only (not user/admin profile)
-- `PATCH /organization/keys`
-  - Auth: `Bearer <JWT>` (ADMIN)
-  - Body values:
-    - `paystack_public_key?`
-    - `paystack_secret_key?`
-- `POST /organization/logo`
-  - Auth: `Bearer <JWT>` (ADMIN)
-  - Body: `{ logo_url }`
-
-## Form Endpoints
-
-- `POST /forms`
-  - Auth: `Bearer <JWT>`
-  - Body:
-    - `title`
-    - `category?`
-    - `description?`
-    - `note?`
-    - `slug`
-    - `payment_type`: `FIXED` or `VARIABLE`
-    - `amount?`
-    - `allow_partial`
-- `GET /forms`
-  - Auth: `Bearer <JWT>`
-  - Query: `page?`, `limit?`
-- `GET /forms/:id`
-  - Auth: `Bearer <JWT>`
-- `PATCH /forms/:id`
-  - Auth: `Bearer <JWT>`
-  - Body values:
-    - `title?`
-    - `category?`
-    - `description?`
-    - `note?`
-    - `is_active?`
-    - `amount?`
-    - `allow_partial?`
-- `DELETE /forms/:id`
-  - Auth: `Bearer <JWT>`
-- `POST /forms/:id/fields`
-  - Auth: `Bearer <JWT>`
-  - Body:
-    - `label`
-    - `type`: `TEXT`, `EMAIL`, `SELECT`, `NUMBER`, `TEXTAREA`
-    - `required`
-    - `options?`
-    - `order_index?`
-    - `validation_rules?`
-- `PATCH /forms/fields/:fieldId`
-  - Auth: `Bearer <JWT>`
-  - Body may include:
-    - `label?`
-    - `type?`
-    - `required?`
-    - `options?`
-    - `validation_rules?`
-- `DELETE /forms/fields/:fieldId`
-  - Auth: `Bearer <JWT>`
-- `PATCH /forms/:id/fields/reorder`
-  - Auth: `Bearer <JWT>`
-  - Body: `{ fields: [{ id, order_index }] }`
-- `POST /forms/:id/groups`
-  - Auth: `Bearer <JWT>`
-  - Body: `{ group_ids: string[] }`
-- `GET /forms/:id/groups`
-  - Auth: `Bearer <JWT>`
-  - Returns groups currently assigned to the form
-- `GET /forms/:id/targets`
-  - Auth: `Bearer <JWT>`
-- `POST /forms/:id/targets`
-  - Auth: `Bearer <JWT>`
-  - Body:
-    - `target_type`: `group` or `contact`
-    - `target_ids: string[]`
-- `DELETE /forms/:id/targets/:targetId`
-  - Auth: `Bearer <JWT>`
-
-## Group Endpoints
-
-- `POST /groups`
-  - Auth: `Bearer <JWT>`
-  - Body:
-    - `name`
-    - `description?`
-    - `note?`
-    - `parent_group_id?`
-- `GET /groups`
-  - Auth: `Bearer <JWT>`
-  - Query: `page?`, `limit?`
-- `GET /groups/tree`
-  - Auth: `Bearer <JWT>`
-- `GET /groups/:id`
-  - Auth: `Bearer <JWT>`
-- `PATCH /groups/:id`
-  - Auth: `Bearer <JWT>`
-  - Body may include:
-    - `name?`
-    - `description?`
-    - `note?`
-    - `parent_group_id?`
-- `PATCH /groups/:id/detach`
-  - Auth: `Bearer <JWT>`
-  - Removes the group's parent reference by setting `parent_group_id` to `null`
-  - Preserves the group and its existing contacts
-- `DELETE /groups/:id`
-  - Auth: `Bearer <JWT>`
-- `POST /groups/:id/contacts`
-  - Auth: `Bearer <JWT>`
-  - Body: `{ contact_ids: string[] }`
-- `DELETE /groups/:id/contacts`
-  - Auth: `Bearer <JWT>`
-  - Body: `{ contact_ids: string[] }`
-  - Removes one or multiple contacts from the specified group and returns the updated group
-- `GET /groups/:id/contacts`
-  - Auth: `Bearer <JWT>`
-  - Query: `page?`, `limit?`
-  - Returns contacts for the specified group AND all its subgroups (recursive)
-
-## Submission Admin Endpoints
+### New Endpoints
 
 - `GET /submissions/export`
-  - Auth: `Bearer <JWT>`
-  - Query:
-    - `format?` = `csv | pdf`
-    - `form_id?`
-    - `contact_id?`
-    - `start_date?`
-    - `end_date?`
-  - Notes:
-    - Returns filtered raw submission exports.
-    - CSV includes submission metadata, discovered data columns, and `data_json`.
-    - PDF includes submission metadata and formatted JSON payload per submission.
-
-## Contact Endpoints
-
-- `POST /contacts`
-  - Auth: `Bearer <JWT>`
-  - Body:
-    - `first_name?`
-    - `middle_name?`
-    - `last_name?`
-    - `email`
-    - `phone?`
-    - `gender?`
-    - `student_id?`
-    - `external_id?`
-    - `guardian_name?`
-    - `guardian_email?`
-    - `guardian_phone?`
-    - `require_login?` (boolean, defaults to `true`)
-    - `must_reset_password?` (boolean override)
-  - Notes:
-    - Newly created contacts with `must_reset_password=true` receive password setup email automatically.
-- `GET /contacts`
-  - Auth: `Bearer <JWT>`
-  - Query: `group_id?`, `page?`, `limit?`
-- `GET /contacts/export`
-  - Auth: `Bearer <JWT>`
-  - Query: `group_id?`
-- `GET /contacts/:id`
-  - Auth: `Bearer <JWT>`
-
-- `GET /contacts/:id/details`
-  - Auth: `Bearer <JWT>`
-  - Purpose: return contact plus fully resolved group hierarchy path(s) (including subgroup nesting), for UI context display and breadcrumb building
-  - Response example:
-    ```json
-    {
-      "id": "contact-uuid",
-      "first_name": "John",
-      "middle_name": "A.",
-      "last_name": "Doe",
-      "email": "john@example.com",
-      "phone": "+1234567890",
-      "gender": "male",
-      "student_id": "S12345",
-      "guardian_name": "Jane Doe",
-      "require_login": false,
-      "is_active": true,
-      "groups": [
-        {
-          "id": "group-uuid",
-          "name": "Engineering",
-          "parent_group_id": "parent-group-uuid"
-        }
-      ],
-      "group_hierarchy": [
-        "Faculty > Engineering > 400 Level",
-        "Alumni > 2026"
-      ],
-      "created_at": "2026-04-02T13:45:00.000Z"
-    }
-    ```
-  - Notes:
-    - `groups` is direct contact group membership.
-    - `group_hierarchy` contains joined text paths from leaf group up through parents (supports subgroup nesting).
-    - Useful for FE sections: contact card header, permission tests, breadcrumbs in contact merge UI.
-
-- `PATCH /contacts/:id`
-  - Auth: `Bearer <JWT>`
-  - Body may include:
-    - `name?`
-    - `email?`
-    - `phone?`
-    - `is_active?`
-- `DELETE /contacts/:id`
-  - Auth: `Bearer <JWT>`
-- `POST /contacts/import`
-  - Auth: `Bearer <JWT>`
-  - Body:
-    - `contacts: [{ ... }]`
-    - Per contact row fields:
-      - `first_name?` or `name` (legacy)
-      - `last_name?`
-      - `email`
-      - `phone?`
-      - `external_id?`
-      - `group_ids?` (existing group UUIDs)
-      - `groups?` (group names)
-      - `group_paths?` (nested paths e.g. `Faculty > Engineering > 400 Level`)
-      - `require_login?` (boolean)
-      - `is_active?` (boolean)
-      - `must_reset_password?` (boolean override)
-  - Notes:
-    - Direct import sends password setup emails for newly created contacts that require reset/setup.
-    - Accepts either `first_name`/`last_name` or legacy `name` field.
-- `POST /contacts/imports/validate`
-  - Auth: `Bearer <JWT>`
-  - Body: same shape as `/contacts/import`
+- `DELETE /groups/:id/contacts`
+- `PATCH /groups/:id/detach`
+- `GET /forms/:id/groups`
+- `GET /auth/organization-email/status`
+- `POST /contact-auth/logout`
 - `POST /contacts/imports/csv/validate`
-  - Auth: `Bearer <JWT>`
-  - Body: `{ csv }`
-- `POST /contacts/imports/:id/commit`
-  - Auth: `Bearer <JWT>`
 - `POST /contacts/imports/csv/commit`
-  - Auth: `Bearer <JWT>`
-  - Body: `{ csv }`
-- `GET /contacts/imports`
-  - Auth: `Bearer <JWT>`
-  - Query: `page?`, `limit?`
-- `GET /contacts/imports/:id`
-  - Auth: `Bearer <JWT>`
-- `GET /contacts/:id/transactions`
-  - Auth: `Bearer <JWT>`
-  - Query: `page?`, `limit?`, `format?` = `csv`
-- `POST /contacts/:id/groups`
-  - Auth: `Bearer <JWT>`
-  - Body: `{ group_ids: string[] }`
-
-## Contact Auth Endpoints
-
-- `POST /contact-auth/login`
-  - Body:
-    - `email`
-    - `password`
-    - `organization_id?`
-    - `organization_subdomain?`
-    - `organization_domain?`
-  - Notes:
-    - `organization_id` is legacy/backward-compatible.
-    - For subdomain/custom-domain rollouts, tenant context can be inferred from request host when configured.
-- `POST /contact-auth/set-password`
-  - Body: `{ token, password }`
-- `POST /contact-auth/reset/request`
-  - Body:
-    - `email`
-    - `organization_id?`
-    - `organization_subdomain?`
-    - `organization_domain?`
-- `POST /contact-auth/reset/confirm`
-  - Body: `{ token, password }`
-- `POST /contact-auth/password-reset/request`
-  - Body:
-    - `email`
-    - `organization_id?`
-    - `organization_subdomain?`
-    - `organization_domain?`
-- `POST /contact-auth/password-reset/confirm`
-  - Body: `{ token, password }`
-- `GET /contact-auth/me`
-  - Auth: contact JWT
-- `GET /contact-auth/payments/:id/receipt`
-  - Auth: contact JWT
-  - Returns downloadable PDF receipt for the authenticated contact's own transaction
-- `GET /contact-auth/payments/reference/:reference/receipt`
-  - Auth: contact JWT
-  - Returns downloadable PDF receipt by payment reference for the authenticated contact
-
-## Payment Endpoints
-
-- `GET /payments`
-  - Auth: `Bearer <JWT>`
-  - Query: `page?`, `limit?`, `format?` (`csv`)
-- `GET /payments/:id`
-  - Auth: `Bearer <JWT>`
-- `GET /payments/verify/:reference`
-  - Auth: `Bearer <JWT>`
-  - Verifies against Paystack and persists transaction completion:
-    - updates `payments.status` / `paid_at`
-    - writes payment event log
-- `POST /payments`
-  - Auth: `Bearer <JWT>`
-  - Body:
-    - `submission_id`
-    - `amount`
-    - `reference?`
-- `POST /payments/:id/status`
-- `PATCH /payments/:id/status`
-  - Auth: `Bearer <JWT>`
-  - Body:
-    - `status`: `PENDING | PAID | PARTIAL | FAILED`
-    - `paid_at?`
-
-## Transaction Endpoints
-
-- `GET /transactions`
-  - Auth: `Bearer <JWT>`
-  - Query: `status?`, `reference?`, `form_id?`, `contact_id?`, `start_date?`, `end_date?`, `page?`, `limit?`, `format?` (`csv`)
-- `GET /transactions/:id`
-  - Auth: `Bearer <JWT>`
-- `GET /transactions/:id/history`
-  - Auth: `Bearer <JWT>`
-  - Query: `page?`, `limit?`
-
-## Webhook Endpoints
-
-- `POST /webhooks/paystack`
-  - Header: `x-paystack-signature`
-  - Body: raw Paystack webhook JSON
-
-## Public Submission Endpoints
-
-- `GET /public/forms/:slug`
-  - Header: `Authorization: Bearer <contact token>` optional for targeted forms
-- `GET /public/payments/callback`
-  - Query: `reference` or `trxref`
-  - Purpose: callback-safe verification endpoint used after Paystack redirect to finalize and log transaction status
 - `GET /public/payments/verify`
-  - Query: `reference` or `trxref`
-  - Purpose: verification-only JSON response for public payment checks without redirect behavior
-- `GET /public/forms/:slug/widget-config`
-  - Header: `Authorization: Bearer <contact token>` optional for targeted forms
-  - Returns:
-    - `form`
-    - `endpoints`: `form`, `submit`, `widget`, `embed_script`
-    - `embed_code`
-    - `events`: `ready | submitted | payment_initialized | error | resize`
-- `GET /public/forms/:slug/embed.js`
-  - Returns embeddable widget bootstrap JavaScript (`Content-Type: application/javascript`)
-  - Supported script attributes:
-    - `data-callback-url?`
-    - `data-api-base?`
-    - `data-contact-token?`
-    - `data-contact-email?`
-    - `data-contact-name?`
-    - `data-width?`
-    - `data-height?`
-    - `data-min-height?`
-    - `data-auto-redirect?` (`true` or `false`)
-    - `data-container?` (CSS selector for host mount point)
-- `GET /public/forms/:slug/widget`
-  - Returns iframe-ready HTML widget shell (`Content-Type: text/html`)
-  - Query:
-    - `callback_url?`
-    - `contact_token?`
-    - `contact_email?`
-    - `contact_name?`
-    - `auto_redirect?` (`true` by default, set `false` to stop auto-redirect)
-- `POST /public/forms/:slug/submit`
-  - Query: `callback_url?`
-  - Header: `Authorization: Bearer <contact token>` optional for targeted forms
-  - Body:
-    - `data: { ...field values }`
-    - `contact_email?`
-    - `contact_name?`
-    - `partial_amount?` (number, for partial payments when form.allow_partial is true)
-
-## Notification Endpoints
-
-- `POST /notifications/reminder`
-  - Auth: `Bearer <JWT>`
-  - Body:
-    - `contact_ids: string[]`
-    - `message?`
-- `POST /notifications/reminder/groups`
-  - Auth: `Bearer <JWT>`
-  - Body:
-    - `group_ids: string[]`
-    - `message?`
-- `POST /notifications/schedule`
-  - Auth: `Bearer <JWT>`
-  - Body:
-    - `subject`
-    - `body`
-    - `recipients: string[]`
-- `POST /notifications/schedule/groups`
-  - Auth: `Bearer <JWT>`
-  - Body:
-    - `group_ids: string[]`
-    - `subject`
-    - `body`
 - `GET /notifications/scheduled`
-  - Auth: `Bearer <JWT>`
-  - Query: `page?`, `limit?`
-  - Returns list of scheduled notifications (MVP: returns empty list as scheduling is immediate)
-
-## Billing Endpoints
-
-- `GET /billing/plans/:organizationId`
-- `GET /billing/usage/:organizationId`
-- `GET /billing/report/:organizationId`
-- `POST /billing/upgrade/:organizationId`
-  - Body: `{ newPlanTier }`
-
-## Compliance Endpoints
-
-- `POST /compliance/export`
-  - Body: `{ organizationId, contactId, requestedBy }`
-- `POST /compliance/delete`
-  - Body: `{ organizationId, contactId, requestedBy }`
-- `GET /compliance/export/:contactId/:organizationId`
-  - Returns contact export data payload
-- `GET /compliance/retention-policy/:organizationId`
-- `POST /compliance/retention-policy/:organizationId`
-- `POST /compliance/purge/:organizationId`
-- `GET /compliance/audit-trail/:organizationId`
-
-## Audit Endpoints
-
-- `GET /audit/logs`
-  - Auth: `Bearer <JWT>`
-  - Role: `ADMIN` only
-  - Query: `page?`, `limit?`, `action?`, `entity_type?`, `entity_id?`, `user_id?`, `ip_address?`, `user_agent?`, `keyword?`, `from?`, `to?`
-- `GET /audit/payment-logs/:payment_id`
-  - Auth: `Bearer <JWT>`
-  - Role: `ADMIN` only
-  - Query: `page?`, `limit?`, `event?`, `event_id?`, `keyword?`, `from?`, `to?`
-
-## Report Endpoints
-
-- `GET /reports/summary`
-  - Auth: `Bearer <JWT>`
-  - Query: `start_date?`, `end_date?`
-- `GET /reports/analytics`
-  - Auth: `Bearer <JWT>`
-  - Query: `start_date?`, `end_date?`
+- `POST /notifications/internal`
+- `GET /notifications/internal`
+- `PATCH /notifications/internal/:id/read`
 - `GET /reports/forms/performance`
-  - Auth: `Bearer <JWT>`
-  - Query: `start_date?`, `end_date?`
-  - Returns per-form metrics:
-    - `submissions`, `payments`
-    - payment status counts (`paid`, `pending`, `failed`, `partial`)
-    - amount totals by status
-    - `completion_rate`, `collection_rate`
 - `GET /reports/groups/contributions`
-  - Auth: `Bearer <JWT>`
-  - Query: `form_id?`, `start_date?`, `end_date?`
-  - Returns group-level contribution metrics for forms:
-    - Per group: contact count, submissions, payments, amounts by status
-    - For fixed-amount forms: expected total, deficit, collection rate
-    - Includes contacts from subgroups in parent group calculations
-    - Organization-wide summary totals
-- `GET /reports/export`
-  - Auth: `Bearer <JWT>`
-  - Query:
-    - `type?` = `summary | analytics`
-    - `format?` = `csv | pdf`
-    - `start_date?`
-    - `end_date?`
 
-## Health Endpoints
+### Updated Endpoints
 
-- `GET /health`
-- `GET /health/ready`
+- `POST /public/forms/:slug/submit`
+  Updated with `partial_amount` support and free-form submission handling.
+- `PATCH /organization/keys`
+  Updated with `paystack_webhook_url` support.
+- `PATCH /organization`
+  Updated with `partial_payment_limit` support.
+- `POST /auth/register`
+- `POST /auth/login`
+- `POST /auth/refresh`
+  Updated to support cookie-backed auth sessions in addition to token responses.
+- `POST /contact-auth/login`
+  Updated to support contact auth cookie session.
 
-## Testing Parameters
+## Conventions
 
-- Header: `Authorization: Bearer <JWT>` for protected routes
-- Path params: `id`, `slug`, `reference`, `payment_id`, `targetId`, `fieldId`
-- Query params:
-  - `page`, `limit`
-  - `group_id`
-  - `status`, `reference`, `form_id`, `contact_id`, `start_date`, `end_date`
-  - `format`, `type`, `callback_url`
-- Body fields vary by endpoint and are documented above
+- Admin protected routes use `Authorization: Bearer <admin token>`.
+- Contact protected routes use `Authorization: Bearer <contact token>` or cookie-backed contact auth.
+- Admin auth cookies: `pf_access_token`, `pf_refresh_token`.
+- Contact auth cookie: `pf_contact_token`.
+- CSV endpoints return file content directly.
+- PDF endpoints return binary file content directly.
+- Pagination defaults are typically `page=1`, `limit=20`.
 
-## Example Test Scenario
+## 1. Auth APIs
 
-1. `POST /auth/login`
-   - Body: `{ "email": "admin@example.com", "password": "Password123" }`
-   - Save returned JWT for authenticated requests.
-2. `POST /forms`
-   - Auth: `Bearer <JWT>`
-   - Body:
-     `{ "title": "Donation", "slug": "donate", "payment_type": "FIXED", "amount": 5000, "allow_partial": false }`
-3. `POST /forms/:id/fields`
-   - Auth: `Bearer <JWT>`
-   - Body:
-     `{ "label": "email", "type": "EMAIL", "required": true }`
-4. `POST /public/forms/donate/submit`
-   - Query: `callback_url=http://example.com/callback`
-   - Body:
-     `{ "data": { "email": "payer@test.com" }, "contact_email": "payer@test.com", "contact_name": "Payer Test" }`
-5. Assert response includes:
-   - `submission`
-   - `payment`
-   - `authorization`
-6. Optional follow-up checks:
-   - `GET /payments/verify/:reference`
-   - `GET /transactions`
-   - `GET /audit/logs?entity_type=submission`
+### `POST /auth/register`
+- Parameters: Body `{ organization_name, email, password }`
+- How to use: Create a new organization admin. Password must be strong. Response returns auth payload and also sets admin auth cookies.
+
+### `POST /auth/login`
+- Parameters: Body `{ email, password, organization_id?, organization_subdomain?, organization_domain? }`
+- How to use: Admin/staff login. On tenant subdomains or custom domains, backend binds login to the request host. On shared/root login screens, FE can provide organization context when needed. Response returns auth payload and also sets admin auth cookies.
+
+### `POST /auth/invite`
+- Parameters: Auth required. Body `{ first_name, last_name, email }`
+- How to use: Admin invites a staff user. Backend creates pending invitation and sends invite email.
+
+### `POST /auth/accept-invite`
+- Parameters: Body `{ token, password }`
+- How to use: Staff accepts invitation from email flow.
+
+### `POST /auth/refresh`
+- Parameters: Body `{ refresh_token? }`
+- How to use: FE can call this with a refresh token in body or with cookie-only session. Backend returns fresh auth payload and resets cookies.
+
+### `POST /auth/password-reset/request`
+- Parameters: Body `{ email }`
+- How to use: Forgot-password request. Response is generic and does not reveal whether user exists.
+
+### `POST /auth/password-reset/confirm`
+- Parameters: Body `{ token, password }`
+- How to use: Complete password reset after email link is opened.
+
+### `POST /auth/organization-email/verify`
+- Parameters: Body `{ token }`
+- How to use: Verify organization email from email link.
+
+### `POST /auth/organization-email/request-verification`
+- Parameters: Auth required
+- How to use: Re-send organization email verification from settings UI.
+
+### `GET /auth/organization-email/status`
+- Status: New
+- Parameters: Auth required
+- How to use: Fetch current organization email verification state for FE settings screens.
+
+### `POST /auth/logout`
+- Parameters: Auth required
+- How to use: Clears backend auth cookies and invalidates refresh state.
+
+### `GET /auth/profile`
+- Parameters: Auth required
+- How to use: Fetch current admin/staff profile.
+
+### `PATCH /auth/profile`
+- Parameters: Auth required. Body `{ first_name?, middle_name?, last_name?, title?, designation? }`
+- How to use: Update current admin/staff profile.
+
+### `GET /auth/me`
+- Parameters: Auth required
+- How to use: FE app bootstrap endpoint for current admin/staff session.
+
+## 2. Organization APIs
+
+### `GET /organization`
+- Parameters: Auth required
+- How to use: Fetch full organization record for dashboard bootstrap.
+
+### `PATCH /organization`
+- Parameters: Auth required. Body `{ name?, email?, subdomain?, custom_domain?, require_contact_login?, notify_submission_confirmation?, notify_payment_confirmation?, notify_payment_failure?, partial_payment_limit? }`
+- How to use: Update organization settings including tenant host fields and notification preferences.
+
+### `GET /organization/settings`
+- Parameters: Auth required
+- How to use: Fetch settings-focused organization payload.
+
+### `PATCH /organization/settings`
+- Parameters: Auth required. Body uses same settings fields as `PATCH /organization`.
+- How to use: Update settings screen values without using broader org update flow.
+
+### `PATCH /organization/keys`
+- Parameters: Auth required. Body `{ paystack_public_key?, paystack_secret_key?, paystack_webhook_url? }`
+- How to use: Store organization-owned Paystack credentials and optional webhook URL.
+
+### `POST /organization/logo`
+- Parameters: Auth required. Body `{ logo_url }`
+- How to use: Persist uploaded logo URL after FE storage upload is complete.
+
+## 3. Form APIs
+
+### `POST /forms`
+- Parameters: Auth required. Body `{ title, category?, description?, note?, slug, payment_type, amount?, allow_partial, access_mode?, identity_validation_mode?, identity_field_label? }`
+- How to use: Create a new form. `payment_type` is `FIXED | VARIABLE`. `access_mode` is `OPEN | LOGIN_REQUIRED | TARGETED_ONLY`. `identity_validation_mode` is `NONE | CONTACT_EMAIL | CONTACT_EXTERNAL_ID`.
+
+### `GET /forms`
+- Parameters: Auth required. Query `page?`, `limit?`
+- How to use: List forms in dashboard.
+
+### `GET /forms/:id`
+- Parameters: Auth required. Path `id`
+- How to use: Load one form for edit/view.
+
+### `PATCH /forms/:id`
+- Parameters: Auth required. Path `id`. Body `{ title?, category?, description?, note?, is_active?, amount?, allow_partial?, access_mode?, identity_validation_mode?, identity_field_label? }`
+- How to use: Update form metadata, payment rules, and access rules.
+
+### `DELETE /forms/:id`
+- Parameters: Auth required. Path `id`
+- How to use: Delete a form.
+
+### `POST /forms/:id/fields`
+- Parameters: Auth required. Path `id`. Body `{ label, type, required, options?, order_index?, validation_rules? }`
+- How to use: Add a form field. `type` is `TEXT | EMAIL | SELECT | NUMBER | TEXTAREA`.
+
+### `PATCH /forms/fields/:fieldId`
+- Parameters: Auth required. Path `fieldId`. Body `{ label?, type?, required?, options?, validation_rules? }`
+- How to use: Update one form field.
+
+### `DELETE /forms/fields/:fieldId`
+- Parameters: Auth required. Path `fieldId`
+- How to use: Delete one form field.
+
+### `PATCH /forms/:id/fields/reorder`
+- Parameters: Auth required. Path `id`. Body `{ fields: [{ id, order_index }] }`
+- How to use: Persist FE drag-and-drop field ordering.
+
+### `POST /forms/:id/groups`
+- Parameters: Auth required. Path `id`. Body `{ group_ids: string[] }`
+- How to use: Attach groups directly to a form.
+
+### `GET /forms/:id/groups`
+- Status: New
+- Parameters: Auth required. Path `id`
+- How to use: Fetch only the groups currently attached to a form.
+
+### `GET /forms/:id/targets`
+- Parameters: Auth required. Path `id`
+- How to use: Fetch current visibility targets for form assignment UI.
+
+### `POST /forms/:id/targets`
+- Parameters: Auth required. Path `id`. Body `{ target_type, target_ids }`
+- How to use: Add contact or group targets. `target_type` is `group | contact`.
+
+### `DELETE /forms/:id/targets/:targetId`
+- Parameters: Auth required. Path `id`, `targetId`
+- How to use: Remove a single target assignment.
+
+## 4. Group APIs
+
+### `POST /groups`
+- Parameters: Auth required. Body `{ name, description?, note?, parent_group_id? }`
+- How to use: Create group or subgroup.
+
+### `GET /groups`
+- Parameters: Auth required. Query `page?`, `limit?`
+- How to use: List groups with pagination.
+
+### `GET /groups/tree`
+- Parameters: Auth required
+- How to use: Fetch nested group tree for FE tree controls.
+
+### `GET /groups/:id`
+- Parameters: Auth required. Path `id`
+- How to use: Fetch one group.
+
+### `PATCH /groups/:id`
+- Parameters: Auth required. Path `id`. Body `{ name?, description?, note?, parent_group_id? }`
+- How to use: Update group metadata or move it to another parent.
+
+### `PATCH /groups/:id/detach`
+- Status: New
+- Parameters: Auth required. Path `id`
+- How to use: Remove a group from its parent without deleting the group.
+
+### `DELETE /groups/:id`
+- Parameters: Auth required. Path `id`
+- How to use: Delete a group.
+
+### `POST /groups/:id/contacts`
+- Parameters: Auth required. Path `id`. Body `{ contact_ids: string[] }`
+- How to use: Add contacts to a group.
+
+### `DELETE /groups/:id/contacts`
+- Status: New
+- Parameters: Auth required. Path `id`. Body `{ contact_ids: string[] }`
+- How to use: Remove selected contacts from a group.
+
+### `GET /groups/:id/contacts`
+- Parameters: Auth required. Path `id`. Query `page?`, `limit?`
+- How to use: List contacts for the group and all nested subgroups.
+
+## 5. Contact APIs
+
+### `POST /contacts`
+- Parameters: Auth required. Body `{ first_name?, middle_name?, last_name?, email, phone?, gender?, student_id?, external_id?, guardian_name?, guardian_email?, guardian_phone?, require_login?, must_reset_password? }`
+- How to use: Create a single contact. Password setup email is sent automatically when required.
+
+### `GET /contacts`
+- Parameters: Auth required. Query `{ group_id?, student_id?, last_name?, first_name?, email?, external_id?, page?, limit? }`
+- How to use: Filter and list contacts.
+
+### `GET /contacts/export`
+- Parameters: Auth required. Query `group_id?`
+- How to use: Download contacts CSV.
+
+### `GET /contacts/:id`
+- Parameters: Auth required. Path `id`
+- How to use: Fetch one contact record.
+
+### `GET /contacts/:id/details`
+- Parameters: Auth required. Path `id`
+- How to use: Fetch one contact plus resolved `group_hierarchy` paths for FE context displays.
+
+### `PATCH /contacts/:id`
+- Parameters: Auth required. Path `id`. Body `{ first_name?, middle_name?, last_name?, email?, phone?, gender?, student_id?, external_id?, guardian_name?, guardian_email?, guardian_phone?, is_active? }`
+- How to use: Update contact details or active state.
+
+### `DELETE /contacts/:id`
+- Parameters: Auth required. Path `id`
+- How to use: Delete one contact.
+
+### `POST /contacts/import`
+- Parameters: Auth required. Body `{ contacts: ContactImportRowDto[] }`
+- How to use: Direct JSON import for immediate bulk contact creation. Rows can include `group_ids`, `groups`, `group_paths`, `require_login`, `is_active`, and `must_reset_password`.
+
+### `POST /contacts/imports/validate`
+- Parameters: Auth required. Body `{ contacts: ContactImportRowDto[] }`
+- How to use: Validate JSON import before commit.
+
+### `POST /contacts/imports/csv/validate`
+- Status: New
+- Parameters: Auth required. Body `{ csv }`
+- How to use: Validate raw CSV import.
+
+### `POST /contacts/imports/:id/commit`
+- Parameters: Auth required. Path `id`
+- How to use: Commit a previously validated import job.
+
+### `POST /contacts/imports/csv/commit`
+- Status: New
+- Parameters: Auth required. Body `{ csv }`
+- How to use: Validate and commit a CSV import in one request.
+
+### `GET /contacts/imports`
+- Parameters: Auth required. Query `page?`, `limit?`
+- How to use: List import history.
+
+### `GET /contacts/imports/:id`
+- Parameters: Auth required. Path `id`
+- How to use: Fetch one import job record.
+
+### `GET /contacts/:id/transactions`
+- Parameters: Auth required. Path `id`. Query `page?`, `limit?`, `format?=csv`
+- How to use: List one contact's transactions or export them as CSV.
+
+### `POST /contacts/:id/groups`
+- Parameters: Auth required. Path `id`. Body `{ group_ids: string[] }`
+- How to use: Assign groups to a contact.
+
+## 6. Contact Auth APIs
+
+### `POST /contact-auth/login`
+- Parameters: Body `{ email, password, organization_id?, organization_subdomain?, organization_domain? }`
+- How to use: Contact login. On tenant subdomains or custom domains, backend treats the request host as authoritative tenant context and rejects unknown or mismatched organization context. Returns auth payload and sets contact cookie.
+
+### `POST /contact-auth/set-password`
+- Parameters: Body `{ token, password }`
+- How to use: First-time password setup for contacts.
+
+### `POST /contact-auth/reset/request`
+- Parameters: Body `{ email, organization_id?, organization_subdomain?, organization_domain? }`
+- How to use: Contact forgot-password request.
+
+### `POST /contact-auth/password-reset/request`
+- Parameters: Same as `/contact-auth/reset/request`
+- How to use: Compatibility alias.
+
+### `POST /contact-auth/reset/confirm`
+- Parameters: Body `{ token, password }`
+- How to use: Complete contact password reset.
+
+### `POST /contact-auth/password-reset/confirm`
+- Parameters: Same as `/contact-auth/reset/confirm`
+- How to use: Compatibility alias.
+
+### `POST /contact-auth/logout`
+- Status: New
+- Parameters: Auth required
+- How to use: Clear contact auth cookie/session.
+
+### `GET /contact-auth/me`
+- Parameters: Auth required
+- How to use: Fetch authenticated contact profile.
+
+### `GET /contact-auth/payments/:id/receipt`
+- Parameters: Auth required. Path `id`
+- How to use: Download PDF receipt for authenticated contact's payment.
+
+### `GET /contact-auth/payments/reference/:reference/receipt`
+- Parameters: Auth required. Path `reference`
+- How to use: Download PDF receipt by payment reference.
+
+## 7. Payment APIs
+
+### `GET /payments`
+- Parameters: Auth required. Query `page?`, `limit?`, `format?=csv`
+- How to use: List payments or export payments CSV.
+
+### `GET /payments/:id`
+- Parameters: Auth required. Path `id`
+- How to use: Fetch one payment record.
+
+### `GET /payments/verify/:reference`
+- Parameters: Auth required. Path `reference`
+- How to use: Manually verify and finalize a payment against Paystack.
+
+### `POST /payments`
+- Parameters: Auth required. Body `{ submission_id, amount, total_amount?, reference? }`
+- How to use: Create a payment record manually or internally.
+
+### `POST /payments/:id/status`
+### `PATCH /payments/:id/status`
+- Parameters: Auth required. Body `{ status, paid_at?, amount_paid? }`
+- How to use: Admin-only manual payment status update. `status` is `PENDING | PAID | PARTIAL | FAILED`.
+
+## 8. Transaction APIs
+
+### `GET /transactions`
+- Parameters: Auth required. Query `{ status?, reference?, form_id?, contact_id?, start_date?, end_date?, page?, limit?, format? }`
+- How to use: Filter transaction history and optionally export CSV with `format=csv`.
+
+### `GET /transactions/:id`
+- Parameters: Auth required. Path `id`
+- How to use: Fetch one transaction/payment detail.
+
+### `GET /transactions/:id/history`
+- Parameters: Auth required. Path `id`. Query `page?`, `limit?`
+- How to use: Fetch payment lifecycle/event history.
+
+## 9. Submission Admin API
+
+### `GET /submissions/export`
+- Status: New
+- Parameters: Auth required. Query `{ format?, form_id?, contact_id?, start_date?, end_date?, page?, limit? }`
+- How to use: Export filtered submissions as CSV or PDF.
+
+## 10. Public Form APIs
+
+### `GET /public/forms/:slug`
+- Parameters: Path `slug`. Optional header `Authorization: Bearer <contact token>`
+- How to use: Load public form definition by slug.
+
+### `GET /public/forms/:slug/widget-config`
+- Parameters: Path `slug`. Optional contact auth header
+- How to use: Fetch widget bootstrap config for embed flows.
+
+### `GET /public/forms/:slug/embed.js`
+- Parameters: Path `slug`. Supported script attributes: `data-callback-url?`, `data-api-base?`, `data-contact-token?`, `data-contact-email?`, `data-contact-name?`, `data-width?`, `data-height?`, `data-min-height?`, `data-auto-redirect?`, `data-container?`
+- How to use: Include as external script to render embeddable widget.
+
+### `GET /public/forms/:slug/widget`
+- Parameters: Path `slug`. Query `{ callback_url?, contact_token?, contact_email?, contact_name?, auto_redirect? }`
+- How to use: Load iframe-ready widget HTML.
+
+### `POST /public/forms/:slug/submit`
+- Parameters: Path `slug`. Query `callback_url?`. Optional contact auth header. Body `{ data, contact_email?, contact_name?, partial_amount? }`
+- How to use: Submit public form. FE should handle either direct success response for free forms or Paystack authorization response for payable forms.
+
+### `GET /public/payments/callback`
+- Parameters: Query `reference?`, `trxref?`
+- How to use: Backend callback endpoint for Paystack redirect. FE normally should not call it directly.
+
+### `GET /public/payments/verify`
+- Status: New
+- Parameters: Query `reference?`, `trxref?`
+- How to use: Public JSON verification endpoint.
+
+## 11. Notification APIs
+
+### `POST /notifications/reminder`
+- Parameters: Auth required. Body `{ contact_ids: string[], message? }`
+- How to use: Send reminder to selected contacts.
+
+### `POST /notifications/reminder/groups`
+- Parameters: Auth required. Body `{ group_ids: string[], message? }`
+- How to use: Send reminder to contacts resolved from selected groups.
+
+### `POST /notifications/schedule`
+- Parameters: Auth required. Body `{ subject, body, recipients: string[] }`
+- How to use: Current MVP sends immediately rather than storing future schedule.
+
+### `POST /notifications/schedule/groups`
+- Parameters: Auth required. Body `{ subject, body, group_ids: string[] }`
+- How to use: Current MVP resolves group contacts and sends immediately.
+
+### `GET /notifications/scheduled`
+- Status: New
+- Parameters: Auth required. Query `page?`, `limit?`
+- How to use: Returns empty paginated shape for now because real scheduling is not implemented yet.
+
+### `POST /notifications/internal`
+- Status: New
+- Parameters: Auth required. Body `{ title, body, user_ids? }`
+- How to use: Create an in-app internal notification for all organization users or selected admin/staff users.
+
+### `GET /notifications/internal`
+- Status: New
+- Parameters: Auth required. Query `page?`, `limit?`, `unread_only?=true|false`
+- How to use: List internal notifications visible to the authenticated admin/staff user.
+
+### `PATCH /notifications/internal/:id/read`
+- Status: New
+- Parameters: Auth required. Path `id`
+- How to use: Mark one internal notification as read for the authenticated admin/staff user.
+
+## 12. Audit APIs
+
+### `GET /audit/logs`
+- Parameters: Auth required. Query `{ page?, limit?, action?, entity_type?, entity_id?, user_id?, ip_address?, user_agent?, keyword?, from?, to? }`
+- How to use: Admin-only activity log filtering.
+
+### `GET /audit/payment-logs/:payment_id`
+- Parameters: Auth required. Path `payment_id`. Query `{ page?, limit?, event?, event_id?, keyword?, from?, to? }`
+- How to use: Admin-only payment audit trail filtering.
+
+## 13. Report APIs
+
+### `GET /reports/summary`
+- Parameters: Auth required. Query `start_date?`, `end_date?`
+- How to use: Fetch dashboard summary metrics.
+
+### `GET /reports/analytics`
+- Parameters: Auth required. Query `start_date?`, `end_date?`
+- How to use: Fetch analytics data and payment status aggregates.
+
+### `GET /reports/forms/performance`
+- Status: New
+- Parameters: Auth required. Query `start_date?`, `end_date?`
+- How to use: Fetch per-form performance and conversion metrics.
+
+### `GET /reports/groups/contributions`
+- Status: New
+- Parameters: Auth required. Query `form_id?`, `start_date?`, `end_date?`
+- How to use: Fetch group-level contribution metrics.
+
+### `GET /reports/export`
+- Parameters: Auth required. Query `{ type?=summary|analytics, format?=csv|pdf, start_date?, end_date? }`
+- How to use: Export summary or analytics report.
+
+## 14. Webhook API
+
+### `POST /webhooks/paystack`
+- Parameters: Header `x-paystack-signature`, raw Paystack body
+- How to use: Used by Paystack only. FE should not call this route.
+
+## 15. Health APIs
+
+### `GET /health`
+- Parameters: None
+- How to use: Basic service health check.
+
+### `GET /health/ready`
+- Parameters: None
+- How to use: Readiness probe for deploy/load balancer checks.
+
+## 16. Billing APIs
+
+### `GET /billing/plans/:organizationId`
+- Parameters: Path `organizationId`
+- How to use: Fetch billing plan for one organization.
+
+### `GET /billing/usage/:organizationId`
+- Parameters: Path `organizationId`
+- How to use: Fetch current usage metrics for one organization.
+
+### `GET /billing/report/:organizationId`
+- Parameters: Path `organizationId`
+- How to use: Fetch usage/billing report.
+
+### `POST /billing/upgrade/:organizationId`
+- Parameters: Path `organizationId`. Body `{ newPlanTier }`
+- How to use: Upgrade organization billing plan.
+
+## 17. Compliance APIs
+
+### `POST /compliance/export`
+- Parameters: Body `{ organizationId, contactId, requestedBy }`
+- How to use: Create a data export request for one contact.
+
+### `POST /compliance/delete`
+- Parameters: Body `{ organizationId, contactId, requestedBy }`
+- How to use: Create a data deletion request for one contact.
+
+### `GET /compliance/export/:contactId/:organizationId`
+- Parameters: Path `contactId`, `organizationId`
+- How to use: Fetch exported contact data payload.
+
+### `GET /compliance/retention-policy/:organizationId`
+- Parameters: Path `organizationId`
+- How to use: Fetch retention policy.
+
+### `POST /compliance/retention-policy/:organizationId`
+- Parameters: Path `organizationId`. Body `policy object`
+- How to use: Update retention policy.
+
+### `POST /compliance/purge/:organizationId`
+- Parameters: Path `organizationId`
+- How to use: Trigger retention purge.
+
+### `GET /compliance/audit-trail/:organizationId`
+- Parameters: Path `organizationId`
+- How to use: Fetch compliance audit trail.

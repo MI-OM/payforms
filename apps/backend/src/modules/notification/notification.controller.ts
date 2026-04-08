@@ -1,4 +1,4 @@
-import { Controller, Post, Body, UseGuards, Request, Get, Query } from '@nestjs/common';
+import { Controller, Post, Body, UseGuards, Request, Get, Query, Patch, Param } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { NotificationService } from './notification.service';
 import {
@@ -6,6 +6,7 @@ import {
   GroupReminderNotificationDto,
   ScheduleNotificationDto,
   GroupScheduleNotificationDto,
+  CreateInternalNotificationDto,
 } from './dto/notification.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 
@@ -69,5 +70,39 @@ export class NotificationController {
       page,
       limit,
     };
+  }
+
+  @Post('internal')
+  async createInternalNotification(@Body() dto: CreateInternalNotificationDto, @Request() req) {
+    return this.notificationService.createInternalNotification(
+      req.user.organization_id,
+      req.user.id,
+      dto,
+    );
+  }
+
+  @Get('internal')
+  async getInternalNotifications(
+    @Request() req,
+    @Query('page') page: number = 1,
+    @Query('limit') limit: number = 20,
+    @Query('unread_only') unreadOnly?: string,
+  ) {
+    return this.notificationService.listInternalNotifications(
+      req.user.organization_id,
+      req.user.id,
+      Number(page),
+      Number(limit),
+      unreadOnly === 'true',
+    );
+  }
+
+  @Patch('internal/:id/read')
+  async markInternalNotificationRead(@Param('id') id: string, @Request() req) {
+    return this.notificationService.markInternalNotificationRead(
+      req.user.organization_id,
+      req.user.id,
+      id,
+    );
   }
 }

@@ -1,1261 +1,560 @@
 # Payforms API Usage Workflows
 
-## What's New (April 2026)
+This document explains how FE should use the current backend APIs in real product flows.
 
-### Partial Payment Support
-- **New Feature**: Forms can now accept partial payments when `allow_partial` is enabled.
-- **Updated Endpoint**: `POST /public/forms/:slug/submit` now accepts `partial_amount` parameter.
-- **Impact**: Contacts can pay portions of form fees, with balance tracking across multiple payments.
-- **Developer Note**: Payment records now include `total_amount` for balance calculations. Status can be `PARTIAL` for incomplete payments.
+For each workflow below, FE gets:
+- the endpoint(s) involved
+- the parameters to send
+- how to use the route in sequence
+- whether the route is new or updated where relevant
 
-### Group Contributions Reporting
-- **New Endpoint**: `GET /reports/groups/contributions`
-- **Purpose**: Shows total contributions by each group to forms, including deficit calculations.
-- **Query Params**: `form_id?`, `start_date?`, `end_date?`
-- **Response**: Hierarchical group data with contribution amounts and deficits.
+## What Changed For FE
 
-### Form Performance Reporting
-- **New Endpoint**: `GET /reports/forms/performance`
-- **Purpose**: Provides per-form metrics including submissions, payments, and conversion rates.
-- **Query Params**: `start_date?`, `end_date?`
-- **Response**: Aggregate totals and per-form performance data.
+### New workflows/endpoints
 
-### Contact Import Validation Improvements
-- **Updated**: Contact import now accepts both `first_name`/`last_name` fields or legacy `name` field.
-- **Impact**: More flexible import formats supported without validation errors.
+- Submission export via `GET /submissions/export`
+- Group detach via `PATCH /groups/:id/detach`
+- Group contact removal via `DELETE /groups/:id/contacts`
+- Form group fetch via `GET /forms/:id/groups`
+- Organization email verification status via `GET /auth/organization-email/status`
+- Contact logout via `POST /contact-auth/logout`
+- CSV contact import validate and commit endpoints
+- Public payment verify via `GET /public/payments/verify`
+- Scheduled notifications listing via `GET /notifications/scheduled`
+- Internal notification create/list/read endpoints
+- Form performance and group contribution reports
 
-### Group Hierarchy Aggregation
-- **Fixed**: Parent groups now correctly aggregate all contacts from subgroups.
-- **Impact**: Group contact counts and hierarchies reflect complete membership.
+### Updated workflows/endpoints
 
-### Submission Export Endpoints
-- **New Endpoint**: `GET /submissions/export`
-- **Purpose**: Export filtered form submissions as CSV or PDF.
-- **Query Params**: `format?`, `form_id?`, `contact_id?`, `start_date?`, `end_date?`
-- **Impact**: Admins can download raw submission data for operational review and offline reporting.
+- Admin auth now supports cookie-backed sessions in addition to token responses.
+- Contact auth now supports cookie-backed session.
+- Public form submit now supports both free forms and partial payments.
+- Notification fan-out now sends per recipient, so recipient emails are no longer exposed to each other.
 
-### Group Contact Removal
-- **New Endpoint**: `DELETE /groups/:id/contacts`
-- **Purpose**: Remove one or multiple contacts from a group in a single request.
-- **Body**: `{ contact_ids: string[] }`
-- **Impact**: Group membership can now be managed directly from the group side without replacing all memberships on each contact.
+## 1. Admin Authentication Workflow
 
-### Group Detach Endpoint
-- **New Endpoint**: `PATCH /groups/:id/detach`
-- **Purpose**: Remove a group from its parent while preserving the group and its current contacts.
-- **Impact**: Admins can reorganize hierarchy without deleting the group.
-
-This document describes the major Payforms API workflows, including each endpoint consumed and the process flow for typical frontend and backend scenarios.
-
-## 1. Authentication Workflows
-
-### 1.1 Admin / Staff Authentication
-
-#### 1.1.1 Register Organization Admin
+### 1.1 Register organization admin
 
 - Endpoint: `POST /auth/register`
-- Body: `{ organization_name, email, password }`
-- Flow:
-  1. Admin enters school name, email, and password.
-  2. Frontend posts to `/auth/register`.
-  3. Backend creates organization, admin user, and returns session or auth response.
-  4. Frontend stores JWT and transitions to dashboard.
+- Parameters: Body `{ organization_name, email, password }`
+- How to use:
+  1. FE submits org signup form.
+  2. Backend returns auth payload and sets auth cookies.
+  3. FE should store returned access token in memory only if needed, then bootstrap current user with `/auth/me`.
 
-#### 1.1.2 Login Admin / Staff
+### 1.2 Login admin or staff
 
 - Endpoint: `POST /auth/login`
-- Body: `{ email, password }`
-- Flow:
-  1. Frontend displays login form for admin/staff.
-  2. Submit credentials to `/auth/login`.
-  3. Backend validates credentials, issues JWT.
-  4. Frontend stores `Bearer <JWT>` and uses it for protected routes.
+- Parameters: Body `{ email, password, organization_id?, organization_subdomain?, organization_domain? }`
+- How to use:
+  1. FE submits login form.
+  2. On tenant subdomains or custom domains, backend binds login to the request host and rejects mismatched organization context.
+  3. On shared/root login screens, FE can provide organization context when the same email may exist in more than one organization.
+  4. Backend validates credentials, returns auth payload, and sets cookies.
+  5. FE should then fetch `/auth/me` or `/auth/profile`.
 
-#### 1.1.3 Refresh Token
+### 1.3 Refresh session
 
 - Endpoint: `POST /auth/refresh`
-- Body: `{ refresh_token }`
-- Flow:
-  1. Frontend detects expired access token or receives 401.
-  2. Uses stored refresh token to call `/auth/refresh`.
-  3. Backend issues a new access token.
-  4. Frontend replaces token and retries the original request.
+- Parameters: Body `{ refresh_token? }`
+- How to use:
+  1. FE calls refresh when session expires or on 401.
+  2. In cookie-backed mode, FE can send empty body.
+  3. Backend refreshes access token and cookies.
 
-#### 1.1.4 Logout
+### 1.4 Logout
 
 - Endpoint: `POST /auth/logout`
-- Auth: `Bearer <JWT>`
-- Flow:
-  1. Frontend sends logout request with auth header.
-  2. Backend invalidates session or revokes token.
-  3. Frontend clears stored auth state.
+- Parameters: Auth required
+- How to use:
+  1. FE calls logout.
+  2. Backend clears cookies and invalidates refresh token state.
+  3. FE clears in-memory auth state and redirects to login.
 
-### 1.2 Invite and Accept Staff
+## 2. Admin Account Recovery Workflow
 
-#### 1.2.1 Invite Staff Member
-
-- Endpoint: `POST /auth/invite`
-- Auth: `Bearer <JWT>` (ADMIN only)
-- Body: `{ first_name, last_name, email }`
-- Flow:
-  1. Admin enters invitee details.
-  2. Frontend sends invite to `/auth/invite`.
-  3. Backend creates a pending STAFF invitation and sends email.
-  4. Frontend confirms invitation created.
-
-#### 1.2.2 Accept Invitation
-
-- Endpoint: `POST /auth/accept-invite`
-- Body: `{ token, password }`
-- Flow:
-  1. Invitee clicks acceptance link from email.
-  2. Frontend captures token and password.
-  3. Submit to `/auth/accept-invite`.
-  4. Backend creates the staff account, sets password, and returns auth response.
-
-### 1.3 Forgot Password / Reset
-
-#### 1.3.1 Request Password Reset
+### 2.1 Request password reset
 
 - Endpoint: `POST /auth/password-reset/request`
-- Body: `{ email }`
-- Flow:
-  1. User enters email on forgot-password page.
-  2. Frontend sends request to `/auth/password-reset/request`.
-  3. Backend sends reset email with token.
-  4. Frontend shows confirmation message.
+- Parameters: Body `{ email }`
+- How to use:
+  1. FE submits forgot-password email.
+  2. Backend responds with a generic success message.
+  3. FE always shows a neutral confirmation state.
 
-#### 1.3.2 Confirm Password Reset
+### 2.2 Confirm password reset
 
 - Endpoint: `POST /auth/password-reset/confirm`
-- Body: `{ token, password }`
-- Flow:
-  1. User follows email link.
-  2. Frontend captures reset token and new password.
-  3. Submit to `/auth/password-reset/confirm`.
-  4. Backend updates password and returns success.
-
-### 1.4 Organization Email Verification
-
-#### 1.4.1 Request Verification
-
-- Endpoint: `POST /auth/organization-email/request-verification`
-- Auth: `Bearer <JWT>` (ADMIN only)
-- Flow:
-  1. Admin requests verification of organization email.
-  2. Frontend calls endpoint.
-  3. Backend sends verification email with token.
-
-#### 1.4.2 Verify Organization Email
-
-- Endpoint: `POST /auth/organization-email/verify`
-- Body: `{ token }`
-- Flow:
-  1. User clicks verification link.
-  2. Frontend submits token to `/auth/organization-email/verify`.
-  3. Backend marks org email verified.
-
-#### 1.4.3 Check Organization Email Verification Status
-
-- Endpoint: `GET /auth/organization-email/status`
-- Auth: `Bearer <JWT>`
-- Flow:
-  1. Frontend opens organization settings.
-  2. Calls `/auth/organization-email/status`.
-  3. Backend returns the current verification state.
-
-### 1.5 Profile and Self Service
-
-#### 1.5.1 Get Current Profile
-
-- Endpoint: `GET /auth/me`
-- Auth: `Bearer <JWT>`
-- Flow:
-  1. Frontend requests authenticated user info.
-  2. Backend returns current profile.
-
-#### 1.5.2 Update Profile
-
-- Endpoint: `PATCH /auth/profile`
-- Auth: `Bearer <JWT>`
-- Body: `{ first_name?, middle_name?, last_name?, title?, designation? }`
-- Flow:
-  1. User edits profile.
-  2. Frontend sends patch.
-  3. Backend updates profile and returns latest user data.
-
-## 2. Organization Workflows
-
-### 2.1 View Organization Details
-
-- Endpoint: `GET /organization`
-- Auth: `Bearer <JWT>`
-- Flow:
-  1. Frontend loads organization dashboard.
-  2. Calls `/organization` with auth token.
-  3. Backend returns org details.
-
-### 2.2 Update Organization Settings
-
-- Endpoint: `PATCH /organization`
-- Auth: `Bearer <JWT>` (ADMIN only)
-- Body:
-  - `name?`
-  - `email?`
-  - `subdomain?`
-  - `custom_domain?`
-  - `require_contact_login?`
-  - `notify_submission_confirmation?`
-  - `notify_payment_confirmation?`
-  - `notify_payment_failure?`
-- Flow:
-  1. Admin edits organization settings in UI.
-  2. Frontend sends patch to `/organization`.
-  3. Backend validates and persists changes.
-
-### 2.3 Fetch Organization Settings Only
-
-- Endpoint: `GET /organization/settings`
-- Auth: `Bearer <JWT>`
-- Flow:
-  1. Frontend needs only organization-level display settings.
-  2. Call `/organization/settings`.
-  3. Backend returns concise setting payload.
-
-### 2.4 Update Organization Settings Only
-
-- Endpoint: `PATCH /organization/settings`
-- Auth: `Bearer <JWT>` (ADMIN only)
-- Flow:
-  1. Admin updates settings that are specifically scoped to organization preferences.
-  2. Frontend calls endpoint.
-  3. Backend updates values without touching admin profile.
-
-### 2.5 Update Paystack Keys
-
-- Endpoint: `PATCH /organization/keys`
-- Auth: `Bearer <JWT>` (ADMIN only)
-- Body: `{ paystack_public_key?, paystack_secret_key? }`
-- Flow:
-  1. Admin enters payment gateway credentials.
-  2. Frontend sends patch.
-  3. Backend saves keys for payment verification and callbacks.
-
-### 2.6 Upload Organization Logo
-
-- Endpoint: `POST /organization/logo`
-- Auth: `Bearer <JWT>` (ADMIN only)
-- Body: `{ logo_url }`
-- Flow:
-  1. Admin uploads a logo to storage or provides a URL.
-  2. Frontend posts the logo URL.
-  3. Backend persists organization logo reference.
-
-## 3. Form Workflows
-
-### 3.1 Create a Form
-
-- Endpoint: `POST /forms`
-- Auth: `Bearer <JWT>`
-- Body:
-  - `title`
-  - `category?`
-  - `description?`
-  - `note?`
-  - `slug`
-  - `payment_type?`: `FIXED` or `VARIABLE` (omit or null for free forms with no payment)
-  - `amount?`: Required if `payment_type` is `FIXED`; null/omitted for free forms
-  - `allow_partial?`: Enable partial payments when true and payment_type is set
-- Flow:
-  1. Admin configures a form in the dashboard.
-  2. Frontend submits form metadata to `/forms`.
-  3. Backend creates a form record and returns form info.
-  4. **Payment Model**:
-     - Forms with no `payment_type` or null `amount` are **free forms** (no payment required, Paystack not used)
-     - Forms with `payment_type: FIXED` and `amount` > 0 require full payment
-     - Forms with `allow_partial: true` allow users to make partial payments and settle balance later
-
-### 3.2 List Forms
-
-- Endpoint: `GET /forms`
-- Auth: `Bearer <JWT>`
-- Query: `page?`, `limit?`
-- Flow:
-  1. Frontend lists forms on the admin dashboard.
-  2. Call `/forms` with pagination.
-  3. Backend returns paged result.
-
-### 3.3 Get Form Details
-
-- Endpoint: `GET /forms/:id`
-- Auth: `Bearer <JWT>`
-- Flow:
-  1. Admin opens a specific form editor.
-  2. Frontend fetches details from `/forms/:id`.
-  3. Backend returns full form metadata.
-
-### 3.4 Update Form
-
-- Endpoint: `PATCH /forms/:id`
-- Auth: `Bearer <JWT>`
-- Body may include:
-  - `title?`
-  - `category?`
-  - `description?`
-  - `note?`
-  - `is_active?`
-  - `amount?`
-  - `allow_partial?`
-- Flow:
-  1. Admin edits form settings.
-  2. Frontend patches `/forms/:id`.
-  3. Backend updates the form.
-
-### 3.5 Delete Form
-
-- Endpoint: `DELETE /forms/:id`
-- Auth: `Bearer <JWT>`
-- Flow:
-  1. Admin deletes an unwanted form.
-  2. Frontend calls delete endpoint.
-  3. Backend removes the form record.
-
-### 3.6 Manage Form Fields
-
-#### Create Field
-- Endpoint: `POST /forms/:id/fields`
-- Auth: `Bearer <JWT>`
-- Body:
-  - `label`
-  - `type`: `TEXT`, `EMAIL`, `SELECT`, `NUMBER`, `TEXTAREA`
-  - `required`
-  - `options?`
-  - `order_index?`
-  - `validation_rules?`
-- Flow:
-  1. Admin adds a field to a form.
-  2. Frontend posts to `/forms/:id/fields`.
-  3. Backend saves field configuration.
-
-#### Update Field
-- Endpoint: `PATCH /forms/fields/:fieldId`
-- Auth: `Bearer <JWT>`
-- Body may include:
-  - `label?`
-  - `type?`
-  - `required?`
-  - `options?`
-  - `validation_rules?`
-- Flow:
-  1. Admin edits field properties.
-  2. Frontend sends patch.
-  3. Backend updates the field record.
-
-#### Delete Field
-- Endpoint: `DELETE /forms/fields/:fieldId`
-- Auth: `Bearer <JWT>`
-- Flow:
-  1. Admin removes a field.
-  2. Frontend calls delete.
-  3. Backend deletes the field.
-
-#### Reorder Fields
-- Endpoint: `PATCH /forms/:id/fields/reorder`
-- Auth: `Bearer <JWT>`
-- Body: `{ fields: [{ id, order_index }] }`
-- Flow:
-  1. Admin changes field order.
-  2. Frontend sends new ordering payload.
-  3. Backend updates order indexes.
-
-### 3.7 Form Targeting
-
-#### Attach Groups or Contacts
-- Endpoint: `POST /forms/:id/groups`
-- Auth: `Bearer <JWT>`
-- Body: `{ group_ids: string[] }`
-- Flow:
-  1. Admin targets a form to specific groups.
-  2. Frontend submits group IDs.
-  3. Backend attaches groups to form.
-
-#### View Form Targets
-- Endpoint: `GET /forms/:id/targets`
-- Auth: `Bearer <JWT>`
-- Flow:
-  1. Frontend fetches current form targets.
-  2. Backend returns assigned groups and contacts.
-
-#### View Form Groups
-- Endpoint: `GET /forms/:id/groups`
-- Auth: `Bearer <JWT>`
-- Flow:
-  1. Frontend needs only the groups attached to a form.
-  2. Backend returns the current form-group assignments.
-
-#### Add Targets
-- Endpoint: `POST /forms/:id/targets`
-- Auth: `Bearer <JWT>`
-- Body:
-  - `target_type`: `group` or `contact`
-  - `target_ids: string[]`
-- Flow:
-  1. Admin adds form visibility targets.
-  2. Backend creates target assignments.
-
-#### Remove Targets
-- Endpoint: `DELETE /forms/:id/targets/:targetId`
-- Auth: `Bearer <JWT>`
-- Flow:
-  1. Admin removes one target.
-  2. Backend deletes target assignment.
-
-## 4. Group Workflows
-
-### 4.1 Create Group
-
-- Endpoint: `POST /groups`
-- Auth: `Bearer <JWT>`
-- Body:
-  - `name`
-  - `description?`
-  - `note?`
-  - `parent_group_id?`
-- Flow:
-  1. Admin creates a group or subgroup.
-  2. Frontend sends create request.
-  3. Backend returns new group details.
-
-### 4.2 List Groups
-
-- Endpoint: `GET /groups`
-- Auth: `Bearer <JWT>`
-- Query: `page?`, `limit?`
-- Flow:
-  1. Frontend lists groups with pagination.
-  2. Backend returns group list.
-
-### 4.3 Load Group Tree
-
-- Endpoint: `GET /groups/tree`
-- Auth: `Bearer <JWT>`
-- Flow:
-  1. Frontend needs nested group structure.
-  2. Backend returns hierarchical groups for tree views.
-
-### 4.4 Get Group Details
-
-- Endpoint: `GET /groups/:id`
-- Auth: `Bearer <JWT>`
-- Flow:
-  1. Frontend views group information.
-  2. Backend returns group data.
-
-### 4.5 Update Group
-
-- Endpoint: `PATCH /groups/:id`
-- Auth: `Bearer <JWT>`
-- Body may include:
-  - `name?`
-  - `description?`
-  - `note?`
-  - `parent_group_id?`
-- Flow:
-  1. Admin edits group metadata.
-  2. Frontend patches group.
-  3. Backend persists changes.
-
-### 4.6 Delete Group
-
-- Endpoint: `DELETE /groups/:id`
-- Auth: `Bearer <JWT>`
-- Flow:
-  1. Admin removes a group.
-  2. Backend deletes the group record.
-
-### 4.7 Add Contacts to Group
-
-- Endpoint: `POST /groups/:id/contacts`
-- Auth: `Bearer <JWT>`
-- Body: `{ contact_ids: string[] }`
-- Flow:
-  1. Admin assigns contacts to a group.
-  2. Frontend posts contact IDs.
-  3. Backend associates contacts with group.
-
-### 4.8 List Group Contacts
-
-- Endpoint: `GET /groups/:id/contacts`
-- Auth: `Bearer <JWT>`
-- Query: `page?`, `limit?`
-- Flow:
-  1. Frontend lists members of a group.
-  2. Backend returns paginated contacts.
-
-### 4.9 Remove Contacts from Group
-
-- Endpoint: `DELETE /groups/:id/contacts`
-- Auth: `Bearer <JWT>`
-- Body: `{ contact_ids: string[] }`
-- Flow:
-  1. Admin selects one or more contacts to remove from a group.
-  2. Frontend sends the contact IDs to `/groups/:id/contacts`.
-  3. Backend removes only those memberships and returns the updated group.
-
-### 4.10 Detach Group from Parent
-
-- Endpoint: `PATCH /groups/:id/detach`
-- Auth: `Bearer <JWT>`
-- Flow:
-  1. Admin chooses to remove a subgroup from its parent.
-  2. Frontend calls `/groups/:id/detach`.
-  3. Backend sets `parent_group_id` to `null` and returns the updated group.
-  4. Existing contacts on the group remain attached to that group.
-
-## 5. Contact Workflows
-
-### 5.1 Create Contact
-
-- Endpoint: `POST /contacts`
-- Auth: `Bearer <JWT>`
-- Body:
-  - `first_name?`
-  - `middle_name?`
-  - `last_name?`
-  - `email`
-  - `phone?`
-  - `gender?`
-  - `student_id?`
-  - `external_id?`
-  - `guardian_name?`
-  - `guardian_email?`
-  - `guardian_phone?`
-  - `require_login?` (boolean, defaults to `true`)
-  - `must_reset_password?` (boolean override)
-- Flow:
-  1. Admin adds a new contact.
-  2. Frontend posts contact data.
-  3. Backend creates the contact and may send password setup email if required.
-
-### 5.2 List Contacts
-
-- Endpoint: `GET /contacts`
-- Auth: `Bearer <JWT>`
-- Query: `group_id?`, `page?`, `limit?`
-- Flow:
-  1. Frontend loads contacts list.
-  2. Optionally filter by `group_id`.
-  3. Backend returns results.
-
-### 5.3 Export Contacts
-
-- Endpoint: `GET /contacts/export`
-- Auth: `Bearer <JWT>`
-- Query: `group_id?`
-- Flow:
-  1. Admin requests CSV export.
-  2. Frontend triggers download.
-  3. Backend returns CSV payload.
-
-### 5.4 Get Contact Details
-
-- Endpoint: `GET /contacts/:id`
-- Auth: `Bearer <JWT>`
-- Flow:
-  1. Frontend fetches contact details for edit/view.
-  2. Backend returns contact data.
-
-### 5.5 Get Contact Details with Hierarchy
-
-- Endpoint: `GET /contacts/:id/details`
-- Auth: `Bearer <JWT>`
-- Flow:
-  1. Frontend needs contact plus resolved group paths.
-  2. Backend returns contact and `group_hierarchy` for breadcrumb-style display.
-
-### 5.6 Update Contact
-
-- Endpoint: `PATCH /contacts/:id`
-- Auth: `Bearer <JWT>`
-- Body may include:
-  - `name?`
-  - `email?`
-  - `phone?`
-  - `is_active?`
-- Flow:
-  1. Admin edits contact data.
-  2. Frontend sends patch.
-  3. Backend updates contact record.
-
-### 5.7 Delete Contact
-
-- Endpoint: `DELETE /contacts/:id`
-- Auth: `Bearer <JWT>`
-- Flow:
-  1. Admin deletes a contact.
-  2. Backend removes the contact.
-
-### 5.8 Assign Contact to Groups
-
-- Endpoint: `POST /contacts/:id/groups`
-- Auth: `Bearer <JWT>`
-- Body: `{ group_ids: string[] }`
-- Flow:
-  1. Admin assigns existing groups to a contact.
-  2. Backend updates membership.
-
-## 6. Contact Import Workflows
-
-### 6.1 Validate Import Payload
-
-- Endpoint: `POST /contacts/imports/validate`
-- Auth: `Bearer <JWT>`
-- Body: same as `/contacts/import`
-- Flow:
-  1. Frontend uploads or constructs import payload.
-  2. Send validation request to `/contacts/imports/validate`.
-  3. Backend examines rows, group mappings, and required fields.
-  4. Frontend shows errors or confirmation before commit.
-
-### 6.2 Commit Validated Import
-
-- Endpoint: `POST /contacts/imports/:id/commit`
-- Auth: `Bearer <JWT>`
-- Flow:
-  1. After validation succeeds, frontend calls `/contacts/imports/:id/commit`.
-  2. Backend creates or updates contacts, resolves groups, and sends password setup if needed.
-  3. Frontend displays import summary.
-
-### 6.2A Validate CSV Import
-
-- Endpoint: `POST /contacts/imports/csv/validate`
-- Auth: `Bearer <JWT>`
-- Body: `{ csv }`
-- Flow:
-  1. Frontend uploads raw CSV content.
-  2. Backend parses and validates the rows.
-  3. Frontend shows validation errors or confirmation before commit.
-
-### 6.2B Commit CSV Import
-
-- Endpoint: `POST /contacts/imports/csv/commit`
-- Auth: `Bearer <JWT>`
-- Body: `{ csv }`
-- Flow:
-  1. Frontend submits CSV content directly for validation and commit.
-  2. Backend validates and commits the import in one flow.
-  3. Frontend receives the final import result.
-
-### 6.3 Direct Import
-
-- Endpoint: `POST /contacts/import`
-- Auth: `Bearer <JWT>`
-- Body:
-  - `contacts: [{ name, email, phone?, external_id?, group_ids?, groups?, group_paths?, require_login?, is_active?, must_reset_password? }]`
-- Flow:
-  1. Frontend uses direct JSON import for smaller batches.
-  2. Backend processes contacts immediately.
-  3. Returns import result or errors.
-
-### 6.4 Review Import History
-
-- Endpoint: `GET /contacts/imports`
-- Auth: `Bearer <JWT>`
-- Query: `page?`, `limit?`
-- Flow:
-  1. Frontend shows import records.
-  2. Backend returns paged import history.
-
-### 6.5 Get Import Details
-
-- Endpoint: `GET /contacts/imports/:id`
-- Auth: `Bearer <JWT>`
-- Flow:
-  1. Frontend inspects a specific import.
-  2. Backend returns import metadata and status.
-
-## 7. Contact Auth / Student Login Workflows
-
-### 7.1 Contact Login
-
-- Endpoint: `POST /contact-auth/login`
-- Body:
-  - `email`
-  - `password`
-  - `organization_id?`
-  - `organization_subdomain?`
-  - `organization_domain?`
-- Flow:
-  1. Student/contact opens login page.
-  2. Frontend submits email/password.
-  3. If tenant routing is enabled, backend resolves org by request host or optional org fields.
-  4. Backend authenticates contact and returns contact JWT.
-
-### 7.2 Set Password
-
-- Endpoint: `POST /contact-auth/set-password`
-- Body: `{ token, password }`
-- Flow:
-  1. Contact receives password setup link email.
-  2. Frontend posts token and password.
-  3. Backend sets contact password and activates login.
-
-### 7.3 Request Password Reset
-
-- Endpoint: `POST /contact-auth/reset/request`
-- Body:
-  - `email`
-  - `organization_id?`
-  - `organization_subdomain?`
-  - `organization_domain?`
-- Flow:
-  1. Contact requests reset.
-  2. Frontend sends email plus optional organization context.
-  3. Backend issues reset token and email.
-
-### 7.4 Confirm Password Reset
-
-- Endpoint: `POST /contact-auth/reset/confirm`
-- Body: `{ token, password }`
-- Flow:
-  1. Contact submits reset token with new password.
-  2. Backend updates the contact password.
-
-### 7.5 Alias Password Reset Endpoints
+- Parameters: Body `{ token, password }`
+- How to use:
+  1. FE reads token from reset link.
+  2. FE submits token and new password.
+  3. Backend updates password.
+
+## 3. Organization Settings Workflow
+
+### 3.1 Load organization settings
 
 - Endpoints:
+  - `GET /organization`
+  - `GET /organization/settings`
+- Parameters: Auth required
+- How to use:
+  1. Use `/organization` for full dashboard bootstrap.
+  2. Use `/organization/settings` for settings-only screens.
+
+### 3.2 Update organization settings
+
+- Endpoint: `PATCH /organization`
+- Parameters: Body `{ name?, email?, subdomain?, custom_domain?, require_contact_login?, notify_submission_confirmation?, notify_payment_confirmation?, notify_payment_failure?, partial_payment_limit? }`
+- How to use:
+  1. FE submits settings changes.
+  2. Backend persists tenant settings and notification settings.
+
+### 3.3 Update payment keys
+
+- Endpoint: `PATCH /organization/keys`
+- Parameters: Body `{ paystack_public_key?, paystack_secret_key?, paystack_webhook_url? }`
+- How to use:
+  1. FE submits Paystack keys from admin settings.
+  2. Backend stores org-specific gateway credentials.
+
+### 3.4 Verify organization email
+
+- Endpoints:
+  - `POST /auth/organization-email/request-verification`
+  - `POST /auth/organization-email/verify`
+  - `GET /auth/organization-email/status` `New`
+- Parameters:
+  - Request verification: auth required
+  - Verify: Body `{ token }`
+  - Status: auth required
+- How to use:
+  1. FE requests verification email from settings.
+  2. User opens email link.
+  3. FE submits verification token.
+  4. FE can poll or fetch status with `/auth/organization-email/status`.
+
+## 4. Form Builder Workflow
+
+### 4.1 Create form
+
+- Endpoint: `POST /forms`
+- Parameters: Body `{ title, category?, description?, note?, slug, payment_type, amount?, allow_partial, access_mode?, identity_validation_mode?, identity_field_label? }`
+- How to use:
+  1. FE submits form definition.
+  2. Backend creates form.
+  3. FE can then add fields and targets.
+
+### 4.2 Manage fields
+
+- Endpoints:
+  - `POST /forms/:id/fields`
+  - `PATCH /forms/fields/:fieldId`
+  - `DELETE /forms/fields/:fieldId`
+  - `PATCH /forms/:id/fields/reorder`
+- Parameters:
+  - Create field body `{ label, type, required, options?, order_index?, validation_rules? }`
+  - Update field body `{ label?, type?, required?, options?, validation_rules? }`
+  - Reorder body `{ fields: [{ id, order_index }] }`
+- How to use:
+  1. FE adds, updates, deletes, and reorders fields in builder UI.
+  2. Backend persists field configuration.
+
+### 4.3 Manage form targeting
+
+- Endpoints:
+  - `POST /forms/:id/groups`
+  - `GET /forms/:id/groups` `New`
+  - `GET /forms/:id/targets`
+  - `POST /forms/:id/targets`
+  - `DELETE /forms/:id/targets/:targetId`
+- Parameters:
+  - Assign groups body `{ group_ids: string[] }`
+  - Assign targets body `{ target_type, target_ids }`
+- How to use:
+  1. FE can attach groups directly or use target assignments.
+  2. Use `/forms/:id/groups` when only group assignment data is needed.
+  3. Use `/forms/:id/targets` for richer visibility target management.
+
+## 5. Group Management Workflow
+
+### 5.1 Create, update, and list groups
+
+- Endpoints:
+  - `POST /groups`
+  - `GET /groups`
+  - `GET /groups/tree`
+  - `GET /groups/:id`
+  - `PATCH /groups/:id`
+  - `DELETE /groups/:id`
+- Parameters:
+  - Create/update body `{ name, description?, note?, parent_group_id? }`
+  - List query `page?`, `limit?`
+- How to use:
+  1. FE uses `/groups/tree` for nested UI.
+  2. FE uses `/groups` for flat paginated tables.
+
+### 5.2 Detach subgroup from parent
+
+- Endpoint: `PATCH /groups/:id/detach` `New`
+- Parameters: Path `id`
+- How to use:
+  1. FE calls this when admin wants to keep subgroup but remove parent relationship.
+
+### 5.3 Add or remove contacts from group
+
+- Endpoints:
+  - `POST /groups/:id/contacts`
+  - `DELETE /groups/:id/contacts` `New`
+  - `GET /groups/:id/contacts`
+- Parameters:
+  - Add/remove body `{ contact_ids: string[] }`
+  - List query `page?`, `limit?`
+- How to use:
+  1. FE can manage membership from the group side.
+  2. Group contact list includes contacts in subgroups too.
+
+## 6. Contact Management Workflow
+
+### 6.1 Create and edit contacts
+
+- Endpoints:
+  - `POST /contacts`
+  - `GET /contacts`
+  - `GET /contacts/:id`
+  - `GET /contacts/:id/details`
+  - `PATCH /contacts/:id`
+  - `DELETE /contacts/:id`
+  - `POST /contacts/:id/groups`
+- Parameters:
+  - Create body `{ first_name?, middle_name?, last_name?, email, phone?, gender?, student_id?, external_id?, guardian_name?, guardian_email?, guardian_phone?, require_login?, must_reset_password? }`
+  - Update body `{ first_name?, middle_name?, last_name?, email?, phone?, gender?, student_id?, external_id?, guardian_name?, guardian_email?, guardian_phone?, is_active? }`
+  - List query `{ group_id?, student_id?, last_name?, first_name?, email?, external_id?, page?, limit? }`
+  - Assign groups body `{ group_ids: string[] }`
+- How to use:
+  1. Use `/contacts` for normal listing/filtering.
+  2. Use `/contacts/:id/details` when FE needs group hierarchy paths.
+  3. Use `/contacts/:id/groups` to assign group membership directly.
+
+### 6.2 Export contacts
+
+- Endpoint: `GET /contacts/export`
+- Parameters: Query `group_id?`
+- How to use:
+  1. FE triggers download for CSV export.
+
+### 6.3 Contact transaction history
+
+- Endpoint: `GET /contacts/:id/transactions`
+- Parameters: Query `page?`, `limit?`, `format?=csv`
+- How to use:
+  1. FE shows per-contact transaction history.
+  2. Use `format=csv` to export it.
+
+## 7. Contact Import Workflow
+
+### 7.1 Direct JSON import
+
+- Endpoint: `POST /contacts/import`
+- Parameters: Body `{ contacts: ContactImportRowDto[] }`
+- How to use:
+  1. FE submits parsed JSON rows directly.
+  2. Backend imports immediately and sends password setup emails where required.
+
+### 7.2 Validate then commit JSON import
+
+- Endpoints:
+  - `POST /contacts/imports/validate`
+  - `POST /contacts/imports/:id/commit`
+  - `GET /contacts/imports`
+  - `GET /contacts/imports/:id`
+- Parameters:
+  - Validate body `{ contacts: ContactImportRowDto[] }`
+  - Commit path `id`
+- How to use:
+  1. FE validates import first.
+  2. Backend returns import job.
+  3. FE commits validated job.
+  4. FE can load import history and detail screens.
+
+### 7.3 Validate and commit CSV import
+
+- Endpoints:
+  - `POST /contacts/imports/csv/validate` `New`
+  - `POST /contacts/imports/csv/commit` `New`
+- Parameters: Body `{ csv }`
+- How to use:
+  1. FE uploads or pastes raw CSV.
+  2. Use validate for preview flow.
+  3. Use commit for one-step CSV import flow.
+
+## 8. Contact Authentication Workflow
+
+### 8.1 Contact login
+
+- Endpoint: `POST /contact-auth/login`
+- Parameters: Body `{ email, password, organization_id?, organization_subdomain?, organization_domain? }`
+- How to use:
+  1. FE submits contact login.
+  2. On tenant subdomains or custom domains, backend treats request host as authoritative tenant context.
+  3. Backend rejects unknown subdomains and host/context mismatches.
+  4. Backend returns auth payload and sets contact auth cookie.
+
+### 8.2 Contact logout
+
+- Endpoint: `POST /contact-auth/logout` `New`
+- Parameters: Auth required
+- How to use:
+  1. FE calls logout when contact signs out.
+  2. Backend clears contact auth cookie.
+
+### 8.3 Set password and reset password
+
+- Endpoints:
+  - `POST /contact-auth/set-password`
+  - `POST /contact-auth/reset/request`
+  - `POST /contact-auth/reset/confirm`
   - `POST /contact-auth/password-reset/request`
   - `POST /contact-auth/password-reset/confirm`
-- Flow: Same as `/reset/request` and `/reset/confirm`, but preserved for compatibility.
+- Parameters:
+  - Set password body `{ token, password }`
+  - Reset request body `{ email, organization_id?, organization_subdomain?, organization_domain? }`
+  - Reset confirm body `{ token, password }`
+- How to use:
+  1. Use `/set-password` for first-time setup.
+  2. Use `/reset/*` or `/password-reset/*` for recovery flow.
 
-### 7.6 Get Contact Profile
+### 8.4 Contact self-service APIs
 
-- Endpoint: `GET /contact-auth/me`
-- Auth: contact JWT
-- Flow:
-  1. Authenticated contact loads their profile.
-  2. Backend returns contact-specific data.
+- Endpoints:
+  - `GET /contact-auth/me`
+  - `GET /contact-auth/payments/:id/receipt`
+  - `GET /contact-auth/payments/reference/:reference/receipt`
+- Parameters: Auth required
+- How to use:
+  1. `/me` loads contact profile.
+  2. Receipt endpoints download PDF receipts.
 
-### 7.7 Contact Receipt Access
+## 9. Public Form Workflow
 
-- Endpoint: `GET /contact-auth/payments/:id/receipt`
-- Auth: contact JWT
-- Flow:
-  1. Authenticated contact requests a receipt for their transaction.
-  2. Backend returns downloadable PDF.
+### 9.1 Load public form and widget assets
 
-### 7.8 Receipt by Reference
+- Endpoints:
+  - `GET /public/forms/:slug`
+  - `GET /public/forms/:slug/widget-config`
+  - `GET /public/forms/:slug/embed.js`
+  - `GET /public/forms/:slug/widget`
+- Parameters:
+  - `:slug`
+  - Widget query `{ callback_url?, contact_token?, contact_email?, contact_name?, auto_redirect? }`
+  - Optional contact bearer token for targeted forms
+- How to use:
+  1. FE can load a normal public page from `/public/forms/:slug`.
+  2. Embedded flows should bootstrap from `/widget-config` or `/embed.js`.
+  3. Targeted forms can pass contact auth.
 
-- Endpoint: `GET /contact-auth/payments/reference/:reference/receipt`
-- Auth: contact JWT
-- Flow:
-  1. Contact requests receipt by payment reference.
-  2. Backend validates ownership and returns PDF.
-
-## 8. Payment Workflows
-
-### 8.1 List Payments
-
-- Endpoint: `GET /payments`
-- Auth: `Bearer <JWT>`
-- Query: `page?`, `limit?`, `format?` (`csv`)
-- Flow:
-  1. Frontend shows payment history.
-  2. Backend returns paged payment list.
-
-### 8.2 Get Payment Details
-
-- Endpoint: `GET /payments/:id`
-- Auth: `Bearer <JWT>`
-- Flow:
-  1. Admin views a payment.
-  2. Backend returns payment record.
-
-### 8.3 Verify Payment Reference
-
-- Endpoint: `GET /payments/verify/:reference`
-- Auth: `Bearer <JWT>`
-- Flow:
-  1. Frontend or server calls this after Paystack redirect or webhook.
-  2. Backend verifies with Paystack, updates status, logs event.
-
-### 8.4 Create Payment Record
-
-- Endpoint: `POST /payments`
-- Auth: `Bearer <JWT>`
-- Body:
-  - `submission_id`
-  - `amount`
-  - `reference?`
-- Flow:
-  1. Backend or admin records a payment attempt.
-  2. Frontend may call this as part of submission or manual payment creation.
-
-### 8.5 Update Payment Status
-
-- Endpoint: `POST /payments/:id/status`
-- Alias Endpoint: `PATCH /payments/:id/status`
-- Auth: `Bearer <JWT>`
-- Body:
-  - `status`: `PENDING | PAID | PARTIAL | FAILED`
-  - `paid_at?`
-- Flow:
-  1. Backend updates payment lifecycle state.
-  2. Frontend may use this for manual override or correction.
-
-## 9. Transaction Workflows
-
-### 9.1 List Transactions
-
-- Endpoint: `GET /transactions`
-- Auth: `Bearer <JWT>`
-- Query: `status?`, `reference?`, `form_id?`, `contact_id?`, `start_date?`, `end_date?`, `page?`, `limit?`, `format?` (`csv`)
-- Flow:
-  1. Admin queries transaction history.
-  2. Backend returns filtered transaction list.
-
-### 9.2 Get Transaction Detail
-
-- Endpoint: `GET /transactions/:id`
-- Auth: `Bearer <JWT>`
-- Flow:
-  1. Frontend opens transaction detail.
-  2. Backend returns the transaction.
-
-### 9.3 Transaction History
-
-- Endpoint: `GET /transactions/:id/history`
-- Auth: `Bearer <JWT>`
-- Query: `page?`, `limit?`
-- Flow:
-  1. Frontend shows event history for a transaction.
-  2. Backend returns audit and status events.
-
-## 10. Public Submission Workflows
-
-## 10A. Admin Submission Export Workflows
-
-### 10A.1 Export Form Submissions
-
-- Endpoint: `GET /submissions/export`
-- Auth: `Bearer <JWT>`
-- Query:
-  - `format?` = `csv | pdf`
-  - `form_id?`
-  - `contact_id?`
-  - `start_date?`
-  - `end_date?`
-- Flow:
-  1. Admin selects submission filters in the dashboard.
-  2. Frontend calls `/submissions/export` with the selected filters.
-  3. Backend returns a downloadable CSV or PDF export of matching submissions.
-  4. CSV includes core submission fields plus flattened discovered data keys and raw `data_json`.
-  5. PDF includes per-submission metadata and formatted submission payloads.
-
-### 10.1 Fetch Public Form
-
-- Endpoint: `GET /public/forms/:slug`
-- Header: `Authorization: Bearer <contact token>` optional for targeted forms
-- Flow:
-  1. Public or targeted user requests a form by slug.
-  2. Frontend or embed widget loads the form structure.
-  3. Backend returns form fields and configuration.
-
-### 10.2 Fetch Widget Config
-
-- Endpoint: `GET /public/forms/:slug/widget-config`
-- Header: `Authorization: Bearer <contact token>` optional for targeted forms
-- Flow:
-  1. Frontend or embed script requests widget metadata.
-  2. Backend returns endpoints, embed code, and event names.
-
-### 10.3 Load Embed Script
-
-- Endpoint: `GET /public/forms/:slug/embed.js`
-- Flow:
-  1. Host page includes the embed script.
-  2. Script bootstraps widget with optional attributes.
-  3. Backend returns JavaScript widget shell.
-
-### 10.4 Load Widget HTML
-
-- Endpoint: `GET /public/forms/:slug/widget`
-- Query:
-  - `callback_url?`
-  - `contact_token?`
-  - `contact_email?`
-  - `contact_name?`
-  - `auto_redirect?`
-- Flow:
-  1. Browser loads iframe widget HTML.
-  2. Backend returns the iframe content.
-
-### 10.5 Submit Public Form
+### 9.2 Submit public form
 
 - Endpoint: `POST /public/forms/:slug/submit`
-- Query: `callback_url?`
-- Header: `Authorization: Bearer <contact token>` optional for targeted forms
-- Body:
-  - `data: { ...field values }`
-  - `contact_email?`
-  - `contact_name?`
-  - `partial_amount?` (number, for partial payments when form.allow_partial is true)
-- Flow:
-  1. User submits the public form.
-  2. Backend records submission and validates all fields.
-  3. **Payment Processing Decision**:
-     - **If form has NO payment requirement** (amount is 0 or null, or payment_type not set):
-       - Submission is recorded with status `COMPLETED`
-       - No payment object is created
-       - Paystack page is NOT shown
-       - Response includes `submission_id` and direct success confirmation
-     - **If form HAS payment requirement**:
-       - If `partial_amount` is provided and form.allow_partial is true:
-         - Validates partial_amount > 0 and ≤ total form amount
-         - Creates payment record for partial_amount
-         - Tracks total_amount for balance calculation across multiple payments
-       - If no `partial_amount`, creates payment for full form amount
-       - Paystack payment authorization is initiated
-       - Response includes `authorization_url` from Paystack
-       - User is redirected to Paystack hosted payment page
-  4. Frontend handles response:
-     - For payment-free forms: show success message
-     - For payment forms: redirect to `authorization_url` for payment
+- Status: Updated
+- Parameters:
+  - Query `callback_url?`
+  - Body `{ data, contact_email?, contact_name?, partial_amount? }`
+  - Optional contact bearer token for targeted forms
+- How to use:
+  1. FE posts submission payload.
+  2. If form is free, backend returns direct success flow.
+  3. If payment is required, backend returns Paystack authorization flow.
+  4. If partial payment is allowed, FE may pass `partial_amount`.
 
-### 10.6 Payment Callback
+### 9.3 Handle payment verification after Paystack
 
-- Endpoint: `GET /public/payments/callback`
-- Query: `reference` or `trxref`
-- Flow:
-  1. Paystack redirects back after payment completion (to backend callback URL).
-  2. Backend verifies payment reference and updates payment status.
-  3. Backend redirects user to frontend success page with payment status.
-  4. Frontend displays appropriate success/failure message based on query parameters.
+- Endpoints:
+  - `GET /public/payments/callback`
+  - `GET /public/payments/verify` `New`
+- Parameters:
+  - Query `reference?`, `trxref?`
+- How to use:
+  1. Paystack returns to callback endpoint.
+  2. Backend verifies and redirects to FE success page.
+  3. FE may also use `/public/payments/verify` when it needs JSON verification only.
 
-### 10.7 Public Payment Verification
+## 10. Payment and Transaction Workflow
 
-- Endpoint: `GET /public/payments/verify`
-- Query: `reference` or `trxref`
-- Flow:
-  1. Frontend or widget needs a verification-only JSON response.
-  2. Calls `/public/payments/verify` with the payment reference.
-  3. Backend verifies the payment and returns a JSON result without redirecting.
+### 10.1 Payment list and detail
 
-## 11. Webhook Workflow
+- Endpoints:
+  - `GET /payments`
+  - `GET /payments/:id`
+  - `GET /payments/verify/:reference`
+  - `POST /payments`
+  - `POST /payments/:id/status`
+  - `PATCH /payments/:id/status`
+- Parameters:
+  - List query `page?`, `limit?`, `format?=csv`
+  - Create body `{ submission_id, amount, total_amount?, reference? }`
+  - Update status body `{ status, paid_at?, amount_paid? }`
+- How to use:
+  1. FE uses `/payments` for admin payment table and CSV export.
+  2. Use `/payments/verify/:reference` for manual verification actions.
+  3. Use status update only for admin override flows.
 
-### 11.1 Paystack Webhook
+### 10.2 Transaction history
 
-- Endpoint: `POST /webhooks/paystack`
-- Header: `x-paystack-signature`
-- Flow:
-  1. Paystack sends payment event payload.
-  2. Backend verifies signature.
-  3. Backend updates the payment record and logs event.
+- Endpoints:
+  - `GET /transactions`
+  - `GET /transactions/:id`
+  - `GET /transactions/:id/history`
+- Parameters:
+  - List query `{ status?, reference?, form_id?, contact_id?, start_date?, end_date?, page?, limit?, format? }`
+- How to use:
+  1. FE uses `/transactions` for filtered history and export.
+  2. FE uses `/transactions/:id/history` for event timeline UI.
 
-## 12. Notification Workflows
+## 11. Submission Export Workflow
 
-### 12.1 Send Reminder to Contacts
+### 11.1 Export raw submissions
+
+- Endpoint: `GET /submissions/export` `New`
+- Parameters: Query `{ format?, form_id?, contact_id?, start_date?, end_date?, page?, limit? }`
+- How to use:
+  1. FE builds export filter UI.
+  2. FE calls export endpoint with `format=csv` or `format=pdf`.
+  3. Backend returns downloadable file.
+
+## 12. Notifications Workflow
+
+### 12.1 Send reminder to specific contacts
 
 - Endpoint: `POST /notifications/reminder`
-- Auth: `Bearer <JWT>`
-- Body:
-  - `contact_ids: string[]`
-  - `message?`
-- Flow:
-  1. Admin selects contacts to notify.
-  2. Frontend sends reminder payload.
-  3. Backend sends notification to selected contacts.
+- Parameters: Body `{ contact_ids: string[], message? }`
+- How to use:
+  1. FE selects contacts.
+  2. Backend resolves emails and sends reminders.
 
-### 12.2 Send Reminder to Groups
+### 12.2 Send reminder by groups
 
 - Endpoint: `POST /notifications/reminder/groups`
-- Auth: `Bearer <JWT>`
-- Body:
-  - `group_ids: string[]`
-  - `message?`
-- Flow:
-  1. Admin selects groups.
-  2. Backend delivers reminders to group members.
+- Parameters: Body `{ group_ids: string[], message? }`
+- How to use:
+  1. FE selects groups.
+  2. Backend resolves all group contact emails and sends reminders.
 
-### 12.3 Schedule Notification to Contacts
+### 12.3 Send immediate scheduled messages
 
-- Endpoint: `POST /notifications/schedule`
-- Auth: `Bearer <JWT>`
-- Body:
-  - `subject`
-  - `body`
-  - `recipients: string[]`
-- Flow:
-  1. Admin schedules message for specific contacts.
-  2. Backend stores schedule and dispatches at the configured time.
+- Endpoints:
+  - `POST /notifications/schedule`
+  - `POST /notifications/schedule/groups`
+  - `GET /notifications/scheduled` `New`
+- Parameters:
+  - Schedule body `{ subject, body, recipients: string[] }`
+  - Group schedule body `{ subject, body, group_ids: string[] }`
+  - List query `page?`, `limit?`
+- How to use:
+  1. Current MVP sends immediately even though endpoint says schedule.
+  2. `/notifications/scheduled` returns empty list shape for now.
 
-### 12.4 Schedule Notification to Groups
+### 12.4 Internal in-app notifications
 
-- Endpoint: `POST /notifications/schedule/groups`
-- Auth: `Bearer <JWT>`
-- Body:
-  - `group_ids: string[]`
-  - `subject`
-  - `body`
-- Flow:
-  1. Admin schedules message for groups.
-  2. Backend sends to group members when triggered.
+- Endpoints:
+  - `POST /notifications/internal` `New`
+  - `GET /notifications/internal` `New`
+  - `PATCH /notifications/internal/:id/read` `New`
+- Parameters:
+  - Create body `{ title, body, user_ids? }`
+  - List query `page?`, `limit?`, `unread_only?=true|false`
+  - Read path `id`
+- How to use:
+  1. FE creates internal notifications for all organization users or selected staff/admin users.
+  2. FE polls `/notifications/internal` for in-app notification UI.
+  3. FE marks a notification as read with `/notifications/internal/:id/read`.
 
-### 12.5 List Scheduled Notifications
+## 13. Audit Workflow
 
-- Endpoint: `GET /notifications/scheduled`
-- Auth: `Bearer <JWT>`
-- Query: `page?`, `limit?`
-- Flow:
-  1. Frontend requests scheduled notification history.
-  2. Backend returns paginated scheduled items.
-  3. For the current MVP, this returns an empty list because scheduling is immediate.
-
-## 13. Audit Workflows
-
-### 13.1 Fetch Audit Logs
+### 13.1 Activity audit log
 
 - Endpoint: `GET /audit/logs`
-- Auth: `Bearer <JWT>`
-- Query: `page?`, `limit?`, `action?`, `entity_type?`, `entity_id?`, `user_id?`, `ip_address?`, `user_agent?`, `keyword?`, `from?`, `to?`
-- Flow:
-  1. Admin requests activity audit trail.
-  2. Backend returns filtered logs.
+- Parameters: Query `{ page?, limit?, action?, entity_type?, entity_id?, user_id?, ip_address?, user_agent?, keyword?, from?, to? }`
+- How to use:
+  1. FE uses this for admin activity monitoring and audit filters.
 
-### 13.2 Fetch Payment Audit Logs
+### 13.2 Payment audit log
 
 - Endpoint: `GET /audit/payment-logs/:payment_id`
-- Auth: `Bearer <JWT>`
-- Query: `page?`, `limit?`, `event?`, `event_id?`, `keyword?`, `from?`, `to?`
-- Flow:
-  1. Admin inspects a payment lifecycle.
-  2. Backend returns related payment audit events.
+- Parameters: Query `{ page?, limit?, event?, event_id?, keyword?, from?, to? }`
+- How to use:
+  1. FE uses this for payment timeline and troubleshooting UI.
 
-## 14. Report Workflows
+## 14. Reporting Workflow
 
-### 14.1 Fetch Summary Report
+### 14.1 Dashboard reports
 
-- Endpoint: `GET /reports/summary`
-- Auth: `Bearer <JWT>`
-- Query: `start_date?`, `end_date?`
-- Flow:
-  1. Frontend requests high-level summary.
-  2. Backend returns aggregated metrics.
+- Endpoints:
+  - `GET /reports/summary`
+  - `GET /reports/analytics`
+  - `GET /reports/forms/performance` `New`
+  - `GET /reports/groups/contributions` `New`
+  - `GET /reports/export`
+- Parameters:
+  - Summary/analytics query `start_date?`, `end_date?`
+  - Form performance query `start_date?`, `end_date?`
+  - Group contributions query `form_id?`, `start_date?`, `end_date?`
+  - Export query `{ type?=summary|analytics, format?=csv|pdf, start_date?, end_date? }`
+- How to use:
+  1. FE dashboard widgets can call summary and analytics.
+  2. Advanced performance pages use form/group report endpoints.
+  3. Export uses summary or analytics only today.
 
-### 14.2 Fetch Analytics Report
+## 15. Health, Webhook, Billing, and Compliance Workflows
 
-- Endpoint: `GET /reports/analytics`
-- Auth: `Bearer <JWT>`
-- Query: `start_date?`, `end_date?`
-- Flow:
-  1. Frontend requests analytics data.
-  2. Backend returns metric series and totals.
+### 15.1 Health checks
 
-### 14.3 Fetch Form Performance Report
+- Endpoints:
+  - `GET /health`
+  - `GET /health/ready`
+- How to use:
+  - Primarily infra or ops usage. FE usually does not call these.
 
-- Endpoint: `GET /reports/forms/performance`
-- Auth: `Bearer <JWT>`
-- Query: `start_date?`, `end_date?`
-- Flow:
-  1. Frontend requests per-form metrics.
-  2. Backend returns submission counts, payments, amount totals, and conversion rates.
-- Response includes:
-  - `range`: request date range
-  - `totals`: aggregate forms, submissions, payments, amount_total, paid_amount_total
-  - `data[]`: per-form rows with
-    - `form_id`, `title`, `slug`, `is_active`, `created_at`
-    - `submissions`, `payments`, `paid_payments`, `pending_payments`, `failed_payments`, `partial_payments`
-    - `amount_total`, `paid_amount_total`, `pending_amount_total`, `failed_amount_total`, `partial_amount_total`
-    - `completion_rate`, `collection_rate`
+### 15.2 Paystack webhook
 
-### 14.4 Export Reports
+- Endpoint: `POST /webhooks/paystack`
+- Parameters: Header `x-paystack-signature`, raw webhook body
+- How to use:
+  - Paystack-only route. FE should not call this.
 
-- Endpoint: `GET /reports/export`
-- Auth: `Bearer <JWT>`
-- Query:
-  - `type?` = `summary | analytics`
-  - `format?` = `csv | pdf`
-  - `start_date?`
-  - `end_date?`
-- Flow:
-  1. Admin exports report files.
-  2. Backend generates CSV or PDF.
+### 15.3 Billing
 
-## 15. Health Checks
+- Endpoints:
+  - `GET /billing/plans/:organizationId`
+  - `GET /billing/usage/:organizationId`
+  - `GET /billing/report/:organizationId`
+  - `POST /billing/upgrade/:organizationId`
+- Parameters:
+  - Upgrade body `{ newPlanTier }`
+- How to use:
+  - FE billing screens can fetch plan, usage, and usage report, and submit plan upgrades.
 
-### 15.1 Basic Health
+### 15.4 Compliance
 
-- Endpoint: `GET /health`
-- Flow:
-  1. Monitoring or load balancer checks app health.
-  2. Backend returns health status.
+- Endpoints:
+  - `POST /compliance/export`
+  - `POST /compliance/delete`
+  - `GET /compliance/export/:contactId/:organizationId`
+  - `GET /compliance/retention-policy/:organizationId`
+  - `POST /compliance/retention-policy/:organizationId`
+  - `POST /compliance/purge/:organizationId`
+  - `GET /compliance/audit-trail/:organizationId`
+- Parameters:
+  - Export/delete body `{ organizationId, contactId, requestedBy }`
+  - Retention update body `policy object`
+- How to use:
+  - FE compliance tools can request export/delete, inspect policy, update retention policy, and review compliance trail.
 
-### 15.2 Readiness Probe
+## FE Integration Notes
 
-- Endpoint: `GET /health/ready`
-- Flow:
-  1. Infrastructure checks readiness before routing traffic.
-  2. Backend returns ready state.
-
-## 15A. Billing Workflows
-
-### 15A.1 Get Organization Plan
-
-- Endpoint: `GET /billing/plans/:organizationId`
-
-### 15A.2 Get Usage Metrics
-
-- Endpoint: `GET /billing/usage/:organizationId`
-
-### 15A.3 Get Billing Report
-
-- Endpoint: `GET /billing/report/:organizationId`
-
-### 15A.4 Upgrade Plan
-
-- Endpoint: `POST /billing/upgrade/:organizationId`
-- Body: `{ newPlanTier }`
-
-## 15B. Compliance Workflows
-
-### 15B.1 Request Contact Data Export
-
-- Endpoint: `POST /compliance/export`
-- Body: `{ organizationId, contactId, requestedBy }`
-
-### 15B.2 Request Contact Data Deletion
-
-- Endpoint: `POST /compliance/delete`
-- Body: `{ organizationId, contactId, requestedBy }`
-
-### 15B.3 Download Contact Export Data
-
-- Endpoint: `GET /compliance/export/:contactId/:organizationId`
-
-### 15B.4 Get Retention Policy
-
-- Endpoint: `GET /compliance/retention-policy/:organizationId`
-
-### 15B.5 Update Retention Policy
-
-- Endpoint: `POST /compliance/retention-policy/:organizationId`
-
-### 15B.6 Apply Retention Purge
-
-- Endpoint: `POST /compliance/purge/:organizationId`
-
-### 15B.7 View Compliance Audit Trail
-
-- Endpoint: `GET /compliance/audit-trail/:organizationId`
-
-## 16. Example End-to-End Scenarios
-
-### 16.1 Admin Setup and Publish a Targeted Form
-
-1. `POST /auth/register` to create org admin.
-2. `POST /auth/login` to authenticate admin and obtain JWT.
-3. `POST /forms` to create a new form.
-4. `POST /forms/:id/fields` to add form fields.
-5. `POST /groups` to create recipient groups.
-6. `POST /forms/:id/groups` to assign groups.
-7. `POST /contacts/imports/validate` to validate bulk contact import.
-8. `POST /contacts/imports/:id/commit` to create contacts.
-9. `GET /public/forms/:slug` to verify public form availability.
-
-### 16.2 Contact Login via Subdomain
-
-1. Contact opens `https://om.payforms.vercels.com`.
-2. Frontend displays login page for contact.
-3. Contact submits `email` and `password` to `POST /contact-auth/login`.
-4. Backend resolves organization from request host or optional org fields.
-5. Backend returns contact JWT.
-6. Contact uses `GET /contact-auth/me` to load profile.
-
-### 16.3 Public Form Submission (With and Without Payment)
-
-#### Scenario A: Form with No Payment Requirement
-1. User loads widget via `GET /public/forms/:slug/widget-config` or `/embed.js`.
-2. Browser renders form to the public.
-3. User submits data to `POST /public/forms/:slug/submit`.
-4. Backend validates submission and records it with status `COMPLETED`.
-5. No payment object is created.
-6. No Paystack page is shown.
-7. Frontend receives success response with `submission_id` and displays confirmation message.
-
-#### Scenario B: Form with Payment Requirement
-1. User loads widget via `GET /public/forms/:slug/widget-config` or `/embed.js`.
-2. Browser renders form to the public.
-3. User submits data to `POST /public/forms/:slug/submit` (optionally with `partial_amount` for partial payments).
-4. Backend validates submission and creates a payment record.
-5. Backend initiates Paystack payment authorization and returns `authorization_url`.
-6. Frontend redirects user to Paystack hosted payment page (`authorization_url`).
-7. User completes payment on Paystack (card, transfer, USSD, bank account, etc.).
-8. Paystack redirects back to `GET /public/payments/callback` (backend endpoint).
-9. Backend verifies payment reference and updates payment status (`PAID` or `PARTIAL`).
-10. Backend redirects user to frontend success page (`/payment/success`) with status parameters.
-11. Frontend displays success/failure message based on payment verification result.
-
-### 16.4 Retrieve Payment History and Receipts
-
-1. Admin calls `GET /payments` for payment list.
-2. Admin opens a payment item with `GET /payments/:id`.
-3. Contact requests receipt with `GET /contact-auth/payments/:id/receipt`.
-4. Contact may also use `GET /contact-auth/payments/reference/:reference/receipt`.
-
-## 17. Practical Frontend Integration Notes
-
-- All protected admin routes require `Authorization: Bearer <JWT>`.
-- Contact-auth routes require a contact JWT for authenticated contact operations.
-- For subdomain-based tenant resolution, the backend uses the request `Host` header and/or optional `organization_subdomain` / `organization_domain` / `organization_id` fields.
-- `GET /public/forms/:slug` and submit endpoints support optional contact token authorization for targeted forms.
-- Use `format=csv` on list endpoints where available to download CSV exports.
-- Always validate import data first via `/contacts/imports/validate` before calling commit.
-- **Payment Flow Handling**:
-  - Not all forms require payment. If form has no `payment_type` or `amount`, Paystack is NOT used.
-  - Check the form response to determine if a payment is required before redirecting to authorization_url.
-  - For partial payments, validate that `allow_partial` is true before allowing partial_amount parameter in submission.
-  - Free forms (no payment) show success response directly; payment forms redirect to Paystack.
-  - After Paystack payment, users are redirected to backend callback which then redirects to frontend success page.
-
-## 18. API Usage Patterns
-
-### 18.1 Build a Dashboard
-
-- Authenticate admin via `/auth/login`.
-- Fetch org settings using `/organization` and `/organization/settings`.
-- Fetch forms and groups via `/forms` and `/groups/tree`.
-- Display contacts via `/contacts` and contact hierarchies via `/contacts/:id/details`.
-- Use `/reports/*` for analytics panels.
-
-### 18.2 Manage Contacts and Groups
-
-- Create contacts via `/contacts`.
-- Import bulk contacts using `/contacts/imports/validate` + `/contacts/imports/:id/commit`.
-- Validate or commit raw CSV imports using `/contacts/imports/csv/validate` and `/contacts/imports/csv/commit`.
-- Assign groups through `/contacts/:id/groups` and `/groups/:id/contacts`.
-- Remove group memberships through `/groups/:id/contacts` with `DELETE`.
-- Detach subgroups through `/groups/:id/detach` when reorganizing hierarchy.
-- Export contacts through `/contacts/export`.
-
-### 18.2A Export Submission Data
-
-- Export filtered raw submissions through `/submissions/export`.
-- Use `format=csv` for spreadsheet workflows and `format=pdf` for shareable review documents.
-- Filter by `form_id`, `contact_id`, `start_date`, and `end_date` as needed.
-
-### 18.3 Handle Payments
-
-- Create payment records with `/payments`.
-- Update payment status via `/payments/:id/status`.
-- Verify payment success using `/payments/verify/:reference`.
-- Stream transaction history via `/transactions` and `/transactions/:id/history`.
-
-### 18.4 Notifications and Audit
-
-- Send reminders with `/notifications/reminder` or `/notifications/reminder/groups`.
-- Schedule campaigns with `/notifications/schedule` or `/notifications/schedule/groups`.
-- Inspect actions using `/audit/logs` and `/audit/payment-logs/:payment_id`.
-
----
-
-This workflow document is intended to guide frontend and backend integration by describing each major scenario, the API endpoints involved, and the sequential process flow required for successful usage.
+- Use cookie-backed auth as primary behavior for browser sessions.
+- Keep access token in memory only when FE needs to attach bearer token explicitly.
+- For tenant deployments, backend can resolve tenant from request host, so FE should prefer correct tenant host over sending explicit org identifiers when possible.
+- For public forms, FE should not assume every submission produces a payment redirect. Free forms now complete without Paystack.
+- For notifications, FE no longer needs to worry about multi-recipient email exposure because backend now sends one recipient per outbound email.

@@ -21,6 +21,9 @@ import {
 } from './dto/auth.dto';
 import { NotificationService } from '../notification/notification.service';
 import { validatePasswordStrength } from '../../common/security/password-policy';
+import { TenantResolverService } from '../tenant/tenant-resolver.service';
+
+const SUBDOMAIN_PATTERN = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
 
 @Injectable()
 export class AuthService {
@@ -34,6 +37,7 @@ export class AuthService {
     private jwtService: JwtService,
     private configService: ConfigService,
     private notificationService: NotificationService,
+    private tenantResolverService: TenantResolverService,
   ) {}
 
   async register(dto: RegisterDto) {
@@ -197,15 +201,48 @@ export class AuthService {
     };
   }
 
-  async login(dto: LoginDto) {
-    const user = await this.userRepository.findOne({
-      where: { email: dto.email },
+  async login(dto: LoginDto, requestHost?: string | null) {
+    const normalizedEmail = this.normalizeEmail(dto.email);
+    const organizationId = await this.resolveLoginOrganizationId(dto, requestHost);
+
+    if (organizationId) {
+      const user = await this.userRepository.findOne({
+        where: { email: normalizedEmail, organization_id: organizationId },
+      });
+
+      if (!user) {
+        throw new UnauthorizedException('Invalid credentials');
+      }
+
+      const isPasswordValid = await bcrypt.compare(dto.password, user.password_hash);
+      if (!isPasswordValid) {
+        throw new UnauthorizedException('Invalid credentials');
+      }
+
+      const tokens = await this.createTokens(user);
+
+      return {
+        ...tokens,
+        user: this.mapAuthUser(user),
+      };
+    }
+
+    const users = await this.userRepository.find({
+      where: { email: normalizedEmail },
+      take: 2,
     });
 
-    if (!user) {
+    if (!users.length) {
       throw new UnauthorizedException('Invalid credentials');
     }
 
+    if (users.length > 1) {
+      throw new BadRequestException(
+        'Organization context is required for this account. Log in from your organization subdomain or provide organization context.',
+      );
+    }
+
+    const user = users[0];
     const isPasswordValid = await bcrypt.compare(dto.password, user.password_hash);
     if (!isPasswordValid) {
       throw new UnauthorizedException('Invalid credentials');
@@ -486,6 +523,107 @@ export class AuthService {
 
   private normalizeEmail(email: string) {
     return email.trim().toLowerCase();
+  }
+
+  private normalizeOptionalValue(value?: string | null) {
+    if (value === undefined || value === null) {
+      return null;
+    }
+
+    const normalized = value.trim();
+    return normalized.length ? normalized : null;
+  }
+
+  private normalizeSubdomain(value?: string | null) {
+    const normalized = this.normalizeOptionalValue(value)?.toLowerCase() ?? null;
+    if (!normalized) {
+      return null;
+    }
+
+    if (!SUBDOMAIN_PATTERN.test(normalized)) {
+      throw new BadRequestException('Invalid organization_subdomain format');
+    }
+
+    return normalized;
+  }
+
+  private normalizeDomain(value?: string | null) {
+    const normalized = this.normalizeOptionalValue(value)?.toLowerCase() ?? null;
+    if (!normalized) {
+      return null;
+    }
+
+    const withoutProtocol = normalized.replace(/^https?:\/\//, '');
+    const withoutPath = withoutProtocol.split('/')[0];
+    const withoutPort = withoutPath.replace(/:\d+$/, '');
+    return withoutPort.replace(/\.$/, '');
+  }
+
+  private isTenantSubdomainHost(host: string) {
+    const baseDomain = this.normalizeDomain(this.configService.get<string>('TENANT_BASE_DOMAIN'));
+    if (!baseDomain) {
+      return false;
+    }
+
+    const suffix = `.${baseDomain}`;
+    if (!host.endsWith(suffix)) {
+      return false;
+    }
+
+    const candidate = host.slice(0, -suffix.length);
+    return !!candidate && !candidate.includes('.');
+  }
+
+  private async resolveLoginOrganizationId(dto: LoginDto, requestHost?: string | null) {
+    const normalizedRequestHost = this.normalizeDomain(requestHost);
+    const resolvedHostOrganization = normalizedRequestHost
+      ? await this.tenantResolverService.resolveOrganizationFromHost(normalizedRequestHost)
+      : null;
+
+    if (normalizedRequestHost && this.isTenantSubdomainHost(normalizedRequestHost) && !resolvedHostOrganization) {
+      throw new BadRequestException('Unknown organization subdomain');
+    }
+
+    const explicitOrganizationId = this.normalizeOptionalValue(dto.organization_id);
+    let resolvedExplicitOrganizationId: string | null = explicitOrganizationId;
+
+    const explicitSubdomain = this.normalizeSubdomain(dto.organization_subdomain);
+    if (explicitSubdomain) {
+      const organization = await this.organizationRepository.findOne({
+        where: { subdomain: explicitSubdomain },
+        select: ['id'],
+      });
+      if (!organization) {
+        throw new BadRequestException('Invalid organization context');
+      }
+      resolvedExplicitOrganizationId = organization.id;
+    }
+
+    const explicitDomain = this.normalizeDomain(dto.organization_domain);
+    if (explicitDomain) {
+      const organization = await this.organizationRepository.findOne({
+        where: { custom_domain: explicitDomain },
+        select: ['id'],
+      });
+      if (!organization) {
+        throw new BadRequestException('Invalid organization context');
+      }
+      resolvedExplicitOrganizationId = organization.id;
+    }
+
+    if (
+      resolvedHostOrganization &&
+      resolvedExplicitOrganizationId &&
+      resolvedHostOrganization.organization_id !== resolvedExplicitOrganizationId
+    ) {
+      throw new BadRequestException('Organization context mismatch with request host');
+    }
+
+    if (resolvedHostOrganization) {
+      return resolvedHostOrganization.organization_id;
+    }
+
+    return resolvedExplicitOrganizationId;
   }
 
   private generateOpaqueToken() {

@@ -12,6 +12,7 @@ import { ContactAuthController } from './contact-auth.controller';
 import { ContactJwtStrategy } from './strategies/contact-jwt.strategy';
 import { NotificationModule } from '../notification/notification.module';
 import { PaymentModule } from '../payment/payment.module';
+import { TenantResolverModule } from '../tenant/tenant-resolver.module';
 
 @Module({
   imports: [
@@ -28,6 +29,7 @@ import { PaymentModule } from '../payment/payment.module';
     }),
     NotificationModule,
     PaymentModule,
+    TenantResolverModule,
   ],
   controllers: [ContactAuthController],
   providers: [ContactAuthService, ContactAuthHardeningService, ContactJwtStrategy],

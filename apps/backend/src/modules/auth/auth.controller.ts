@@ -28,8 +28,8 @@ export class AuthController {
 
   @Post('login')
   @Throttle({ default: { limit: 5, ttl: 60000 } })
-  async login(@Body() dto: LoginDto, @Res({ passthrough: true }) res: Response) {
-    const result = await this.authService.login(dto);
+  async login(@Body() dto: LoginDto, @Request() req, @Res({ passthrough: true }) res: Response) {
+    const result = await this.authService.login(dto, this.resolveRequestHost(req));
     this.setAuthCookies(res, result.access_token, result.refresh_token);
     return result;
   }
@@ -191,5 +191,22 @@ export class AuthController {
             : 1;
 
     return amount * multiplier;
+  }
+
+  private resolveRequestHost(req: any): string | null {
+    const header =
+      req?.headers?.['x-forwarded-host'] ||
+      req?.headers?.host ||
+      (typeof req?.get === 'function' ? req.get('host') : null);
+
+    if (!header) {
+      return null;
+    }
+
+    const firstValue = String(Array.isArray(header) ? header[0] : header)
+      .split(',')[0]
+      .trim();
+
+    return firstValue || null;
   }
 }
