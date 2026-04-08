@@ -55,7 +55,7 @@ async function bootstrap() {
       const isVercelPreview = /^https:\/\/.*\.vercel\.app$/.test(origin);
       const isTenantBaseDomainOrigin =
         !!tenantBaseDomain &&
-        new RegExp(`^https:\\/\\/([a-z0-9-]+\\.)*${tenantBaseDomain.replace(/\./g, '\\.')}$`, 'i').test(origin);
+        new RegExp(`^https?:\\/\\/([a-z0-9-]+\\.)*${tenantBaseDomain.replace(/\./g, '\\.')}$`, 'i').test(origin);
 
       if (isLocalhostOrigin || isVercelPreview || isTenantBaseDomainOrigin) {
         callback(null, true);

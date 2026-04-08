@@ -282,7 +282,13 @@ export class NotificationService {
   }
 
   async sendEmail(recipients: string[], subject: string, html: string, attachments?: EmailAttachment[]) {
-    if (!recipients.length) {
+      const normalizedRecipients = Array.from(new Set(
+        recipients
+          .map(recipient => this.trimOptionalValue(recipient)?.toLowerCase())
+          .filter((recipient): recipient is string => !!recipient),
+      ));
+
+      if (!normalizedRecipients.length) {
       throw new BadRequestException('At least one email recipient is required');
     }
 
@@ -290,17 +296,19 @@ export class NotificationService {
     const apiKey = this.getProviderApiKey(provider);
 
     try {
-      if (provider === 'mailgun') {
-        await this.sendViaMailgun(apiKey, recipients, subject, html, attachments);
-        return;
-      }
+        for (const recipient of normalizedRecipients) {
+          if (provider === 'mailgun') {
+            await this.sendViaMailgun(apiKey, [recipient], subject, html, attachments);
+            continue;
+          }
 
-      if (provider === 'brevo') {
-        await this.sendViaBrevo(apiKey, recipients, subject, html, attachments);
-        return;
-      }
+          if (provider === 'brevo') {
+            await this.sendViaBrevo(apiKey, [recipient], subject, html, attachments);
+            continue;
+          }
 
-      await this.sendViaSendGrid(apiKey, recipients, subject, html, attachments);
+          await this.sendViaSendGrid(apiKey, [recipient], subject, html, attachments);
+        }
     } catch (error) {
       if (error instanceof BadRequestException) {
         throw error;

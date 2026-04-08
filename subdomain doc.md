@@ -125,3 +125,42 @@ Fast failure map
 - widget/embed links point to wrong host: `PUBLIC_API_BASE_URL` missing or wrong.
 - payment callback lands on wrong domain: `FRONTEND_URL` wrong or stale frontend build.
 - email flow fails: `EMAIL_PROVIDER` or provider-specific keys/from-address mismatch.
+
+#Issues
+A. After adding setting up the subdomain on both vercels and render the following happened:
+1. subdomain does not have https so it is insecured.
+2. User can not login into domain - browser console log: "Access to fetch at 'https://api.payforms.com.ng/auth/login' from origin 'http://om.payforms.com.ng' has been blocked by CORS policy: Response to preflight request doesn't pass access control check: No 'Access-Control-Allow-Origin' header is present on the requested resource.Understand this error
+api.payforms.com.ng/auth/login:1  Failed to load resource: net::ERR_FAILED"
+
+B. Email notification contact works. But When you select multiple contacts, the email is sent together exposing the contact email of other concerned party. This is not good for security
+
+Issue diagnosis and action
+
+A. Tenant subdomain HTTPS and login
+
+- The browser is loading the tenant site from `http://om.payforms.com.ng`, not `https://om.payforms.com.ng`.
+- That means wildcard SSL is not fully active yet on the Vercel wildcard domain, or the wildcard domain is not in a healthy `Valid Configuration` state.
+- Because the request origin is plain HTTP, the backend previously rejected it under CORS.
+- Backend CORS has now been relaxed to allow temporary `http` tenant origins as well as `https` tenant origins.
+- This removes the immediate preflight block, but full cookie-backed production login still needs HTTPS because secure auth cookies are not set on plain HTTP.
+
+What to verify in Vercel:
+
+1. `*.payforms.com.ng` is added to the frontend project.
+2. The wildcard domain status shows `Valid Configuration`.
+3. SSL certificate issuance for the wildcard domain is complete.
+4. Opening `https://om.payforms.com.ng` resolves directly without certificate warning.
+
+What to verify in DNS:
+
+1. `CNAME * -> cname.vercel-dns.com.` exists.
+2. DNS has propagated.
+
+B. Multi-recipient email privacy
+
+- This was a real backend bug.
+- Notification sends to multiple contacts were being submitted in a single outbound message, exposing recipient addresses to each other.
+- The backend has now been changed to fan out email delivery one recipient at a time.
+- Result: group reminders and multi-contact notifications no longer expose other recipients' email addresses.
+
+
