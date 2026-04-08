@@ -379,7 +379,7 @@ Every endpoint below includes:
 
 ### `GET /transactions`
 - Parameters: Auth required. Query `{ status?, reference?, form_id?, contact_id?, start_date?, end_date?, page?, limit?, format? }`
-- How to use: Filter transaction history and optionally export CSV with `format=csv`.
+- How to use: Filter transaction history and optionally export CSV with `format=csv`. The CSV now returns only `reference, amount, status, paid_at, created_at, form_name, contact_name`.
 
 ### `GET /transactions/:id`
 - Parameters: Auth required. Path `id`

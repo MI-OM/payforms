@@ -107,11 +107,25 @@ export class PaymentService {
   }
 
   async exportTransactions(organizationId: string, filters: TransactionFilters) {
-    const payments = await this.buildTransactionsQuery(organizationId, filters)
+    const rows = await this.buildTransactionsQuery(organizationId, filters)
+      .leftJoin(Form, 'form', 'form.id = submission.form_id')
+      .leftJoin(Contact, 'contact', 'contact.id = submission.contact_id')
+      .select([
+        'payment.reference AS reference',
+        'payment.amount AS amount',
+        'payment.status AS status',
+        'payment.paid_at AS paid_at',
+        'payment.created_at AS created_at',
+        'form.title AS form_name',
+        'contact.first_name AS contact_first_name',
+        'contact.middle_name AS contact_middle_name',
+        'contact.last_name AS contact_last_name',
+        'contact.email AS contact_email',
+      ])
       .orderBy('payment.created_at', 'DESC')
-      .getMany();
+      .getRawMany();
 
-    return this.buildPaymentsCsv(payments);
+    return this.buildTransactionsCsv(rows);
   }
 
   async exportByOrganization(organizationId: string) {
@@ -476,6 +490,54 @@ export class PaymentService {
     );
 
     return `id,reference,amount,status,paid_at,created_at,submission_id,form_id,contact_id\n${rows.join('\n')}`;
+  }
+
+  private buildTransactionsCsv(rows: Array<{
+    reference: string;
+    amount: string | number;
+    status: string;
+    paid_at: Date | string | null;
+    created_at: Date | string | null;
+    form_name: string | null;
+    contact_first_name: string | null;
+    contact_middle_name: string | null;
+    contact_last_name: string | null;
+    contact_email: string | null;
+  }>) {
+    const csvRows = rows.map(row => {
+      const contactName = this.buildContactDisplayName({
+        firstName: row.contact_first_name,
+        middleName: row.contact_middle_name,
+        lastName: row.contact_last_name,
+        email: row.contact_email,
+      });
+
+      return [
+        row.reference,
+        row.amount,
+        row.status,
+        row.paid_at ? new Date(row.paid_at).toISOString() : '',
+        row.created_at ? new Date(row.created_at).toISOString() : '',
+        row.form_name || 'N/A',
+        contactName,
+      ].map(value => this.escapeCsv(value)).join(',');
+    });
+
+    return `reference,amount,status,paid_at,created_at,form_name,contact_name\n${csvRows.join('\n')}`;
+  }
+
+  private buildContactDisplayName(payload: {
+    firstName?: string | null;
+    middleName?: string | null;
+    lastName?: string | null;
+    email?: string | null;
+  }) {
+    const name = [payload.firstName, payload.middleName, payload.lastName]
+      .map(value => value?.trim())
+      .filter((value): value is string => !!value)
+      .join(' ');
+
+    return name || payload.email?.trim() || 'N/A';
   }
 
   private async generateContactReceipt(

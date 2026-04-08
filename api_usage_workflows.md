@@ -410,7 +410,8 @@ For each workflow below, FE gets:
   - List query `{ status?, reference?, form_id?, contact_id?, start_date?, end_date?, page?, limit?, format? }`
 - How to use:
   1. FE uses `/transactions` for filtered history and export.
-  2. FE uses `/transactions/:id/history` for event timeline UI.
+  2. When `format=csv`, backend returns `reference, amount, status, paid_at, created_at, form_name, contact_name` only.
+  3. FE uses `/transactions/:id/history` for event timeline UI.
 
 ## 11. Submission Export Workflow
 
