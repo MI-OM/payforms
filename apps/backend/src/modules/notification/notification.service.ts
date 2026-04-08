@@ -456,10 +456,21 @@ export class NotificationService {
     return this.sendEmail([recipientEmail], subject, html);
   }
 
-  async sendReminder(recipients: string[], message: string) {
+  async sendReminder(recipients: string[], message: string, attachment?: EmailAttachment) {
     const subject = 'Payment Reminder';
-    const html = `<p>${message}</p>`;
-    return this.sendEmail(recipients, subject, html);
+    const html = `
+      <div style="font-family: Arial, sans-serif; color: #1f2937; background: #f8fafc; padding: 24px;">
+        <div style="max-width: 620px; margin: 0 auto; background: #ffffff; border-radius: 16px; border: 1px solid #e5e7eb; overflow: hidden;">
+          <div style="padding: 20px 24px; background: #0f766e; color: #ffffff;">
+            <h1 style="margin: 0; font-size: 20px;">Payment Reminder</h1>
+            <p style="margin: 8px 0 0 0; color: #ccfbf1; font-size: 13px;">Please review the message below and any attached document.</p>
+          </div>
+          <div style="padding: 24px; font-size: 15px; line-height: 1.6; color: #334155; white-space: pre-wrap;">${message}</div>
+        </div>
+      </div>
+    `;
+    const attachmentList = attachment ? [attachment] : undefined;
+    return this.sendEmail(recipients, subject, html, attachmentList);
   }
 
   async createInternalNotification(

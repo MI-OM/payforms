@@ -1,5 +1,19 @@
-import { Controller, Post, Body, UseGuards, Request, Get, Query, Patch, Param } from '@nestjs/common';
-import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Get,
+  Param,
+  Patch,
+  Post,
+  Query,
+  Request,
+  UploadedFile,
+  UseGuards,
+  UseInterceptors,
+} from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { ApiBearerAuth, ApiBody, ApiConsumes, ApiTags } from '@nestjs/swagger';
 import { NotificationService } from './notification.service';
 import {
   ReminderNotificationDto,
@@ -10,6 +24,12 @@ import {
 } from './dto/notification.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 
+type UploadedAttachment = {
+  originalname: string;
+  buffer: Buffer;
+  mimetype?: string;
+};
+
 @ApiTags('Notifications')
 @Controller('notifications')
 @UseGuards(JwtAuthGuard)
@@ -17,8 +37,48 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 export class NotificationController {
   constructor(private notificationService: NotificationService) {}
 
+  private mapAttachment(file?: UploadedAttachment) {
+    if (!file) {
+      return undefined;
+    }
+
+    if (!file.originalname?.trim() || !file.buffer?.length) {
+      throw new BadRequestException('Attachment must include a filename and file content');
+    }
+
+    return {
+      filename: file.originalname.trim(),
+      content: file.buffer,
+      type: file.mimetype || 'application/octet-stream',
+    };
+  }
+
   @Post('reminder')
-  async sendReminder(@Body() dto: ReminderNotificationDto, @Request() req) {
+  @UseInterceptors(FileInterceptor('attachment', {
+    limits: { fileSize: 10 * 1024 * 1024, files: 1 },
+  }))
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        contact_ids: {
+          oneOf: [
+            { type: 'array', items: { type: 'string' } },
+            { type: 'string', example: '["contact-uuid-1","contact-uuid-2"]' },
+          ],
+        },
+        message: { type: 'string', nullable: true },
+        attachment: { type: 'string', format: 'binary' },
+      },
+      required: ['contact_ids'],
+    },
+  })
+  async sendReminder(
+    @Body() dto: ReminderNotificationDto,
+    @Request() req,
+    @UploadedFile() attachment?: UploadedAttachment,
+  ) {
     const message = dto.message || 'Please complete your payment as soon as possible.';
     const recipients = await Promise.all(
       dto.contact_ids.map(contactId =>
@@ -27,18 +87,42 @@ export class NotificationController {
     );
 
     const filtered = recipients.filter((email): email is string => !!email);
-    return this.notificationService.sendReminder(filtered, message);
+    return this.notificationService.sendReminder(filtered, message, this.mapAttachment(attachment));
   }
 
   @Post('reminder/groups')
-  async sendGroupReminder(@Body() dto: GroupReminderNotificationDto, @Request() req) {
+  @UseInterceptors(FileInterceptor('attachment', {
+    limits: { fileSize: 10 * 1024 * 1024, files: 1 },
+  }))
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        group_ids: {
+          oneOf: [
+            { type: 'array', items: { type: 'string' } },
+            { type: 'string', example: '["group-uuid-1","group-uuid-2"]' },
+          ],
+        },
+        message: { type: 'string', nullable: true },
+        attachment: { type: 'string', format: 'binary' },
+      },
+      required: ['group_ids'],
+    },
+  })
+  async sendGroupReminder(
+    @Body() dto: GroupReminderNotificationDto,
+    @Request() req,
+    @UploadedFile() attachment?: UploadedAttachment,
+  ) {
     const message = dto.message || 'Please complete your payment as soon as possible.';
     const recipients = await this.notificationService.getGroupContactEmails(
       req.user.organization_id,
       dto.group_ids,
     );
 
-    return this.notificationService.sendReminder(recipients, message);
+    return this.notificationService.sendReminder(recipients, message, this.mapAttachment(attachment));
   }
 
   @Post('schedule')

@@ -428,18 +428,22 @@ For each workflow below, FE gets:
 ### 12.1 Send reminder to specific contacts
 
 - Endpoint: `POST /notifications/reminder`
-- Parameters: Body `{ contact_ids: string[], message? }`
+- Parameters: `multipart/form-data` with `contact_ids`, `message?`, `attachment?`
 - How to use:
   1. FE selects contacts.
-  2. Backend resolves emails and sends reminders.
+  2. FE submits `contact_ids` as either repeated form-data fields or a JSON array string.
+  3. FE may include one optional attachment file up to 10MB.
+  4. Backend resolves emails and sends reminders with the attachment included in the email.
 
 ### 12.2 Send reminder by groups
 
 - Endpoint: `POST /notifications/reminder/groups`
-- Parameters: Body `{ group_ids: string[], message? }`
+- Parameters: `multipart/form-data` with `group_ids`, `message?`, `attachment?`
 - How to use:
   1. FE selects groups.
-  2. Backend resolves all group contact emails and sends reminders.
+  2. FE submits `group_ids` as either repeated form-data fields or a JSON array string.
+  3. FE may include one optional attachment file up to 10MB.
+  4. Backend resolves all group contact emails and sends reminders with the attachment included in the email.
 
 ### 12.3 Send immediate scheduled messages
 

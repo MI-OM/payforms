@@ -346,11 +346,11 @@ Every endpoint below includes:
 
 ### `GET /contact-auth/payments/:id/receipt`
 - Parameters: Auth required. Path `id`
-- How to use: Download PDF receipt for authenticated contact's payment.
+- How to use: Download a styled PDF receipt for the authenticated contact's payment. Receipt now shows the form name instead of form ID and no longer exposes submission ID.
 
 ### `GET /contact-auth/payments/reference/:reference/receipt`
 - Parameters: Auth required. Path `reference`
-- How to use: Download PDF receipt by payment reference.
+- How to use: Download a styled PDF receipt by payment reference. Receipt now shows the form name instead of form ID and no longer exposes submission ID.
 
 ## 7. Payment APIs
 
@@ -430,12 +430,12 @@ Every endpoint below includes:
 ## 11. Notification APIs
 
 ### `POST /notifications/reminder`
-- Parameters: Auth required. Body `{ contact_ids: string[], message? }`
-- How to use: Send reminder to selected contacts.
+- Parameters: Auth required. `multipart/form-data` with `contact_ids`, `message?`, `attachment?`
+- How to use: Send reminder to selected contacts. `contact_ids` can be sent as a JSON array string or repeated form field values. Optional `attachment` supports one file up to 10MB and is included in the reminder email.
 
 ### `POST /notifications/reminder/groups`
-- Parameters: Auth required. Body `{ group_ids: string[], message? }`
-- How to use: Send reminder to contacts resolved from selected groups.
+- Parameters: Auth required. `multipart/form-data` with `group_ids`, `message?`, `attachment?`
+- How to use: Send reminder to contacts resolved from selected groups. `group_ids` can be sent as a JSON array string or repeated form field values. Optional `attachment` supports one file up to 10MB and is included in the reminder email.
 
 ### `POST /notifications/schedule`
 - Parameters: Auth required. Body `{ subject, body, recipients: string[] }`

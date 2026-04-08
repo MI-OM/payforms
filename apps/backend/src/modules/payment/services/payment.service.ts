@@ -9,6 +9,7 @@ import { Organization } from '../../organization/entities/organization.entity';
 import { PaymentLog } from '../../audit/entities/payment-log.entity';
 import { Submission } from '../../submission/entities/submission.entity';
 import { Contact } from '../../contact/entities/contact.entity';
+import { Form } from '../../form/entities/form.entity';
 import { NotificationService } from '../../notification/notification.service';
 import { CreatePaymentDto, UpdatePaymentStatusDto } from '../dto/payment.dto';
 
@@ -32,6 +33,8 @@ export class PaymentService {
     private submissionRepository: Repository<Submission>,
     @InjectRepository(Contact)
     private contactRepository: Repository<Contact>,
+    @InjectRepository(Form)
+    private formRepository: Repository<Form>,
     @InjectRepository(PaymentLog)
     private paymentLogRepository: Repository<PaymentLog>,
     private configService: ConfigService,
@@ -503,7 +506,7 @@ export class PaymentService {
       throw new BadRequestException('Receipt is available only for paid or partial payments');
     }
 
-    const [organization, contact] = await Promise.all([
+    const [organization, contact, form] = await Promise.all([
       this.organizationRepository.findOne({
         where: { id: organizationId },
         select: ['id', 'name', 'email'],
@@ -512,6 +515,12 @@ export class PaymentService {
         where: { id: contactId, organization_id: organizationId },
         select: ['id', 'first_name', 'last_name', 'email'],
       }),
+      payment.submission?.form_id
+        ? this.formRepository.findOne({
+            where: { id: payment.submission.form_id, organization_id: organizationId },
+            select: ['id', 'title'],
+          })
+        : Promise.resolve(null),
     ]);
 
     if (!organization || !contact) {
@@ -522,6 +531,7 @@ export class PaymentService {
       organization,
       contact,
       payment,
+      formName: form?.title || 'N/A',
     });
 
     const normalizedReference = String(payment.reference || payment.id).replace(/[^a-zA-Z0-9_-]+/g, '_');
@@ -535,61 +545,85 @@ export class PaymentService {
     organization: Pick<Organization, 'id' | 'name' | 'email'>;
     contact: Pick<Contact, 'id' | 'first_name' | 'last_name' | 'email'>;
     payment: Payment;
+    formName: string;
   }): Promise<Buffer> {
     return new Promise((resolve, reject) => {
       const PDFDocument = require('pdfkit');
-      const pdf = new PDFDocument({ margin: 40 });
+      const pdf = new PDFDocument({ margin: 44, size: 'A4' });
       const chunks: Buffer[] = [];
 
       pdf.on('data', chunk => chunks.push(chunk));
       pdf.on('end', () => resolve(Buffer.concat(chunks)));
       pdf.on('error', reject);
 
-      const { organization, contact, payment } = payload;
+      const { organization, contact, payment, formName } = payload;
       const contactName = [contact.first_name, contact.last_name].filter(Boolean).join(' ').trim() || 'N/A';
       const amount = Number(payment.amount || 0);
       const paidAt = payment.paid_at ? payment.paid_at.toISOString().replace('T', ' ').replace('Z', '') : 'N/A';
       const createdAt = payment.created_at ? payment.created_at.toISOString().replace('T', ' ').replace('Z', '') : 'N/A';
       const paymentType = payment.total_amount && Number(payment.amount) < Number(payment.total_amount) ? 'Partial' : 'Full';
+      const accentColor = '#0f766e';
+      const accentSoft = '#ccfbf1';
+      const textMuted = '#64748b';
+      const textStrong = '#0f172a';
+      const borderColor = '#dbe4ee';
 
-      pdf.fillColor('#333').fontSize(22).text('Payment Receipt', { align: 'center' });
-      pdf.moveDown(0.5);
-      pdf.strokeColor('#e2e8f0').lineWidth(1).moveTo(40, pdf.y).lineTo(555, pdf.y).stroke();
-      pdf.moveDown(1);
-
-      pdf.fontSize(10).fillColor('#718096');
-      pdf.text(`Date: ${createdAt}`, { align: 'right' });
-      pdf.moveDown(1);
-
-      pdf.fillColor('#2d3748').fontSize(12).text(organization.name, { continued: true });
-      pdf.fontSize(10).fillColor('#718096').text(`  |  Receipt`, { continued: false });
-      pdf.moveDown(1);
-
-      pdf.fontSize(11).fillColor('#4a5568');
-      pdf.text('Transaction Details', { underline: true });
-      pdf.moveDown(0.5);
-
-      const row = (label: string, value: string) => {
-        pdf.fillColor('#718096').fontSize(10).text(label, { continued: true, width: 180 });
-        pdf.fillColor('#2d3748').fontSize(10).text(value);
+      const drawLabelValue = (label: string, value: string, x: number, y: number, width: number) => {
+        pdf.font('Helvetica-Bold').fontSize(8).fillColor(textMuted).text(label.toUpperCase(), x, y, {
+          width,
+        });
+        pdf.font('Helvetica').fontSize(11).fillColor(textStrong).text(value, x, y + 14, {
+          width,
+        });
       };
 
-      row('Reference:', payment.reference);
-      row('Status:', payment.status);
-      row('Payment Type:', paymentType);
-      row('Payment Gateway:', 'Paystack');
-      row('Amount:', `₦${amount.toFixed(2)}`);
-      row('Paid At:', paidAt);
-      row('Form ID:', payment.submission?.form_id || 'N/A');
-      row('Submission ID:', payment.submission_id || 'N/A');
-      row('Contact:', contactName);
-      row('Contact Email:', contact.email || 'N/A');
+      const drawInfoRow = (label: string, value: string) => {
+        const startY = pdf.y;
+        pdf.font('Helvetica').fontSize(10).fillColor(textMuted).text(label, 58, startY, { width: 150 });
+        pdf.font('Helvetica-Bold').fontSize(10).fillColor(textStrong).text(value, 210, startY, { width: 290 });
+        pdf.strokeColor(borderColor).lineWidth(1).moveTo(58, Math.max(pdf.y, startY + 18) + 8).lineTo(537, Math.max(pdf.y, startY + 18) + 8).stroke();
+        pdf.y = Math.max(pdf.y, startY + 18) + 16;
+      };
 
-      pdf.moveDown(1);
-      pdf.fillColor('#2d3748').fontSize(11).text('Notes', { underline: true });
-      pdf.moveDown(0.5);
-      pdf.fillColor('#4a5568').fontSize(10).text(
+      pdf.roundedRect(44, 40, 523, 112, 18).fill('#f8fafc');
+      pdf.roundedRect(44, 40, 170, 112, 18).fill(accentColor);
+      pdf.fillColor('#ffffff').font('Helvetica-Bold').fontSize(22).text('Payment', 62, 66);
+      pdf.text('Receipt', 62, 92);
+      pdf.font('Helvetica').fontSize(10).fillColor('#d1fae5').text('Official transaction confirmation', 62, 120, {
+        width: 126,
+      });
+
+      pdf.fillColor(textStrong).font('Helvetica-Bold').fontSize(20).text(organization.name, 236, 60, {
+        width: 290,
+      });
+      pdf.font('Helvetica').fontSize(10).fillColor(textMuted).text('Generated by Payforms', 236, 88);
+      drawLabelValue('Receipt Date', createdAt, 236, 110, 130);
+      drawLabelValue('Reference', payment.reference, 388, 110, 138);
+
+      pdf.y = 182;
+      pdf.roundedRect(44, pdf.y, 523, 94, 16).fill(accentSoft);
+      drawLabelValue('Amount Paid', `₦${amount.toFixed(2)}`, 62, pdf.y + 18, 150);
+      drawLabelValue('Status', payment.status, 230, pdf.y + 18, 120);
+      drawLabelValue('Payment Type', paymentType, 370, pdf.y + 18, 140);
+      drawLabelValue('Gateway', 'Paystack', 62, pdf.y + 54, 150);
+      drawLabelValue('Paid At', paidAt, 230, pdf.y + 54, 280);
+      pdf.y += 126;
+
+      pdf.font('Helvetica-Bold').fontSize(12).fillColor(textStrong).text('Payment Summary', 58, pdf.y);
+      pdf.moveDown(0.8);
+      drawInfoRow('Form', formName);
+      drawInfoRow('Contact', contactName);
+      drawInfoRow('Contact Email', contact.email || 'N/A');
+      drawInfoRow('Organization Contact', organization.email || 'N/A');
+
+      pdf.moveDown(0.6);
+      pdf.roundedRect(44, pdf.y, 523, 92, 16).fill('#f8fafc');
+      pdf.font('Helvetica-Bold').fontSize(11).fillColor(textStrong).text('Notes', 58, pdf.y + 18);
+      pdf.font('Helvetica').fontSize(10).fillColor(textMuted).text(
         'Thank you for your payment. Please keep this receipt for your records. If you need assistance, contact the receiving organization directly.',
+        58,
+        pdf.y + 40,
+        { width: 480, lineGap: 4 },
       );
 
       pdf.end();
