@@ -168,7 +168,13 @@ export class PublicController {
 
       // Redirect to frontend success page with payment status
       const frontendUrl = this.configService.get('FRONTEND_URL', 'http://localhost:3000');
-      const redirectUrl = `${frontendUrl}/payment/success?reference=${resolvedReference}&status=${result.verified ? 'success' : 'failed'}`;
+      const paymentStatus = result.payment?.status;
+      const redirectStatus = this.paymentService.isSuccessfulPaymentStatus(paymentStatus)
+        ? 'success'
+        : this.paymentService.isFailedPaymentStatus(paymentStatus)
+          ? 'failed'
+          : 'pending';
+      const redirectUrl = `${frontendUrl}/payment/success?reference=${resolvedReference}&status=${redirectStatus}`;
 
       return res.redirect(redirectUrl);
     } catch (error: any) {

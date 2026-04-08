@@ -23,6 +23,8 @@
 5. **Reporting & Analytics**: Implement summary, advanced analytics, and export endpoints (CSV/PDF).
 6. ✅ Audit Enhancements: Extend activity logs with IP/user-agent metadata and advanced audit filtering.
 7. **Comprehensive Testing Suite**: Implement unit tests, integration tests, and end-to-end tests for the entire backend.
+8. **Stale Pending Payment Reconciliation**: Add a scheduled cleanup/reconciliation job to mark long-running `PENDING` Paystack payments as `FAILED` or `ABANDONED` when no webhook or redirect verification arrives.
+9. **Inline Paystack Checkout Flow**: Replace the current full-page redirect checkout with Paystack inline/popup flow so failed, cancelled, or closed transactions can return control to the app immediately.
 
 ## Next Priority
 The next item to work on is **Form Targeting System** - aligning backend behavior with the updated PRD form targeting requirements.
