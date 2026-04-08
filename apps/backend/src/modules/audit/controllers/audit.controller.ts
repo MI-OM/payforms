@@ -46,7 +46,7 @@ export class AuditController {
         ...item,
         timestamp: item.created_at,
         entity: item.entity_type,
-        user: item.user_id || 'System',
+        user: this.auditService.formatActor(item),
       })),
     };
   }

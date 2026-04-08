@@ -3,6 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Brackets } from 'typeorm';
 import { ActivityLog } from '../entities/activity-log.entity';
 import { PaymentLog } from '../entities/payment-log.entity';
+import { User } from '../../auth/entities/user.entity';
 
 @Injectable()
 export class AuditService {
@@ -11,6 +12,8 @@ export class AuditService {
     private activityLogRepository: Repository<ActivityLog>,
     @InjectRepository(PaymentLog)
     private paymentLogRepository: Repository<PaymentLog>,
+    @InjectRepository(User)
+    private userRepository: Repository<User>,
   ) {}
 
   async createActivityLog(
@@ -52,7 +55,8 @@ export class AuditService {
       to?: string;
     } = {},
   ) {
-    const query = this.activityLogRepository.createQueryBuilder('log');
+    const query = this.activityLogRepository.createQueryBuilder('log')
+      .leftJoinAndSelect('log.user', 'user');
 
     query.where('log.organization_id = :organizationId', { organizationId });
 
@@ -96,6 +100,38 @@ export class AuditService {
 
     const [data, total] = await query.getManyAndCount();
     return { data, total, page, limit };
+  }
+
+  formatActor(log: ActivityLog) {
+    const relatedUser = log.user;
+    const actorMetadata = log.metadata?.actor;
+    const firstName = relatedUser?.first_name ?? actorMetadata?.first_name ?? null;
+    const middleName = relatedUser?.middle_name ?? actorMetadata?.middle_name ?? null;
+    const lastName = relatedUser?.last_name ?? actorMetadata?.last_name ?? null;
+    const role = relatedUser?.role ?? actorMetadata?.role ?? null;
+    const email = relatedUser?.email ?? actorMetadata?.email ?? null;
+    const name = [firstName, middleName, lastName].filter(Boolean).join(' ').trim();
+
+    if (!relatedUser && !actorMetadata && !log.user_id) {
+      return {
+        id: null,
+        name: 'System',
+        role: 'SYSTEM',
+        email: null,
+        label: 'System',
+      };
+    }
+
+    const resolvedName = name || email || log.user_id || 'Unknown User';
+    const roleSuffix = role ? ` (${role})` : '';
+
+    return {
+      id: relatedUser?.id ?? actorMetadata?.id ?? log.user_id,
+      name: resolvedName,
+      role,
+      email,
+      label: `${resolvedName}${roleSuffix}`,
+    };
   }
 
   async listPaymentLogs(

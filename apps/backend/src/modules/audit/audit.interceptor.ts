@@ -10,7 +10,7 @@ export class AuditInterceptor implements NestInterceptor {
     const req = context.switchToHttp().getRequest();
     const user = req.user;
     const organizationId = user?.organization_id;
-    const userId = user?.id ?? null;
+    const userId = user?.id ?? user?.sub ?? null;
 
     if (!organizationId) {
       return next.handle();
@@ -32,6 +32,16 @@ export class AuditInterceptor implements NestInterceptor {
       query: req.query,
       ip_address: ipAddress,
       user_agent: userAgent,
+      actor: user
+        ? {
+            id: userId,
+            email: user.email ?? null,
+            role: user.role ?? null,
+            first_name: user.first_name ?? null,
+            middle_name: user.middle_name ?? null,
+            last_name: user.last_name ?? null,
+          }
+        : null,
     };
 
     return next.handle().pipe(
