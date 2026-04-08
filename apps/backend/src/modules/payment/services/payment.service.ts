@@ -602,7 +602,7 @@ export class PaymentService {
 
       pdf.y = 182;
       pdf.roundedRect(44, pdf.y, 523, 94, 16).fill(accentSoft);
-      drawLabelValue('Amount Paid', `₦${amount.toFixed(2)}`, 62, pdf.y + 18, 150);
+      drawLabelValue('Amount Paid', `NGN ${amount.toFixed(2)}`, 62, pdf.y + 18, 150);
       drawLabelValue('Status', payment.status, 230, pdf.y + 18, 120);
       drawLabelValue('Payment Type', paymentType, 370, pdf.y + 18, 140);
       drawLabelValue('Gateway', 'Paystack', 62, pdf.y + 54, 150);
