@@ -12,3 +12,5 @@ services:
     envVars:
       - key: NODE_ENV
         value: production
+      - key: TENANT_BASE_DOMAIN
+        value: payforms.com.ng

@@ -15,9 +15,10 @@ export class GroupService {
   ) {}
 
   async create(organizationId: string, dto: CreateGroupDto) {
+    const payload = this.sanitizeGroupPayload(dto);
     const group = this.groupRepository.create({
       organization_id: organizationId,
-      ...dto,
+      ...payload,
     });
     return this.groupRepository.save(group);
   }
@@ -27,20 +28,33 @@ export class GroupService {
       where: { organization_id: organizationId },
       skip: (page - 1) * limit,
       take: limit,
-      relations: ['contacts'],
     });
-    return { data, total, page, limit };
+
+    const counts = await this.getContactCountsByGroupIds(organizationId, data.map(group => group.id));
+    return {
+      data: data.map(group => ({ ...group, contact_count: counts.get(group.id) || 0 })),
+      total,
+      page,
+      limit,
+    };
   }
 
   async findById(organizationId: string, id: string) {
-    return this.groupRepository.findOne({
+    const group = await this.groupRepository.findOne({
       where: { id, organization_id: organizationId },
       relations: ['contacts'],
     });
+
+    if (!group) {
+      return null;
+    }
+
+    const counts = await this.getContactCountsByGroupIds(organizationId, [group.id]);
+    return { ...group, contact_count: counts.get(group.id) || 0 };
   }
 
   async update(organizationId: string, id: string, dto: UpdateGroupDto) {
-    await this.groupRepository.update({ id, organization_id: organizationId }, dto);
+    await this.groupRepository.update({ id, organization_id: organizationId }, this.sanitizeGroupPayload(dto));
     return this.findById(organizationId, id);
   }
 
@@ -76,13 +90,15 @@ export class GroupService {
       where: { organization_id: organizationId },
     });
 
-    const groupMap = new Map<string, Group & { children: Group[] }>();
+    const counts = await this.getContactCountsByGroupIds(organizationId, groups.map(group => group.id));
+
+    const groupMap = new Map<string, Group & { children: Group[]; contact_count: number }>();
 
     groups.forEach(group => {
-      groupMap.set(group.id, { ...group, children: [] });
+      groupMap.set(group.id, { ...group, children: [], contact_count: counts.get(group.id) || 0 });
     });
 
-    const roots: Array<Group & { children: Group[] }> = [];
+    const roots: Array<Group & { children: Group[]; contact_count: number }> = [];
     groupMap.forEach(group => {
       if (group.parent_group_id) {
         const parent = groupMap.get(group.parent_group_id);
@@ -111,8 +127,49 @@ export class GroupService {
       where: { organization_id: organizationId, id: In(contactIds) },
     });
 
-    group.contacts = [...(group.contacts || []), ...contacts];
+    const uniqueContacts = new Map<string, Contact>();
+    for (const contact of group.contacts || []) {
+      uniqueContacts.set(contact.id, contact);
+    }
+    for (const contact of contacts) {
+      uniqueContacts.set(contact.id, contact);
+    }
+
+    group.contacts = Array.from(uniqueContacts.values());
     return this.groupRepository.save(group);
+  }
+
+  async removeContacts(organizationId: string, groupId: string, contactIds: string[]) {
+    const group = await this.groupRepository.findOne({
+      where: { id: groupId, organization_id: organizationId },
+      relations: ['contacts'],
+    });
+
+    if (!group) {
+      throw new NotFoundException('Group not found');
+    }
+
+    const contactIdSet = new Set(contactIds);
+    group.contacts = (group.contacts || []).filter(contact => !contactIdSet.has(contact.id));
+    await this.groupRepository.save(group);
+    return this.findById(organizationId, groupId);
+  }
+
+  async detachFromParent(organizationId: string, id: string) {
+    const group = await this.groupRepository.findOne({
+      where: { id, organization_id: organizationId },
+    });
+
+    if (!group) {
+      throw new NotFoundException('Group not found');
+    }
+
+    if (!group.parent_group_id) {
+      return this.findById(organizationId, id);
+    }
+
+    await this.groupRepository.update({ id, organization_id: organizationId }, { parent_group_id: null });
+    return this.findById(organizationId, id);
   }
 
   async getGroupContacts(organizationId: string, groupId: string, page: number = 1, limit: number = 20) {
@@ -132,11 +189,73 @@ export class GroupService {
       .createQueryBuilder('contact')
       .innerJoin('contact.groups', 'group', 'group.id IN (:...groupIds)', { groupIds: allGroupIds })
       .where('contact.organization_id = :organizationId', { organizationId })
+      .distinct(true)
       .skip((page - 1) * limit)
       .take(limit)
       .getManyAndCount();
 
     return { data: contacts, total, page, limit };
+  }
+
+  private async getContactCountsByGroupIds(organizationId: string, groupIds: string[]) {
+    const counts = new Map<string, number>();
+
+    if (!groupIds.length) {
+      return counts;
+    }
+
+    const rows = await this.groupRepository
+      .createQueryBuilder('group')
+      .leftJoin('group.contacts', 'contact', 'contact.organization_id = :organizationId', { organizationId })
+      .select('group.id', 'group_id')
+      .addSelect('COUNT(DISTINCT contact.id)', 'contact_count')
+      .where('group.organization_id = :organizationId', { organizationId })
+      .andWhere('group.id IN (:...groupIds)', { groupIds })
+      .groupBy('group.id')
+      .getRawMany();
+
+    for (const row of rows) {
+      counts.set(row.group_id, Number(row.contact_count || 0));
+    }
+
+    return counts;
+  }
+
+  private sanitizeGroupPayload<T extends CreateGroupDto | UpdateGroupDto>(dto: T): T {
+    const payload = { ...dto } as T;
+
+    if (typeof payload.name === 'string') {
+      payload.name = this.sanitizeGroupName(payload.name) as T['name'];
+    }
+
+    if (typeof payload.description === 'string') {
+      payload.description = payload.description.trim() as T['description'];
+    }
+
+    if (typeof payload.note === 'string') {
+      payload.note = payload.note.trim() as T['note'];
+    }
+
+    if (typeof payload.parent_group_id === 'string') {
+      const normalizedParent = payload.parent_group_id.trim();
+      payload.parent_group_id = (normalizedParent || undefined) as T['parent_group_id'];
+    }
+
+    return payload;
+  }
+
+  private sanitizeGroupName(value: string) {
+    const normalized = value
+      .trim()
+      .replace(/\\"/g, '"')
+      .replace(/^\"+|\"+$/g, '')
+      .trim();
+
+    if (!normalized) {
+      throw new BadRequestException('Group name cannot be empty');
+    }
+
+    return normalized;
   }
 
   private async getAllSubgroupIds(organizationId: string, parentGroupId: string): Promise<string[]> {

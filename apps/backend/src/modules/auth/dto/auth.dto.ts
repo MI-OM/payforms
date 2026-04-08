@@ -34,8 +34,9 @@ export class LoginDto {
 
 export class RefreshTokenDto {
   @ApiProperty({ example: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...' })
+  @IsOptional()
   @IsString()
-  refresh_token: string;
+  refresh_token?: string;
 }
 
 export class InviteUserDto {

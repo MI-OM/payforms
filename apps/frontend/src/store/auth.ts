@@ -16,7 +16,7 @@ interface AuthStore {
   error: string | null;
   register: (orgName: string, email: string, password: string, title?: string, designation?: string) => Promise<void>;
   login: (email: string, password: string) => Promise<void>;
-  logout: () => void;
+  logout: () => Promise<void>;
   fetchCurrentUser: () => Promise<void>;
 }
 
@@ -55,8 +55,8 @@ export const useAuthStore = create<AuthStore>((set) => ({
     }
   },
 
-  logout: () => {
-    apiClient.clearAuthToken();
+  logout: async () => {
+    await apiClient.logout();
     set({ user: null });
   },
 

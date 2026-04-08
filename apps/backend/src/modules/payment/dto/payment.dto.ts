@@ -1,5 +1,5 @@
 import { IsString, IsNumber, IsOptional, IsEnum, IsIn } from 'class-validator';
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class CreatePaymentDto {
@@ -31,6 +31,7 @@ export class VerifyPaymentDto {
 export class TransactionQueryDto {
   @ApiPropertyOptional({ enum: ['PENDING', 'PAID', 'PARTIAL', 'FAILED'], example: 'PAID' })
   @IsOptional()
+  @Transform(({ value }) => typeof value === 'string' ? value.trim().toUpperCase() : value)
   @IsEnum(['PENDING', 'PAID', 'PARTIAL', 'FAILED'])
   status?: 'PENDING' | 'PAID' | 'PARTIAL' | 'FAILED';
 

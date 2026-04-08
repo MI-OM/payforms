@@ -1,7 +1,7 @@
 # Frontend Deployment Configuration Guide
 
 ## Architecture
-- **Frontend**: Vercel (payforms.com.ng or Vercel preview domain)
+- **Frontend**: Vercel (payforms.com.ng, wildcard tenant subdomains, or Vercel preview domain)
 - **Backend API**: Render (needs CORS configured)
 - **Payment Gateway**: Paystack
 
@@ -44,6 +44,11 @@ NEXT_PUBLIC_API_URL = https://api.payforms.com.ng
 NODE_ENV = production
 ```
 
+Backend production env on Render must also include:
+```
+TENANT_BASE_DOMAIN = payforms.com.ng
+```
+
 **For Preview/Staging** (optional, for preview branches):
 ```
 NEXT_PUBLIC_APP_URL = https://yourdomain-staging.vercel.app
@@ -60,8 +65,18 @@ NEXT_PUBLIC_API_URL = http://localhost:3001
 #### Step 3: Configure Custom Domain
 1. In Vercel dashboard → Project → Settings → Domains
 2. Add custom domain: `payforms.com.ng`
-3. Follow DNS instructions to point domain to Vercel
-4. Wait for SSL certificate (automatic)
+3. Add wildcard domain: `*.payforms.com.ng`
+4. Follow DNS instructions to point both the apex and wildcard records to Vercel
+5. Wait for SSL certificate issuance for the wildcard domain
+
+Recommended DNS records:
+```dns
+A      @                   76.76.21.21
+CNAME  www                 cname.vercel-dns.com.
+CNAME  *                   cname.vercel-dns.com.
+```
+
+If `om.payforms.com.ng` returns `DNS_PROBE_FINISHED_NXDOMAIN`, the wildcard DNS record is missing or the wildcard domain has not been added in Vercel. The request is failing before Next.js or NestJS receives it.
 
 #### Step 4: Build Settings
 - Framework: Next.js (auto-detected)
@@ -81,14 +96,16 @@ Update CORS whitelist:
 ```typescript
 const corsOptions = {
   origin: [
-    'http://localhost:5701',  // Local dev
-    'https://payforms.com.ng', // Production
-    /https:\/\/.*\.vercel\.app$/, // All Vercel preview domains
+    'http://localhost:5701',
+    /https:\/\/.*\.vercel\.app$/,
+    /https:\/\/([a-z0-9-]+\.)*payforms\.com\.ng$/,
   ],
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
 };
 ```
+
+This is required so tenant frontends such as `https://om.payforms.com.ng` can call `https://api.payforms.com.ng` with credentials.
 
 ### 4. Verified Setup Checklist
 
@@ -99,7 +116,11 @@ const corsOptions = {
 - [ ] Vercel project created and linked to GitHub
 - [ ] Environment variables set in Vercel dashboard
 - [ ] Custom domain (payforms.com.ng) configured in Vercel
+- [ ] Wildcard domain (*.payforms.com.ng) configured in Vercel
+- [ ] Wildcard DNS record created for *.payforms.com.ng
+- [ ] Render env var `TENANT_BASE_DOMAIN=payforms.com.ng`
 - [ ] Backend CORS configured for `payforms.com.ng` and Vercel previews
+- [ ] Backend CORS configured for `*.payforms.com.ng`
 - [ ] Payment callback flow verified in production
 
 ### 5. Deployment Flow
@@ -113,7 +134,7 @@ Vercel auto-deploys
   ↓
 Uses NEXT_PUBLIC_* env vars from dashboard
   ↓
-Form submission → Paystack redirect → https://payforms.com.ng/paystack/callback
+Form submission on tenant host → Paystack redirect → callback returns to the same tenant host
   ↓
 Payment verified → Email sent → /payment/success
 ```
@@ -129,7 +150,8 @@ cd apps/frontend && npm run dev
 
 2. **Production Test**:
    - Visit https://payforms.com.ng (after domain config)
-   - Submit form → Should redirect to Paystack → Callback to payforms.com.ng/paystack/callback
+  - Visit a tenant host such as https://om.payforms.com.ng after wildcard DNS is live
+  - Submit form → Should redirect to Paystack → Callback to the same tenant host
    - Email should be sent to contact
 
 ### 7. Common Issues & Fixes
@@ -138,6 +160,7 @@ cd apps/frontend && npm run dev
 |-------|-------|-----|
 | Callback 404 | Wrong domain in callback URL | Verify `NEXT_PUBLIC_APP_URL` in Vercel env vars |
 | CORS error | Backend doesn't allow Vercel domain | Update `corsOptions` in backend `main.ts` |
+| `DNS_PROBE_FINISHED_NXDOMAIN` on tenant subdomain | Wildcard domain/DNS not configured | Add `*.payforms.com.ng` in Vercel and create wildcard DNS record |
 | Email not sent | Backend can't reach Render API | Check `NEXT_PUBLIC_API_URL` points to correct Render domain |
 | Preview stuck | Using localhost URL in production | Ensure `.env.production` values are set in Vercel |
 

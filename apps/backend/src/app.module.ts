@@ -1,5 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
+import { APP_GUARD } from '@nestjs/core';
+import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AuthModule } from './modules/auth/auth.module';
 import { OrganizationModule } from './modules/organization/organization.module';
@@ -25,6 +27,14 @@ import { CacheModule } from './common/cache/cache.module';
     ConfigModule.forRoot({
       isGlobal: true,
       envFilePath: '.env',
+    }),
+    ThrottlerModule.forRootAsync({
+      inject: [ConfigService],
+      useFactory: (configService: ConfigService) => ([{
+        name: 'default',
+        ttl: Number(configService.get('THROTTLE_TTL_MS', 60000)),
+        limit: Number(configService.get('THROTTLE_LIMIT', 120)),
+      }]),
     }),
     TypeOrmModule.forRootAsync({
       inject: [ConfigService],
@@ -66,6 +76,11 @@ import { CacheModule } from './common/cache/cache.module';
     ComplianceModule,
   ],
   controllers: [],
-  providers: [],
+  providers: [
+    {
+      provide: APP_GUARD,
+      useClass: ThrottlerGuard,
+    },
+  ],
 })
 export class AppModule {}

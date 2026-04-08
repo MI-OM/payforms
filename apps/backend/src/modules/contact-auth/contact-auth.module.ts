@@ -21,7 +21,9 @@ import { PaymentModule } from '../payment/payment.module';
       inject: [ConfigService],
       useFactory: (configService: ConfigService) => ({
         secret: configService.get('JWT_SECRET'),
-        signOptions: { expiresIn: '7d' },
+        signOptions: {
+          expiresIn: configService.get('CONTACT_ACCESS_TOKEN_TTL', '8h'),
+        },
       }),
     }),
     NotificationModule,

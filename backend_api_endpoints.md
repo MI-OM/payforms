@@ -17,6 +17,15 @@
 ### Group Hierarchy Fixes
 - Group contact aggregation now includes all subgroup contacts in parent groups.
 
+### Submission Export Endpoint
+- `GET /submissions/export` now supports filtered submission export in `csv` and `pdf` formats.
+
+### Group Membership Removal
+- `DELETE /groups/:id/contacts` now removes one or multiple contacts from a group directly.
+
+### Group Detach Endpoint
+- `PATCH /groups/:id/detach` now detaches a group from its parent while preserving the group and its contacts.
+
 ## Auth Endpoints
 
 - `POST /auth/register`
@@ -43,6 +52,7 @@
   - Auth: `Bearer <JWT>` (ADMIN only)
 - `GET /auth/organization-email/status`
   - Auth: `Bearer <JWT>`
+  - Returns current verification status for the authenticated user's organization email
 - `POST /auth/logout`
   - Auth: `Bearer <JWT>`
 - `GET /auth/profile`
@@ -153,6 +163,7 @@
   - Body: `{ group_ids: string[] }`
 - `GET /forms/:id/groups`
   - Auth: `Bearer <JWT>`
+  - Returns groups currently assigned to the form
 - `GET /forms/:id/targets`
   - Auth: `Bearer <JWT>`
 - `POST /forms/:id/targets`
@@ -186,15 +197,38 @@
     - `description?`
     - `note?`
     - `parent_group_id?`
+- `PATCH /groups/:id/detach`
+  - Auth: `Bearer <JWT>`
+  - Removes the group's parent reference by setting `parent_group_id` to `null`
+  - Preserves the group and its existing contacts
 - `DELETE /groups/:id`
   - Auth: `Bearer <JWT>`
 - `POST /groups/:id/contacts`
   - Auth: `Bearer <JWT>`
   - Body: `{ contact_ids: string[] }`
+- `DELETE /groups/:id/contacts`
+  - Auth: `Bearer <JWT>`
+  - Body: `{ contact_ids: string[] }`
+  - Removes one or multiple contacts from the specified group and returns the updated group
 - `GET /groups/:id/contacts`
   - Auth: `Bearer <JWT>`
   - Query: `page?`, `limit?`
   - Returns contacts for the specified group AND all its subgroups (recursive)
+
+## Submission Admin Endpoints
+
+- `GET /submissions/export`
+  - Auth: `Bearer <JWT>`
+  - Query:
+    - `format?` = `csv | pdf`
+    - `form_id?`
+    - `contact_id?`
+    - `start_date?`
+    - `end_date?`
+  - Notes:
+    - Returns filtered raw submission exports.
+    - CSV includes submission metadata, discovered data columns, and `data_json`.
+    - PDF includes submission metadata and formatted JSON payload per submission.
 
 ## Contact Endpoints
 
@@ -292,8 +326,14 @@
 - `POST /contacts/imports/validate`
   - Auth: `Bearer <JWT>`
   - Body: same shape as `/contacts/import`
+- `POST /contacts/imports/csv/validate`
+  - Auth: `Bearer <JWT>`
+  - Body: `{ csv }`
 - `POST /contacts/imports/:id/commit`
   - Auth: `Bearer <JWT>`
+- `POST /contacts/imports/csv/commit`
+  - Auth: `Bearer <JWT>`
+  - Body: `{ csv }`
 - `GET /contacts/imports`
   - Auth: `Bearer <JWT>`
   - Query: `page?`, `limit?`
@@ -364,6 +404,7 @@
     - `amount`
     - `reference?`
 - `POST /payments/:id/status`
+- `PATCH /payments/:id/status`
   - Auth: `Bearer <JWT>`
   - Body:
     - `status`: `PENDING | PAID | PARTIAL | FAILED`
@@ -393,6 +434,9 @@
 - `GET /public/payments/callback`
   - Query: `reference` or `trxref`
   - Purpose: callback-safe verification endpoint used after Paystack redirect to finalize and log transaction status
+- `GET /public/payments/verify`
+  - Query: `reference` or `trxref`
+  - Purpose: verification-only JSON response for public payment checks without redirect behavior
 - `GET /public/forms/:slug/widget-config`
   - Header: `Authorization: Bearer <contact token>` optional for targeted forms
   - Returns:
@@ -458,6 +502,27 @@
   - Auth: `Bearer <JWT>`
   - Query: `page?`, `limit?`
   - Returns list of scheduled notifications (MVP: returns empty list as scheduling is immediate)
+
+## Billing Endpoints
+
+- `GET /billing/plans/:organizationId`
+- `GET /billing/usage/:organizationId`
+- `GET /billing/report/:organizationId`
+- `POST /billing/upgrade/:organizationId`
+  - Body: `{ newPlanTier }`
+
+## Compliance Endpoints
+
+- `POST /compliance/export`
+  - Body: `{ organizationId, contactId, requestedBy }`
+- `POST /compliance/delete`
+  - Body: `{ organizationId, contactId, requestedBy }`
+- `GET /compliance/export/:contactId/:organizationId`
+  - Returns contact export data payload
+- `GET /compliance/retention-policy/:organizationId`
+- `POST /compliance/retention-policy/:organizationId`
+- `POST /compliance/purge/:organizationId`
+- `GET /compliance/audit-trail/:organizationId`
 
 ## Audit Endpoints
 

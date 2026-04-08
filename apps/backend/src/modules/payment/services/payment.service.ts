@@ -413,7 +413,7 @@ export class PaymentService {
       .where('payment.organization_id = :organizationId', { organizationId });
 
     if (filters.status) {
-      qb.andWhere('payment.status = :status', { status: filters.status });
+      qb.andWhere('UPPER(payment.status) = :status', { status: this.normalizeTransactionStatus(filters.status) });
     }
 
     if (filters.reference) {
@@ -429,14 +429,32 @@ export class PaymentService {
     }
 
     if (filters.start_date) {
-      qb.andWhere('payment.created_at >= :start_date', { start_date: filters.start_date });
+      qb.andWhere('payment.created_at >= :start_date', { start_date: this.normalizeTransactionDate(filters.start_date, 'start') });
     }
 
     if (filters.end_date) {
-      qb.andWhere('payment.created_at <= :end_date', { end_date: filters.end_date });
+      qb.andWhere('payment.created_at <= :end_date', { end_date: this.normalizeTransactionDate(filters.end_date, 'end') });
     }
 
     return qb;
+  }
+
+  private normalizeTransactionStatus(status: string) {
+    return status.trim().toUpperCase();
+  }
+
+  private normalizeTransactionDate(value: string, boundary: 'start' | 'end') {
+    const isDateOnly = /^\d{4}-\d{2}-\d{2}$/.test(value);
+    const normalizedValue = isDateOnly
+      ? `${value}${boundary === 'start' ? 'T00:00:00.000Z' : 'T23:59:59.999Z'}`
+      : value;
+
+    const parsed = new Date(normalizedValue);
+    if (Number.isNaN(parsed.getTime())) {
+      throw new BadRequestException(`Invalid ${boundary === 'start' ? 'start_date' : 'end_date'}`);
+    }
+
+    return parsed;
   }
 
   private buildPaymentsCsv(payments: Payment[]) {

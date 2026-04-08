@@ -28,6 +28,10 @@ type ContactImportInput = {
   must_reset_password?: boolean;
 };
 
+type ContactWithPasswordSetupToken = Contact & {
+  password_setup_token?: string | null;
+};
+
 @Injectable()
 export class ContactService {
   constructor(
@@ -45,9 +49,7 @@ export class ContactService {
     const { require_login, must_reset_password, ...contactFields } = dto;
     const requireLogin = require_login ?? true;
     const mustResetPassword = must_reset_password ?? requireLogin;
-    const passwordResetToken = mustResetPassword
-      ? crypto.randomBytes(32).toString('hex')
-      : null;
+    const passwordResetToken = mustResetPassword ? this.generateOpaqueToken() : null;
     const passwordResetExpiresAt = mustResetPassword
       ? new Date(Date.now() + 1000 * 60 * 60 * 24 * 7)
       : null;
@@ -58,10 +60,13 @@ export class ContactService {
       email: this.normalizeEmail(contactFields.email),
       is_active: true,
       must_reset_password: mustResetPassword,
-      password_reset_token: passwordResetToken,
+      password_reset_token: passwordResetToken ? this.hashOpaqueToken(passwordResetToken) : null,
       password_reset_expires_at: passwordResetExpiresAt,
     });
-    return this.contactRepository.save(contact);
+    const savedContact = await this.contactRepository.save(contact);
+    return Object.assign(savedContact, {
+      password_setup_token: passwordResetToken,
+    }) as ContactWithPasswordSetupToken;
   }
 
   async findByOrganization(
@@ -322,22 +327,23 @@ export class ContactService {
       order: { created_at: 'ASC' },
     });
     const groupById = new Map(organizationGroups.map(group => [group.id, group]));
-    const groupByName = new Map(organizationGroups.map(group => [group.name.toLowerCase(), group]));
+    const groupByKey = new Map(
+      organizationGroups.map(group => [this.buildGroupLookupKey(group.name, group.parent_group_id), group]),
+    );
 
-    const contactEntities: Contact[] = [];
+    const contactEntities: ContactWithPasswordSetupToken[] = [];
     for (const row of normalizedRows) {
-      const groups = await this.resolveImportGroups(organizationId, row, groupById, groupByName);
+      const groups = await this.resolveImportGroups(organizationId, row, groupById, groupByKey);
       const requireLogin = row.require_login ?? true;
       const mustResetPassword = row.must_reset_password ?? requireLogin;
-      const passwordResetToken = mustResetPassword
-        ? crypto.randomBytes(32).toString('hex')
-        : null;
+      const passwordResetToken = mustResetPassword ? this.generateOpaqueToken() : null;
       const passwordResetExpiresAt = mustResetPassword
         ? new Date(Date.now() + 1000 * 60 * 60 * 24 * 7)
         : null;
 
       contactEntities.push(
-        this.contactRepository.create({
+        Object.assign(
+          this.contactRepository.create({
           organization_id: organizationId,
           first_name: row.first_name,
           middle_name: row.middle_name,
@@ -352,14 +358,21 @@ export class ContactService {
           guardian_phone: row.guardian_phone,
           is_active: row.is_active ?? true,
           must_reset_password: mustResetPassword,
-          password_reset_token: passwordResetToken,
+          password_reset_token: passwordResetToken ? this.hashOpaqueToken(passwordResetToken) : null,
           password_reset_expires_at: passwordResetExpiresAt,
           groups,
-        }),
+          }),
+          {
+            password_setup_token: passwordResetToken,
+          },
+        ),
       );
     }
 
-    return this.contactRepository.save(contactEntities);
+    const savedContacts = await this.contactRepository.save(contactEntities);
+    return savedContacts.map((contact, index) => Object.assign(contact, {
+      password_setup_token: contactEntities[index]?.password_setup_token ?? null,
+    })) as ContactWithPasswordSetupToken[];
   }
 
   parseCsvImport(csv: string): ContactImportInput[] {
@@ -560,6 +573,14 @@ export class ContactService {
     return email.trim().toLowerCase();
   }
 
+  private generateOpaqueToken() {
+    return crypto.randomBytes(32).toString('hex');
+  }
+
+  private hashOpaqueToken(token: string) {
+    return crypto.createHash('sha256').update(token).digest('hex');
+  }
+
   private normalizeImportRow(row: ContactImportInput): ContactImportInput {
     const nameFromLegacy = (row as any).name ? String((row as any).name).trim() : '';
     const rawFirstName = typeof row.first_name === 'string' ? row.first_name.trim() : row.first_name;
@@ -587,8 +608,8 @@ export class ContactService {
       guardian_email: typeof row.guardian_email === 'string' ? this.normalizeEmail(row.guardian_email) : row.guardian_email,
       guardian_phone: typeof row.guardian_phone === 'string' ? row.guardian_phone.trim() : row.guardian_phone,
       group_ids: this.uniqueStringList(row.group_ids),
-      groups: this.uniqueStringList(row.groups),
-      group_paths: this.uniqueStringList(row.group_paths),
+      groups: this.uniqueStringList(row.groups)?.map(value => this.sanitizeGroupSegment(value)),
+      group_paths: this.uniqueStringList(row.group_paths)?.map(value => this.sanitizeGroupPath(value)),
       require_login: row.require_login,
       is_active: row.is_active,
       must_reset_password: row.must_reset_password,
@@ -622,7 +643,7 @@ export class ContactService {
     organizationId: string,
     row: ContactImportInput,
     groupById: Map<string, Group>,
-    groupByName: Map<string, Group>,
+    groupByKey: Map<string, Group>,
   ) {
     const selectedGroupIds = new Set<string>();
 
@@ -647,7 +668,7 @@ export class ContactService {
       if (!segments.length) {
         continue;
       }
-      const group = await this.ensureGroupPath(organizationId, segments, groupById, groupByName);
+      const group = await this.ensureGroupPath(organizationId, segments, groupById, groupByKey);
       selectedGroupIds.add(group.id);
     }
 
@@ -661,7 +682,7 @@ export class ContactService {
 
     return token
       .split('>')
-      .map(segment => segment.trim())
+      .map(segment => this.sanitizeGroupSegment(segment))
       .filter(Boolean);
   }
 
@@ -669,19 +690,20 @@ export class ContactService {
     organizationId: string,
     segments: string[],
     groupById: Map<string, Group>,
-    groupByName: Map<string, Group>,
+    groupByKey: Map<string, Group>,
   ) {
     let parentGroup: Group | null = null;
 
     for (const segment of segments) {
-      const key = segment.toLowerCase();
-      const existing = groupByName.get(key);
+      const normalizedSegment = this.sanitizeGroupSegment(segment);
+      const key = this.buildGroupLookupKey(normalizedSegment, parentGroup?.id ?? null);
+      const existing = groupByKey.get(key);
       if (existing) {
         const expectedParentId = parentGroup?.id ?? null;
         const actualParentId = existing.parent_group_id ?? null;
         if (expectedParentId !== actualParentId) {
           throw new BadRequestException(
-            `Group '${segment}' already exists under a different parent. Please rename the group or adjust the path.`,
+            `Group '${normalizedSegment}' already exists under a different parent. Please rename the group or adjust the path.`,
           );
         }
         parentGroup = existing;
@@ -691,13 +713,13 @@ export class ContactService {
       const createdGroup = await this.groupRepository.save(
         this.groupRepository.create({
           organization_id: organizationId,
-          name: segment,
+          name: normalizedSegment,
           parent_group_id: parentGroup?.id ?? null,
         }),
       );
 
       groupById.set(createdGroup.id, createdGroup);
-      groupByName.set(createdGroup.name.toLowerCase(), createdGroup);
+      groupByKey.set(this.buildGroupLookupKey(createdGroup.name, createdGroup.parent_group_id), createdGroup);
       parentGroup = createdGroup;
     }
 
@@ -706,6 +728,22 @@ export class ContactService {
     }
 
     return parentGroup;
+  }
+
+  private buildGroupLookupKey(name: string, parentGroupId?: string | null) {
+    return `${parentGroupId ?? 'root'}:${this.sanitizeGroupSegment(name).toLowerCase()}`;
+  }
+
+  private sanitizeGroupPath(value: string) {
+    return this.parseGroupPathToken(value).join(' > ');
+  }
+
+  private sanitizeGroupSegment(value: string) {
+    return String(value || '')
+      .trim()
+      .replace(/\\"/g, '"')
+      .replace(/^\"+|\"+$/g, '')
+      .trim();
   }
 
   private buildGroupPathMap(groups: Group[]) {

@@ -28,6 +28,23 @@
 - **Fixed**: Parent groups now correctly aggregate all contacts from subgroups.
 - **Impact**: Group contact counts and hierarchies reflect complete membership.
 
+### Submission Export Endpoints
+- **New Endpoint**: `GET /submissions/export`
+- **Purpose**: Export filtered form submissions as CSV or PDF.
+- **Query Params**: `format?`, `form_id?`, `contact_id?`, `start_date?`, `end_date?`
+- **Impact**: Admins can download raw submission data for operational review and offline reporting.
+
+### Group Contact Removal
+- **New Endpoint**: `DELETE /groups/:id/contacts`
+- **Purpose**: Remove one or multiple contacts from a group in a single request.
+- **Body**: `{ contact_ids: string[] }`
+- **Impact**: Group membership can now be managed directly from the group side without replacing all memberships on each contact.
+
+### Group Detach Endpoint
+- **New Endpoint**: `PATCH /groups/:id/detach`
+- **Purpose**: Remove a group from its parent while preserving the group and its current contacts.
+- **Impact**: Admins can reorganize hierarchy without deleting the group.
+
 This document describes the major Payforms API workflows, including each endpoint consumed and the process flow for typical frontend and backend scenarios.
 
 ## 1. Authentication Workflows
@@ -137,6 +154,15 @@ This document describes the major Payforms API workflows, including each endpoin
   1. User clicks verification link.
   2. Frontend submits token to `/auth/organization-email/verify`.
   3. Backend marks org email verified.
+
+#### 1.4.3 Check Organization Email Verification Status
+
+- Endpoint: `GET /auth/organization-email/status`
+- Auth: `Bearer <JWT>`
+- Flow:
+  1. Frontend opens organization settings.
+  2. Calls `/auth/organization-email/status`.
+  3. Backend returns the current verification state.
 
 ### 1.5 Profile and Self Service
 
@@ -360,6 +386,13 @@ This document describes the major Payforms API workflows, including each endpoin
   1. Frontend fetches current form targets.
   2. Backend returns assigned groups and contacts.
 
+#### View Form Groups
+- Endpoint: `GET /forms/:id/groups`
+- Auth: `Bearer <JWT>`
+- Flow:
+  1. Frontend needs only the groups attached to a form.
+  2. Backend returns the current form-group assignments.
+
 #### Add Targets
 - Endpoint: `POST /forms/:id/targets`
 - Auth: `Bearer <JWT>`
@@ -458,6 +491,26 @@ This document describes the major Payforms API workflows, including each endpoin
 - Flow:
   1. Frontend lists members of a group.
   2. Backend returns paginated contacts.
+
+### 4.9 Remove Contacts from Group
+
+- Endpoint: `DELETE /groups/:id/contacts`
+- Auth: `Bearer <JWT>`
+- Body: `{ contact_ids: string[] }`
+- Flow:
+  1. Admin selects one or more contacts to remove from a group.
+  2. Frontend sends the contact IDs to `/groups/:id/contacts`.
+  3. Backend removes only those memberships and returns the updated group.
+
+### 4.10 Detach Group from Parent
+
+- Endpoint: `PATCH /groups/:id/detach`
+- Auth: `Bearer <JWT>`
+- Flow:
+  1. Admin chooses to remove a subgroup from its parent.
+  2. Frontend calls `/groups/:id/detach`.
+  3. Backend sets `parent_group_id` to `null` and returns the updated group.
+  4. Existing contacts on the group remain attached to that group.
 
 ## 5. Contact Workflows
 
@@ -572,6 +625,26 @@ This document describes the major Payforms API workflows, including each endpoin
   1. After validation succeeds, frontend calls `/contacts/imports/:id/commit`.
   2. Backend creates or updates contacts, resolves groups, and sends password setup if needed.
   3. Frontend displays import summary.
+
+### 6.2A Validate CSV Import
+
+- Endpoint: `POST /contacts/imports/csv/validate`
+- Auth: `Bearer <JWT>`
+- Body: `{ csv }`
+- Flow:
+  1. Frontend uploads raw CSV content.
+  2. Backend parses and validates the rows.
+  3. Frontend shows validation errors or confirmation before commit.
+
+### 6.2B Commit CSV Import
+
+- Endpoint: `POST /contacts/imports/csv/commit`
+- Auth: `Bearer <JWT>`
+- Body: `{ csv }`
+- Flow:
+  1. Frontend submits CSV content directly for validation and commit.
+  2. Backend validates and commits the import in one flow.
+  3. Frontend receives the final import result.
 
 ### 6.3 Direct Import
 
@@ -721,6 +794,7 @@ This document describes the major Payforms API workflows, including each endpoin
 ### 8.5 Update Payment Status
 
 - Endpoint: `POST /payments/:id/status`
+- Alias Endpoint: `PATCH /payments/:id/status`
 - Auth: `Bearer <JWT>`
 - Body:
   - `status`: `PENDING | PAID | PARTIAL | FAILED`
@@ -758,6 +832,25 @@ This document describes the major Payforms API workflows, including each endpoin
   2. Backend returns audit and status events.
 
 ## 10. Public Submission Workflows
+
+## 10A. Admin Submission Export Workflows
+
+### 10A.1 Export Form Submissions
+
+- Endpoint: `GET /submissions/export`
+- Auth: `Bearer <JWT>`
+- Query:
+  - `format?` = `csv | pdf`
+  - `form_id?`
+  - `contact_id?`
+  - `start_date?`
+  - `end_date?`
+- Flow:
+  1. Admin selects submission filters in the dashboard.
+  2. Frontend calls `/submissions/export` with the selected filters.
+  3. Backend returns a downloadable CSV or PDF export of matching submissions.
+  4. CSV includes core submission fields plus flattened discovered data keys and raw `data_json`.
+  5. PDF includes per-submission metadata and formatted submission payloads.
 
 ### 10.1 Fetch Public Form
 
@@ -839,6 +932,15 @@ This document describes the major Payforms API workflows, including each endpoin
   3. Backend redirects user to frontend success page with payment status.
   4. Frontend displays appropriate success/failure message based on query parameters.
 
+### 10.7 Public Payment Verification
+
+- Endpoint: `GET /public/payments/verify`
+- Query: `reference` or `trxref`
+- Flow:
+  1. Frontend or widget needs a verification-only JSON response.
+  2. Calls `/public/payments/verify` with the payment reference.
+  3. Backend verifies the payment and returns a JSON result without redirecting.
+
 ## 11. Webhook Workflow
 
 ### 11.1 Paystack Webhook
@@ -898,6 +1000,16 @@ This document describes the major Payforms API workflows, including each endpoin
 - Flow:
   1. Admin schedules message for groups.
   2. Backend sends to group members when triggered.
+
+### 12.5 List Scheduled Notifications
+
+- Endpoint: `GET /notifications/scheduled`
+- Auth: `Bearer <JWT>`
+- Query: `page?`, `limit?`
+- Flow:
+  1. Frontend requests scheduled notification history.
+  2. Backend returns paginated scheduled items.
+  3. For the current MVP, this returns an empty list because scheduling is immediate.
 
 ## 13. Audit Workflows
 
@@ -985,6 +1097,57 @@ This document describes the major Payforms API workflows, including each endpoin
   1. Infrastructure checks readiness before routing traffic.
   2. Backend returns ready state.
 
+## 15A. Billing Workflows
+
+### 15A.1 Get Organization Plan
+
+- Endpoint: `GET /billing/plans/:organizationId`
+
+### 15A.2 Get Usage Metrics
+
+- Endpoint: `GET /billing/usage/:organizationId`
+
+### 15A.3 Get Billing Report
+
+- Endpoint: `GET /billing/report/:organizationId`
+
+### 15A.4 Upgrade Plan
+
+- Endpoint: `POST /billing/upgrade/:organizationId`
+- Body: `{ newPlanTier }`
+
+## 15B. Compliance Workflows
+
+### 15B.1 Request Contact Data Export
+
+- Endpoint: `POST /compliance/export`
+- Body: `{ organizationId, contactId, requestedBy }`
+
+### 15B.2 Request Contact Data Deletion
+
+- Endpoint: `POST /compliance/delete`
+- Body: `{ organizationId, contactId, requestedBy }`
+
+### 15B.3 Download Contact Export Data
+
+- Endpoint: `GET /compliance/export/:contactId/:organizationId`
+
+### 15B.4 Get Retention Policy
+
+- Endpoint: `GET /compliance/retention-policy/:organizationId`
+
+### 15B.5 Update Retention Policy
+
+- Endpoint: `POST /compliance/retention-policy/:organizationId`
+
+### 15B.6 Apply Retention Purge
+
+- Endpoint: `POST /compliance/purge/:organizationId`
+
+### 15B.7 View Compliance Audit Trail
+
+- Endpoint: `GET /compliance/audit-trail/:organizationId`
+
 ## 16. Example End-to-End Scenarios
 
 ### 16.1 Admin Setup and Publish a Targeted Form
@@ -1068,8 +1231,17 @@ This document describes the major Payforms API workflows, including each endpoin
 
 - Create contacts via `/contacts`.
 - Import bulk contacts using `/contacts/imports/validate` + `/contacts/imports/:id/commit`.
+- Validate or commit raw CSV imports using `/contacts/imports/csv/validate` and `/contacts/imports/csv/commit`.
 - Assign groups through `/contacts/:id/groups` and `/groups/:id/contacts`.
+- Remove group memberships through `/groups/:id/contacts` with `DELETE`.
+- Detach subgroups through `/groups/:id/detach` when reorganizing hierarchy.
 - Export contacts through `/contacts/export`.
+
+### 18.2A Export Submission Data
+
+- Export filtered raw submissions through `/submissions/export`.
+- Use `format=csv` for spreadsheet workflows and `format=pdf` for shareable review documents.
+- Filter by `form_id`, `contact_id`, `start_date`, and `end_date` as needed.
 
 ### 18.3 Handle Payments
 

@@ -1,4 +1,5 @@
-import { IsString, IsOptional, IsObject, IsEmail, IsNumber } from 'class-validator';
+import { Transform, Type } from 'class-transformer';
+import { IsString, IsOptional, IsObject, IsEmail, IsNumber, IsIn } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class CreateSubmissionDto {
@@ -31,4 +32,47 @@ export class PublicSubmitFormDto {
   @IsOptional()
   @IsNumber()
   partial_amount?: number;
+}
+
+export class SubmissionExportQueryDto {
+  @ApiPropertyOptional({ example: 'form-uuid' })
+  @IsOptional()
+  @Transform(({ value }) => typeof value === 'string' ? value.trim() : value)
+  @IsString()
+  form_id?: string;
+
+  @ApiPropertyOptional({ example: 'contact-uuid' })
+  @IsOptional()
+  @Transform(({ value }) => typeof value === 'string' ? value.trim() : value)
+  @IsString()
+  contact_id?: string;
+
+  @ApiPropertyOptional({ example: '2026-04-01' })
+  @IsOptional()
+  @Transform(({ value }) => typeof value === 'string' ? value.trim() : value)
+  @IsString()
+  start_date?: string;
+
+  @ApiPropertyOptional({ example: '2026-04-30' })
+  @IsOptional()
+  @Transform(({ value }) => typeof value === 'string' ? value.trim() : value)
+  @IsString()
+  end_date?: string;
+
+  @ApiPropertyOptional({ enum: ['csv', 'pdf'], example: 'csv' })
+  @IsOptional()
+  @IsIn(['csv', 'pdf'])
+  format?: 'csv' | 'pdf';
+
+  @ApiPropertyOptional({ example: 1, minimum: 1 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  page?: number;
+
+  @ApiPropertyOptional({ example: 20, minimum: 1 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  limit?: number;
 }

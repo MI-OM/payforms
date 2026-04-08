@@ -17,19 +17,27 @@ export class ReportService {
     @InjectRepository(Group) private groupRepository: Repository<Group>,
   ) {}
 
+  private normalizeDateBoundary(value: string, boundary: 'start' | 'end') {
+    const isDateOnly = /^\d{4}-\d{2}-\d{2}$/.test(value);
+    const normalizedValue = isDateOnly
+      ? `${value}${boundary === 'start' ? 'T00:00:00.000Z' : 'T23:59:59.999Z'}`
+      : value;
+
+    const parsed = new Date(normalizedValue);
+    if (Number.isNaN(parsed.getTime())) {
+      throw new BadRequestException(`Invalid ${boundary === 'start' ? 'start_date' : 'end_date'}`);
+    }
+
+    return parsed;
+  }
+
   private parseDateRange(startDate?: string, endDate?: string) {
     const range: { start?: Date; end?: Date } = {};
     if (startDate) {
-      range.start = new Date(startDate);
-      if (Number.isNaN(range.start.getTime())) {
-        throw new BadRequestException('Invalid start_date');
-      }
+      range.start = this.normalizeDateBoundary(startDate, 'start');
     }
     if (endDate) {
-      range.end = new Date(endDate);
-      if (Number.isNaN(range.end.getTime())) {
-        throw new BadRequestException('Invalid end_date');
-      }
+      range.end = this.normalizeDateBoundary(endDate, 'end');
     }
     return range;
   }
@@ -104,17 +112,6 @@ export class ReportService {
       .orderBy('day', 'ASC')
       .getRawMany();
 
-    const paymentsByDay = await this.paymentRepository
-      .createQueryBuilder('payment')
-      .select("DATE_TRUNC('day', payment.created_at)", 'day')
-      .addSelect('SUM(payment.amount)', 'total')
-      .addSelect('COUNT(payment.id)', 'count')
-      .where('payment.organization_id = :organizationId', { organizationId })
-      .andWhere('payment.created_at BETWEEN :queryStart AND :queryEnd', { queryStart, queryEnd })
-      .groupBy('day')
-      .orderBy('day', 'ASC')
-      .getRawMany();
-
     const paymentsByDayDetailed = await this.paymentRepository
       .createQueryBuilder('payment')
       .select("DATE_TRUNC('day', payment.created_at)", 'day')
@@ -128,15 +125,32 @@ export class ReportService {
       .orderBy('day', 'ASC')
       .getRawMany();
 
-    // Group payments by day with status breakdown
-    const paymentsByDayMap = new Map<string, any>();
+    const paymentsByDayMap = new Map<string, {
+      day: string;
+      paid: { count: number; total: number };
+      pending: { count: number; total: number };
+      failed: { count: number; total: number };
+      partial: { count: number; total: number };
+    }>();
+
     paymentsByDayDetailed.forEach(row => {
       const day = row.day.toISOString().slice(0, 10);
       if (!paymentsByDayMap.has(day)) {
-        paymentsByDayMap.set(day, { day, paid: { count: 0, total: 0 }, pending: { count: 0, total: 0 }, failed: { count: 0, total: 0 }, partial: { count: 0, total: 0 } });
+        paymentsByDayMap.set(day, {
+          day,
+          paid: { count: 0, total: 0 },
+          pending: { count: 0, total: 0 },
+          failed: { count: 0, total: 0 },
+          partial: { count: 0, total: 0 },
+        });
       }
+
       const dayData = paymentsByDayMap.get(day);
-      const status = row.status.toLowerCase();
+      if (!dayData) {
+        return;
+      }
+
+      const status = String(row.status).toLowerCase();
       if (status === 'paid') {
         dayData.paid.count += Number(row.count);
         dayData.paid.total += Number(row.total || 0);
@@ -152,8 +166,6 @@ export class ReportService {
       }
     });
 
-    const paymentsByDayWithStatus = Array.from(paymentsByDayMap.values());
-
     const paymentStatusBreakdown = await this.paymentRepository
       .createQueryBuilder('payment')
       .select('UPPER(payment.status)', 'status')
@@ -164,14 +176,27 @@ export class ReportService {
       .groupBy('UPPER(payment.status)')
       .getRawMany();
 
+    const allStatuses = ['PAID', 'PENDING', 'FAILED', 'PARTIAL'];
+    const statusMap = new Map(
+      paymentStatusBreakdown.map(row => [
+        String(row.status).toUpperCase(),
+        {
+          status: String(row.status).toUpperCase(),
+          count: Number(row.count),
+          total_amount: Number(row.total_amount),
+        },
+      ]),
+    );
+    const completeBreakdown = allStatuses.map(status => statusMap.get(status) || { status, count: 0, total_amount: 0 });
+
     return {
       range: {
         start: queryStart.toISOString(),
         end: queryEnd.toISOString(),
       },
       submissions_by_day: submissionsByDay.map(row => ({ day: row.day.toISOString().slice(0, 10), count: Number(row.count) })),
-      payments_by_day: paymentsByDayWithStatus,
-      payment_status_breakdown: paymentStatusBreakdown.map(row => ({ status: String(row.status).toUpperCase(), count: Number(row.count), total_amount: Number(row.total_amount) })),
+      payments_by_day: Array.from(paymentsByDayMap.values()),
+      payment_status_breakdown: completeBreakdown,
     };
   }
 
@@ -495,8 +520,18 @@ export class ReportService {
       ['submission_day', 'count'],
       ...data.submissions_by_day.map(item => [item.day, item.count]),
       [''],
-      ['payment_day', 'count', 'total'],
-      ...data.payments_by_day.map(item => [item.day, item.count, item.total]),
+      ['payment_day', 'paid_count', 'paid_total', 'pending_count', 'pending_total', 'failed_count', 'failed_total', 'partial_count', 'partial_total'],
+      ...data.payments_by_day.map(item => [
+        item.day,
+        item.paid?.count || 0,
+        item.paid?.total || 0,
+        item.pending?.count || 0,
+        item.pending?.total || 0,
+        item.failed?.count || 0,
+        item.failed?.total || 0,
+        item.partial?.count || 0,
+        item.partial?.total || 0,
+      ]),
       [''],
       ['payment_status', 'count', 'total_amount'],
       ...data.payment_status_breakdown.map(item => [item.status, item.count, item.total_amount]),
@@ -531,7 +566,14 @@ export class ReportService {
         pdf.fontSize(10).text(data.submissions_by_day.map(item => `${item.day}: ${item.count}`).join('\n') || 'No data');
         pdf.moveDown();
         pdf.fontSize(14).text('Payments by Day');
-        pdf.fontSize(10).text(data.payments_by_day.map(item => `${item.day}: ${item.count} (${item.total})`).join('\n') || 'No data');
+        pdf.fontSize(10).text(
+          data.payments_by_day.map(item => (
+            `${item.day}: paid ${item.paid?.count || 0} (${item.paid?.total || 0}), `
+            + `pending ${item.pending?.count || 0} (${item.pending?.total || 0}), `
+            + `failed ${item.failed?.count || 0} (${item.failed?.total || 0}), `
+            + `partial ${item.partial?.count || 0} (${item.partial?.total || 0})`
+          )).join('\n') || 'No data',
+        );
         pdf.moveDown();
         pdf.fontSize(14).text('Payment Status Breakdown');
         pdf.fontSize(10).text(data.payment_status_breakdown.map(item => `${item.status}: ${item.count} (${item.total_amount})`).join('\n') || 'No data');

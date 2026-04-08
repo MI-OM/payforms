@@ -2,7 +2,7 @@ import { Injectable, UnauthorizedException, NotFoundException, BadRequestExcepti
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, In } from 'typeorm';
 import * as bcrypt from 'bcrypt';
 import * as crypto from 'crypto';
 import { User } from './entities/user.entity';
@@ -260,9 +260,14 @@ export class AuthService {
   }
 
   async refreshTokens(dto: RefreshTokenDto) {
+    if (!dto.refresh_token) {
+      throw new UnauthorizedException('Invalid refresh token');
+    }
+
+    const refreshToken = dto.refresh_token;
     let payload: any;
     try {
-      payload = this.jwtService.verify(dto.refresh_token);
+      payload = this.jwtService.verify(refreshToken);
     } catch (error) {
       throw new UnauthorizedException('Invalid refresh token');
     }
@@ -271,9 +276,9 @@ export class AuthService {
     if (!user || !user.refresh_token_hash) {
       throw new UnauthorizedException('Invalid refresh token');
     }
-
-    const refreshTokenMatches = await bcrypt.compare(dto.refresh_token, user.refresh_token_hash);
+    const refreshTokenMatches = await bcrypt.compare(refreshToken, user.refresh_token_hash);
     if (!refreshTokenMatches) {
+      await this.userRepository.update(user.id, { refresh_token_hash: null });
       throw new UnauthorizedException('Invalid refresh token');
     }
 
@@ -286,13 +291,17 @@ export class AuthService {
   }
 
   async requestPasswordReset(dto: PasswordResetRequestDto) {
-    const user = await this.userRepository.findOne({ where: { email: dto.email } });
+    const normalizedEmail = this.normalizeEmail(dto.email);
+    const user = await this.userRepository.findOne({ where: { email: normalizedEmail } });
     if (!user) {
-      throw new NotFoundException('User not found');
+      return {
+        success: true,
+        message: 'If an account exists for this email, a password reset link has been sent.',
+      };
     }
 
-    const token = crypto.randomBytes(32).toString('hex');
-    user.password_reset_token = token;
+    const token = this.generateOpaqueToken();
+    user.password_reset_token = this.hashOpaqueToken(token);
     user.password_reset_expires_at = new Date(Date.now() + 1000 * 60 * 60);
     await this.userRepository.save(user);
 
@@ -311,13 +320,17 @@ export class AuthService {
       resetLink,
     );
 
-    return { success: true };
+    return {
+      success: true,
+      message: 'If an account exists for this email, a password reset link has been sent.',
+    };
   }
 
   async confirmPasswordReset(dto: PasswordResetConfirmDto) {
     validatePasswordStrength(dto.password);
+    const hashedToken = this.hashOpaqueToken(dto.token);
     const user = await this.userRepository.findOne({
-      where: { password_reset_token: dto.token },
+      where: { password_reset_token: In([hashedToken, dto.token]) },
     });
 
     if (!user || !user.password_reset_expires_at) {
@@ -325,7 +338,7 @@ export class AuthService {
     }
 
     if (user.password_reset_expires_at < new Date()) {
-      throw new BadRequestException('Reset token has expired');
+      throw new BadRequestException('Invalid or expired reset token');
     }
 
     user.password_hash = await bcrypt.hash(dto.password, 10);
@@ -354,8 +367,9 @@ export class AuthService {
   }
 
   async verifyOrganizationEmail(dto: VerifyOrganizationEmailDto) {
+    const hashedToken = this.hashOpaqueToken(dto.token);
     const organization = await this.organizationRepository.findOne({
-      where: { email_verification_token: dto.token },
+      where: { email_verification_token: In([hashedToken, dto.token]) },
     });
 
     if (!organization || !organization.email_verification_expires_at) {
@@ -363,7 +377,7 @@ export class AuthService {
     }
 
     if (organization.email_verification_expires_at < new Date()) {
-      throw new BadRequestException('Verification token has expired');
+      throw new BadRequestException('Invalid or expired verification token');
     }
 
     organization.email_verified = true;
@@ -405,11 +419,11 @@ export class AuthService {
     };
 
     const access_token = this.jwtService.sign(payload, {
-      expiresIn: '7d',
+      expiresIn: this.configService.get('AUTH_ACCESS_TOKEN_TTL', '15m'),
     });
 
     const refresh_token = this.jwtService.sign(payload, {
-      expiresIn: '30d',
+      expiresIn: this.configService.get('AUTH_REFRESH_TOKEN_TTL', '30d'),
     });
 
     await this.setRefreshTokenHash(user.id, refresh_token);
@@ -426,8 +440,8 @@ export class AuthService {
   }
 
   private async sendOrganizationEmailVerification(organization: Organization) {
-    const token = crypto.randomBytes(32).toString('hex');
-    organization.email_verification_token = token;
+    const token = this.generateOpaqueToken();
+    organization.email_verification_token = this.hashOpaqueToken(token);
     organization.email_verification_expires_at = new Date(Date.now() + 1000 * 60 * 60 * 24);
     organization.email_verified = false;
     await this.organizationRepository.save(organization);
@@ -472,5 +486,13 @@ export class AuthService {
 
   private normalizeEmail(email: string) {
     return email.trim().toLowerCase();
+  }
+
+  private generateOpaqueToken() {
+    return crypto.randomBytes(32).toString('hex');
+  }
+
+  private hashOpaqueToken(token: string) {
+    return crypto.createHash('sha256').update(token).digest('hex');
   }
 }

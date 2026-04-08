@@ -1,7 +1,7 @@
 import { Controller, Get, Post, Patch, Delete, Body, UseGuards, Request, Param, Query } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { GroupService } from '../services/group.service';
-import { CreateGroupDto, UpdateGroupDto, AddContactsToGroupDto } from '../dto/group.dto';
+import { CreateGroupDto, UpdateGroupDto, AddContactsToGroupDto, RemoveContactsFromGroupDto } from '../dto/group.dto';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 
 @ApiTags('Groups')
@@ -36,6 +36,11 @@ export class GroupController {
     return this.groupService.update(req.user.organization_id, id, dto);
   }
 
+  @Patch(':id/detach')
+  async detachGroupFromParent(@Request() req, @Param('id') id: string) {
+    return this.groupService.detachFromParent(req.user.organization_id, id);
+  }
+
   @Delete(':id')
   async deleteGroup(@Request() req, @Param('id') id: string) {
     return this.groupService.delete(req.user.organization_id, id);
@@ -44,6 +49,11 @@ export class GroupController {
   @Post(':id/contacts')
   async addContactsToGroup(@Request() req, @Param('id') id: string, @Body() body: AddContactsToGroupDto) {
     return this.groupService.addContacts(req.user.organization_id, id, body.contact_ids);
+  }
+
+  @Delete(':id/contacts')
+  async removeContactsFromGroup(@Request() req, @Param('id') id: string, @Body() body: RemoveContactsFromGroupDto) {
+    return this.groupService.removeContacts(req.user.organization_id, id, body.contact_ids);
   }
 
   @Get(':id/contacts')

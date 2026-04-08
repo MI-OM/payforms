@@ -1,6 +1,7 @@
 import { Controller, Get, Post, Body, Param, Query, HttpCode, HttpStatus, BadRequestException, NotFoundException, UnauthorizedException, Headers, Header, Req, Res } from '@nestjs/common';
 import { Response } from 'express';
 import { ApiTags } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 import { FormService } from '../../form/services/form.service';
 import { SubmissionService } from '../services/submission.service';
 import { PaymentService } from '../../payment/services/payment.service';
@@ -13,6 +14,7 @@ import { Request } from 'express';
 
 @ApiTags('Public')
 @Controller('public')
+@Throttle({ default: { limit: 90, ttl: 60000 } })
 export class PublicController {
   constructor(
     private formService: FormService,
@@ -141,6 +143,7 @@ export class PublicController {
   }
 
   @Get('payments/callback')
+  @Throttle({ default: { limit: 20, ttl: 60000 } })
   async handlePaymentCallback(
     @Res() res: Response,
     @Query('reference') reference?: string,
@@ -175,6 +178,7 @@ export class PublicController {
   }
 
   @Get('payments/verify')
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
   async verifyPublicPayment(
     @Query('reference') reference?: string,
     @Query('trxref') trxref?: string,
@@ -202,6 +206,7 @@ export class PublicController {
 
   @Post('forms/:slug/submit')
   @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
   async submitPublicForm(
     @Param('slug') slug: string,
     @Body() dto: PublicSubmitFormDto,

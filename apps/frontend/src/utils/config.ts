@@ -11,9 +11,19 @@ export const appConfig = {
 };
 
 /**
- * Get callback URL for Paystack redirect
- * Must use NEXT_PUBLIC_APP_URL from env, not window.location.origin (which varies by Vercel preview)
+ * Prefer the active tenant host for payment callbacks so users stay on the
+ * same subdomain/custom domain after Paystack returns.
  */
 export const getCallbackUrl = (path: string = '/payment/success'): string => {
+  if (typeof window !== 'undefined') {
+    const runtimeOrigin = window.location.origin;
+    const configuredHost = new URL(appConfig.appUrl).hostname.toLowerCase();
+    const runtimeHost = window.location.hostname.toLowerCase();
+
+    if (runtimeHost === configuredHost || runtimeHost.endsWith(`.${configuredHost}`)) {
+      return `${runtimeOrigin}${path}`;
+    }
+  }
+
   return `${appConfig.appUrl}${path}`;
 };

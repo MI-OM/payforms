@@ -9,6 +9,10 @@ import { Organization } from '../../organization/entities/organization.entity';
 import { NotificationService } from '../../notification/notification.service';
 import { ContactService } from './contact.service';
 
+type ContactWithPasswordSetupToken = Contact & {
+  password_setup_token?: string | null;
+};
+
 @Injectable()
 export class ContactImportService {
   constructor(
@@ -25,7 +29,7 @@ export class ContactImportService {
     private configService: ConfigService,
   ) {}
 
-  async sendPasswordSetupEmails(organizationId: string, contacts: Contact[]) {
+  async sendPasswordSetupEmails(organizationId: string, contacts: ContactWithPasswordSetupToken[]) {
     if (!contacts.length) {
       return;
     }
@@ -34,13 +38,14 @@ export class ContactImportService {
     const frontendUrl = this.configService.get<string>('FRONTEND_URL');
 
     for (const contact of contacts) {
-      if (!contact.email || !contact.must_reset_password || !contact.password_reset_token) {
+      const passwordSetupToken = contact.password_setup_token;
+      if (!contact.email || !contact.must_reset_password || !passwordSetupToken) {
         continue;
       }
 
       const resetLink = frontendUrl
-        ? `${frontendUrl.replace(/\/$/, '')}/contact-reset?token=${contact.password_reset_token}`
-        : `Use this token to reset your password: ${contact.password_reset_token}`;
+        ? `${frontendUrl.replace(/\/$/, '')}/contact-reset?token=${passwordSetupToken}`
+        : `Use this token to reset your password: ${passwordSetupToken}`;
 
       try {
         await this.notificationService.sendPasswordResetEmail(

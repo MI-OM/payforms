@@ -1,26 +1,21 @@
-import axios, { AxiosInstance, AxiosError } from 'axios';
+import axios, { AxiosInstance } from 'axios';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
 
 class ApiClient {
   private client: AxiosInstance;
   private token: string | null = null;
+  private isRefreshing = false;
+  private refreshPromise: Promise<string | null> | null = null;
 
   constructor() {
     this.client = axios.create({
       baseURL: API_BASE_URL,
+      withCredentials: true,
       headers: {
         'Content-Type': 'application/json',
       },
     });
-
-    // Load token from localStorage on init
-    if (typeof window !== 'undefined') {
-      this.token = localStorage.getItem('access_token');
-      if (this.token) {
-        this.setAuthToken(this.token);
-      }
-    }
 
     // Add request interceptor for auth
     this.client.interceptors.request.use(config => {
@@ -33,11 +28,23 @@ class ApiClient {
     // Add response interceptor for error handling
     this.client.interceptors.response.use(
       response => response,
-      error => {
+      async error => {
+        const originalRequest = error.config;
+
+        if (error.response?.status === 401 && !originalRequest?._retry && !this.isAuthRefreshRequest(originalRequest?.url)) {
+          originalRequest._retry = true;
+
+          const refreshedToken = await this.refreshSession();
+          if (refreshedToken) {
+            originalRequest.headers = originalRequest.headers || {};
+            originalRequest.headers.Authorization = `Bearer ${refreshedToken}`;
+            return this.client(originalRequest);
+          }
+        }
+
         if (error.response?.status === 401) {
-          // Clear token and redirect to login
           this.clearAuthToken();
-          if (typeof window !== 'undefined') {
+          if (typeof window !== 'undefined' && window.location.pathname !== '/login') {
             window.location.href = '/login';
           }
         }
@@ -48,17 +55,11 @@ class ApiClient {
 
   setAuthToken(token: string) {
     this.token = token;
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('access_token', token);
-    }
     this.client.defaults.headers.Authorization = `Bearer ${token}`;
   }
 
   clearAuthToken() {
     this.token = null;
-    if (typeof window !== 'undefined') {
-      localStorage.removeItem('access_token');
-    }
     delete this.client.defaults.headers.Authorization;
   }
 
@@ -83,6 +84,14 @@ class ApiClient {
   async login(email: string, password: string) {
     const response = await this.client.post('/auth/login', { email, password });
     return response.data;
+  }
+
+  async logout() {
+    try {
+      await this.client.post('/auth/logout');
+    } finally {
+      this.clearAuthToken();
+    }
   }
 
   async requestPasswordReset(email: string) {
@@ -216,6 +225,37 @@ class ApiClient {
       params: { page, limit },
     });
     return response.data;
+  }
+
+  private async refreshSession() {
+    if (this.refreshPromise) {
+      return this.refreshPromise;
+    }
+
+    this.isRefreshing = true;
+    this.refreshPromise = this.client
+      .post('/auth/refresh', {})
+      .then(response => {
+        const accessToken = response.data?.access_token ?? null;
+        if (accessToken) {
+          this.setAuthToken(accessToken);
+        }
+        return accessToken;
+      })
+      .catch(() => {
+        this.clearAuthToken();
+        return null;
+      })
+      .finally(() => {
+        this.isRefreshing = false;
+        this.refreshPromise = null;
+      });
+
+    return this.refreshPromise;
+  }
+
+  private isAuthRefreshRequest(url?: string) {
+    return typeof url === 'string' && url.includes('/auth/refresh');
   }
 }
 

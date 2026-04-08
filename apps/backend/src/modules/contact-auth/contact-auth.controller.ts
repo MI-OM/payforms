@@ -1,5 +1,6 @@
 import { Controller, Post, Body, Get, UseGuards, Request, Param, Res } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 import { ContactAuthService } from './contact-auth.service';
 import { PaymentService } from '../payment/services/payment.service';
 import {
@@ -10,43 +11,62 @@ import {
 } from './dto/contact-auth.dto';
 import { ContactJwtAuthGuard } from './guards/contact-jwt-auth.guard';
 import { Response } from 'express';
+import { ConfigService } from '@nestjs/config';
 
 @ApiTags('Contact Auth')
 @Controller('contact-auth')
+@Throttle({ default: { limit: 30, ttl: 60000 } })
 export class ContactAuthController {
   constructor(
     private contactAuthService: ContactAuthService,
     private paymentService: PaymentService,
+    private configService: ConfigService,
   ) {}
 
   @Post('login')
-  async login(@Body() dto: ContactLoginDto, @Request() req) {
-    return this.contactAuthService.login(dto, this.resolveRequestHost(req));
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
+  async login(@Body() dto: ContactLoginDto, @Request() req, @Res({ passthrough: true }) res: Response) {
+    const result = await this.contactAuthService.login(dto, this.resolveRequestHost(req));
+    this.setContactCookie(res, result.access_token);
+    return result;
   }
 
   @Post('set-password')
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
   async setPassword(@Body() dto: ContactSetPasswordDto) {
     return this.contactAuthService.setPassword(dto);
   }
 
   @Post('reset/request')
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
   async requestPasswordReset(@Body() dto: ContactPasswordResetRequestDto, @Request() req) {
     return this.contactAuthService.requestPasswordReset(dto, this.resolveRequestHost(req));
   }
 
   @Post('password-reset/request')
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
   async requestPasswordResetAlias(@Body() dto: ContactPasswordResetRequestDto, @Request() req) {
     return this.contactAuthService.requestPasswordReset(dto, this.resolveRequestHost(req));
   }
 
   @Post('reset/confirm')
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
   async confirmPasswordReset(@Body() dto: ContactResetPasswordDto) {
     return this.contactAuthService.confirmPasswordReset(dto);
   }
 
   @Post('password-reset/confirm')
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
   async confirmPasswordResetAlias(@Body() dto: ContactResetPasswordDto) {
     return this.contactAuthService.confirmPasswordReset(dto);
+  }
+
+  @Post('logout')
+  @UseGuards(ContactJwtAuthGuard)
+  @ApiBearerAuth()
+  async logout(@Res({ passthrough: true }) res: Response) {
+    this.clearContactCookie(res);
+    return { success: true };
   }
 
   @Get('me')
@@ -109,5 +129,52 @@ export class ContactAuthController {
       .trim();
 
     return firstValue || null;
+  }
+
+  private setContactCookie(res: Response, accessToken: string) {
+    const isProduction = this.configService.get('NODE_ENV') === 'production';
+    const cookieDomain = this.configService.get<string>('AUTH_COOKIE_DOMAIN') || undefined;
+    res.cookie('pf_contact_token', accessToken, {
+      httpOnly: true,
+      secure: isProduction,
+      sameSite: (isProduction ? 'none' : 'lax') as 'none' | 'lax',
+      path: '/',
+      domain: cookieDomain,
+      maxAge: this.parseDurationMs(this.configService.get('CONTACT_ACCESS_TOKEN_TTL', '8h'), 8 * 60 * 60 * 1000),
+    });
+  }
+
+  private clearContactCookie(res: Response) {
+    const isProduction = this.configService.get('NODE_ENV') === 'production';
+    const cookieDomain = this.configService.get<string>('AUTH_COOKIE_DOMAIN') || undefined;
+    res.clearCookie('pf_contact_token', {
+      httpOnly: true,
+      secure: isProduction,
+      sameSite: (isProduction ? 'none' : 'lax') as 'none' | 'lax',
+      path: '/',
+      domain: cookieDomain,
+    });
+  }
+
+  private parseDurationMs(value: string, fallback: number) {
+    const normalized = String(value || '').trim().toLowerCase();
+    const match = normalized.match(/^(\d+)(ms|s|m|h|d)?$/);
+    if (!match) {
+      return fallback;
+    }
+
+    const amount = Number(match[1]);
+    const unit = match[2] || 'ms';
+    const multiplier = unit === 'd'
+      ? 24 * 60 * 60 * 1000
+      : unit === 'h'
+        ? 60 * 60 * 1000
+        : unit === 'm'
+          ? 60 * 1000
+          : unit === 's'
+            ? 1000
+            : 1;
+
+    return amount * multiplier;
   }
 }

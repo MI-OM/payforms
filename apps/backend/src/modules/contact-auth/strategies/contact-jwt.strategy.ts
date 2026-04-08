@@ -11,7 +11,10 @@ export class ContactJwtStrategy extends PassportStrategy(Strategy, 'contact-jwt'
     private contactAuthService: ContactAuthService,
   ) {
     super({
-      jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
+      jwtFromRequest: ExtractJwt.fromExtractors([
+        ExtractJwt.fromAuthHeaderAsBearerToken(),
+        (req: any) => this.extractCookie(req, 'pf_contact_token'),
+      ]),
       ignoreExpiration: false,
       secretOrKey: configService.get('JWT_SECRET'),
     });
@@ -33,5 +36,22 @@ export class ContactJwtStrategy extends PassportStrategy(Strategy, 'contact-jwt'
       organization_id: payload.organization_id,
       role: payload.role,
     };
+  }
+
+  private extractCookie(req: any, name: string) {
+    const header = req?.headers?.cookie;
+    if (!header) {
+      return null;
+    }
+
+    const cookies = String(header).split(';');
+    for (const cookie of cookies) {
+      const [key, ...valueParts] = cookie.trim().split('=');
+      if (key === name) {
+        return decodeURIComponent(valueParts.join('='));
+      }
+    }
+
+    return null;
   }
 }

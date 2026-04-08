@@ -1,7 +1,7 @@
-import { Injectable, UnauthorizedException, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, UnauthorizedException, BadRequestException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, In } from 'typeorm';
 import * as bcrypt from 'bcrypt';
 import * as crypto from 'crypto';
 import { Contact } from '../contact/entities/contact.entity';
@@ -72,6 +72,8 @@ export class ContactAuthService {
       email: contact.email,
       organization_id: contact.organization_id,
       role: 'CONTACT',
+    }, {
+      expiresIn: this.configService.get('CONTACT_ACCESS_TOKEN_TTL', '8h'),
     });
 
     return {
@@ -110,13 +112,16 @@ export class ContactAuthService {
       relations: ['organization'],
     });
     if (!contact) {
-      throw new NotFoundException('Contact not found');
+      return {
+        success: true,
+        message: 'If the contact account exists, a password reset link has been sent.',
+      };
     }
 
-    const token = crypto.randomBytes(32).toString('hex');
+    const token = this.generateOpaqueToken();
     const expiresAt = new Date(Date.now() + 1000 * 60 * 60);
 
-    contact.password_reset_token = token;
+    contact.password_reset_token = this.hashOpaqueToken(token);
     contact.password_reset_expires_at = expiresAt;
     contact.must_reset_password = true;
     await this.contactRepository.save(contact);
@@ -139,20 +144,24 @@ export class ContactAuthService {
       resetLink,
     );
 
-    return { success: true };
+    return {
+      success: true,
+      message: 'If the contact account exists, a password reset link has been sent.',
+    };
   }
 
   async confirmPasswordReset(dto: ContactResetPasswordDto) {
     validatePasswordStrength(dto.password);
+    const hashedToken = this.hashOpaqueToken(dto.token);
     const contact = await this.contactRepository.findOne({
-      where: { password_reset_token: dto.token },
+      where: { password_reset_token: In([hashedToken, dto.token]) },
     });
     if (!contact || !contact.password_reset_expires_at) {
       throw new BadRequestException('Invalid or expired reset token');
     }
 
     if (contact.password_reset_expires_at < new Date()) {
-      throw new BadRequestException('Reset token has expired');
+      throw new BadRequestException('Invalid or expired reset token');
     }
 
     contact.password_hash = await bcrypt.hash(dto.password, 10);
@@ -165,6 +174,14 @@ export class ContactAuthService {
 
   private normalizeEmail(email: string) {
     return email.trim().toLowerCase();
+  }
+
+  private generateOpaqueToken() {
+    return crypto.randomBytes(32).toString('hex');
+  }
+
+  private hashOpaqueToken(token: string) {
+    return crypto.createHash('sha256').update(token).digest('hex');
   }
 
   private normalizeOptionalValue(value?: string | null) {
