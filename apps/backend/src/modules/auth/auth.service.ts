@@ -24,6 +24,7 @@ import { validatePasswordStrength } from '../../common/security/password-policy'
 import { TenantResolverService } from '../tenant/tenant-resolver.service';
 
 const SUBDOMAIN_PATTERN = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
+const STAFF_INVITE_EXPIRY_DAYS = 7;
 
 @Injectable()
 export class AuthService {
@@ -133,8 +134,7 @@ export class AuthService {
         <p>Hello ${savedInvite.first_name},</p>
         <p>You have been invited to join ${organization?.name || 'an organization'} on Payforms.</p>
         ${inviteLink ? `<p>Accept invitation: <a href="${inviteLink}">${inviteLink}</a></p>` : ''}
-        <p>Invitation token: <strong>${savedInvite.token}</strong></p>
-        <p>This invitation expires on ${savedInvite.expires_at?.toISOString() || 'N/A'}.</p>
+        <p>This invitation link expires in ${STAFF_INVITE_EXPIRY_DAYS} days.</p>
       `;
 
       await this.notificationService.sendEmail([savedInvite.email], subject, html);
@@ -149,7 +149,7 @@ export class AuthService {
       first_name: savedInvite.first_name,
       last_name: savedInvite.last_name,
       role: savedInvite.role,
-      token: savedInvite.token,
+      invite_link: inviteLink || null,
       expires_at: savedInvite.expires_at,
       created_at: savedInvite.created_at,
       invite_email_sent: inviteEmailSent,
@@ -349,13 +349,15 @@ export class AuthService {
     const frontendUrl = this.configService.get('FRONTEND_URL');
     const resetLink = frontendUrl
       ? `${frontendUrl.replace(/\/$/, '')}/reset-password?token=${token}`
-      : `Use this token to reset your password: ${token}`;
+      : '';
 
-    await this.notificationService.sendPasswordResetEmail(
-      organization,
-      user.email,
-      resetLink,
-    );
+    if (!resetLink) {
+      throw new NotFoundException('FRONTEND_URL is required to send password reset emails');
+    }
+
+    await this.notificationService.sendPasswordResetEmail(organization, user.email, resetLink, {
+      expiresInText: '1 hour',
+    });
 
     return {
       success: true,
@@ -486,7 +488,11 @@ export class AuthService {
     const frontendUrl = this.configService.get('FRONTEND_URL');
     const verificationLink = frontendUrl
       ? `${frontendUrl.replace(/\/$/, '')}/verify-organization-email?token=${token}`
-      : `Use this token to verify your organization email: ${token}`;
+      : '';
+
+    if (!verificationLink) {
+      throw new NotFoundException('FRONTEND_URL is required to send organization email verification');
+    }
 
     await this.notificationService.sendOrganizationEmailVerificationEmail(
       organization,

@@ -45,14 +45,20 @@ export class ContactImportService {
 
       const resetLink = frontendUrl
         ? `${frontendUrl.replace(/\/$/, '')}/contact-reset?token=${passwordSetupToken}`
-        : `Use this token to reset your password: ${passwordSetupToken}`;
+        : '';
+
+      if (!resetLink) {
+        console.warn('Skipping contact password setup email because FRONTEND_URL is not configured');
+        continue;
+      }
 
       try {
-        await this.notificationService.sendPasswordResetEmail(
-          organization,
-          contact.email,
-          resetLink,
-        );
+        await this.notificationService.sendPasswordResetEmail(organization, contact.email, resetLink, {
+          heading: 'Contact Invitation',
+          intro: 'Your account has been created. Use the link below to set your password and activate access.',
+          expiresInText: '7 days',
+          actionLabel: 'Set your password',
+        });
       } catch (error) {
         console.warn('Failed to send contact password setup email:', error);
       }

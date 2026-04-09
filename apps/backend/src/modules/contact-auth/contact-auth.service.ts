@@ -131,7 +131,11 @@ export class ContactAuthService {
     const frontendUrl = this.configService.get('FRONTEND_URL');
     const resetLink = frontendUrl
       ? `${frontendUrl.replace(/\/$/, '')}/contact-reset?token=${token}`
-      : `Use this token to reset your password: ${token}`;
+      : '';
+
+    if (!resetLink) {
+      throw new BadRequestException('FRONTEND_URL is required to send contact password reset emails');
+    }
 
     const organization = contact.organization ||
       (await this.organizationRepository.findOne({ where: { id: contact.organization_id } }));
@@ -140,11 +144,11 @@ export class ContactAuthService {
       throw new BadRequestException('Contact email is required to send password reset');
     }
 
-    await this.notificationService.sendPasswordResetEmail(
-      organization,
-      contact.email,
-      resetLink,
-    );
+    await this.notificationService.sendPasswordResetEmail(organization, contact.email, resetLink, {
+      heading: 'Contact Password Reset',
+      intro: 'We received a request to reset your contact account password.',
+      expiresInText: '1 hour',
+    });
 
     return {
       success: true,

@@ -572,15 +572,30 @@ export class NotificationService {
     return this.mapInternalNotification(saved, userId);
   }
 
-  async sendPasswordResetEmail(organization: Organization | null, recipientEmail: string, resetLink: string) {
+  async sendPasswordResetEmail(
+    organization: Organization | null,
+    recipientEmail: string,
+    resetLink: string,
+    options?: {
+      heading?: string;
+      intro?: string;
+      expiresInText?: string;
+      actionLabel?: string;
+    },
+  ) {
     const subject = `${organization?.name || 'Payforms'} Password Reset Request`;
+    const heading = options?.heading || 'Password Reset Request';
+    const intro = options?.intro || 'You have requested to reset your password.';
+    const actionLabel = options?.actionLabel || 'Reset password';
     const html = `
-      <p>You have requested to reset your password.</p>
-      <p>Please use the link below to reset your password:</p>
-      <p><a href="${resetLink}">${resetLink}</a></p>
+      <p>${intro}</p>
+      <p>Please use the link below to continue:</p>
+      <p><a href="${resetLink}">${actionLabel}</a></p>
+      <p>${resetLink}</p>
+      ${options?.expiresInText ? `<p>This link expires in ${options.expiresInText}.</p>` : ''}
       <p>If you did not request this, you can ignore this email.</p>
     `;
-    return this.sendEmail([recipientEmail], subject, html);
+    return this.sendEmail([recipientEmail], `${organization?.name || 'Payforms'} ${heading}`, html);
   }
 
   async sendOrganizationEmailVerificationEmail(organization: Organization, recipientEmail: string, verificationLink: string) {
