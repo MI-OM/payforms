@@ -56,8 +56,9 @@ async function bootstrap() {
       const isTenantBaseDomainOrigin =
         !!tenantBaseDomain &&
         new RegExp(`^https?:\\/\\/([a-z0-9-]+\\.)*${tenantBaseDomain.replace(/\./g, '\\.')}$`, 'i').test(origin);
+      const isPayformsApi = /^https:\/\/api\.payforms\.com\.ng$/.test(origin);
 
-      if (isLocalhostOrigin || isVercelPreview || isTenantBaseDomainOrigin) {
+      if (isLocalhostOrigin || isVercelPreview || isTenantBaseDomainOrigin || isPayformsApi) {
         callback(null, true);
         return;
       }
