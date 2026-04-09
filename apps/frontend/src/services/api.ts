@@ -2,6 +2,15 @@ import axios, { AxiosInstance } from 'axios';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
 
+export interface AdminLoginResponse {
+  access_token?: string;
+  refresh_token?: string;
+  user?: any;
+  requires_two_factor?: boolean;
+  challenge_token?: string;
+  challenge_expires_in?: string;
+}
+
 class ApiClient {
   private client: AxiosInstance;
   private token: string | null = null;
@@ -83,7 +92,16 @@ class ApiClient {
 
   async login(email: string, password: string) {
     const response = await this.client.post('/auth/login', { email, password });
-    return response.data;
+    return response.data as AdminLoginResponse;
+  }
+
+  async verifyTwoFactorLogin(challengeToken: string, code?: string, recoveryCode?: string) {
+    const response = await this.client.post('/auth/2fa/verify-login', {
+      challenge_token: challengeToken,
+      code,
+      recovery_code: recoveryCode,
+    });
+    return response.data as AdminLoginResponse;
   }
 
   async logout() {

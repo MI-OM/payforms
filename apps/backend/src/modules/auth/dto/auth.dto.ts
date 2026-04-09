@@ -132,3 +132,37 @@ export class VerifyOrganizationEmailDto {
   @IsString()
   token: string;
 }
+
+export class EnableTwoFactorDto {
+  @ApiProperty({ example: '123456' })
+  @IsString()
+  code: string;
+}
+
+export class VerifyTwoFactorLoginDto {
+  @ApiProperty({ example: 'two-factor-challenge-token' })
+  @IsString()
+  challenge_token: string;
+
+  @ApiPropertyOptional({ example: '123456' })
+  @IsOptional()
+  @IsString()
+  code?: string;
+
+  @ApiPropertyOptional({ example: 'ABCD-EFGH' })
+  @IsOptional()
+  @IsString()
+  recovery_code?: string;
+}
+
+export class TwoFactorRecoveryActionDto {
+  @ApiPropertyOptional({ example: '123456' })
+  @IsOptional()
+  @IsString()
+  code?: string;
+
+  @ApiPropertyOptional({ example: 'ABCD-EFGH' })
+  @IsOptional()
+  @IsString()
+  recovery_code?: string;
+}

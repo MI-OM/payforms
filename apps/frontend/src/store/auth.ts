@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { apiClient } from '../services/api';
+import { apiClient, type AdminLoginResponse } from '../services/api';
 
 interface User {
   id: string;
@@ -15,7 +15,8 @@ interface AuthStore {
   isLoading: boolean;
   error: string | null;
   register: (orgName: string, email: string, password: string, title?: string, designation?: string) => Promise<void>;
-  login: (email: string, password: string) => Promise<void>;
+  login: (email: string, password: string) => Promise<AdminLoginResponse>;
+  verifyTwoFactorLogin: (challengeToken: string, code?: string, recoveryCode?: string) => Promise<void>;
   logout: () => Promise<void>;
   fetchCurrentUser: () => Promise<void>;
 }
@@ -44,11 +45,33 @@ export const useAuthStore = create<AuthStore>((set) => ({
     set({ isLoading: true, error: null });
     try {
       const response = await apiClient.login(email, password);
-      apiClient.setAuthToken(response.access_token);
-      set({ user: response.user, isLoading: false });
+      if (response.access_token) {
+        apiClient.setAuthToken(response.access_token);
+        set({ user: response.user, isLoading: false });
+      } else {
+        set({ isLoading: false });
+      }
+      return response;
     } catch (error: any) {
       set({
         error: error.response?.data?.message || 'Login failed',
+        isLoading: false,
+      });
+      throw error;
+    }
+  },
+
+  verifyTwoFactorLogin: async (challengeToken: string, code?: string, recoveryCode?: string) => {
+    set({ isLoading: true, error: null });
+    try {
+      const response = await apiClient.verifyTwoFactorLogin(challengeToken, code, recoveryCode);
+      if (response.access_token) {
+        apiClient.setAuthToken(response.access_token);
+      }
+      set({ user: response.user, isLoading: false });
+    } catch (error: any) {
+      set({
+        error: error.response?.data?.message || 'Two-factor verification failed',
         isLoading: false,
       });
       throw error;

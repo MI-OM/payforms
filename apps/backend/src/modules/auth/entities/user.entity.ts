@@ -44,6 +44,21 @@ export class User {
   @Column({ type: 'timestamp', nullable: true })
   password_reset_expires_at: Date | null;
 
+  @Column({ type: 'boolean', default: false })
+  two_factor_enabled: boolean;
+
+  @Column({ type: 'text', nullable: true })
+  two_factor_secret: string | null;
+
+  @Column({ type: 'text', nullable: true })
+  two_factor_temp_secret: string | null;
+
+  @Column({ type: 'timestamp', nullable: true })
+  two_factor_temp_expires_at: Date | null;
+
+  @Column({ type: 'text', nullable: true })
+  two_factor_recovery_codes: string | null;
+
   @CreateDateColumn()
   created_at: Date;
 

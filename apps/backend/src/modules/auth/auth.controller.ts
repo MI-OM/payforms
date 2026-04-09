@@ -1,6 +1,19 @@
 import { Controller, Post, Body, Get, Patch, UseGuards, Request, Res, UnauthorizedException } from '@nestjs/common';
 import { AuthService } from './auth.service';
-import { RegisterDto, LoginDto, RefreshTokenDto, InviteUserDto, AcceptInviteDto, UpdateProfileDto, PasswordResetRequestDto, PasswordResetConfirmDto, VerifyOrganizationEmailDto } from './dto/auth.dto';
+import {
+  RegisterDto,
+  LoginDto,
+  RefreshTokenDto,
+  InviteUserDto,
+  AcceptInviteDto,
+  UpdateProfileDto,
+  PasswordResetRequestDto,
+  PasswordResetConfirmDto,
+  VerifyOrganizationEmailDto,
+  EnableTwoFactorDto,
+  VerifyTwoFactorLoginDto,
+  TwoFactorRecoveryActionDto,
+} from './dto/auth.dto';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { RolesGuard } from './guards/roles.guard';
 import { Roles } from './decorators/roles.decorator';
@@ -30,6 +43,16 @@ export class AuthController {
   @Throttle({ default: { limit: 5, ttl: 60000 } })
   async login(@Body() dto: LoginDto, @Request() req, @Res({ passthrough: true }) res: Response) {
     const result = await this.authService.login(dto, this.resolveRequestHost(req));
+    if ('access_token' in result && 'refresh_token' in result) {
+      this.setAuthCookies(res, result.access_token, result.refresh_token);
+    }
+    return result;
+  }
+
+  @Post('2fa/verify-login')
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
+  async verifyTwoFactorLogin(@Body() dto: VerifyTwoFactorLoginDto, @Res({ passthrough: true }) res: Response) {
+    const result = await this.authService.verifyTwoFactorLogin(dto);
     this.setAuthCookies(res, result.access_token, result.refresh_token);
     return result;
   }
@@ -121,6 +144,41 @@ export class AuthController {
   @ApiBearerAuth()
   async getCurrentUser(@Request() req) {
     return this.authService.getProfile(req.user.id);
+  }
+
+  @Get('2fa/status')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  async getTwoFactorStatus(@Request() req) {
+    return this.authService.getTwoFactorStatus(req.user.id);
+  }
+
+  @Post('2fa/setup')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  async setupTwoFactor(@Request() req) {
+    return this.authService.initiateTwoFactorSetup(req.user.id);
+  }
+
+  @Post('2fa/enable')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  async enableTwoFactor(@Request() req, @Body() dto: EnableTwoFactorDto) {
+    return this.authService.enableTwoFactor(req.user.id, dto);
+  }
+
+  @Post('2fa/disable')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  async disableTwoFactor(@Request() req, @Body() dto: TwoFactorRecoveryActionDto) {
+    return this.authService.disableTwoFactor(req.user.id, dto);
+  }
+
+  @Post('2fa/recovery-codes/regenerate')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  async regenerateTwoFactorRecoveryCodes(@Request() req, @Body() dto: TwoFactorRecoveryActionDto) {
+    return this.authService.regenerateTwoFactorRecoveryCodes(req.user.id, dto);
   }
 
   private setAuthCookies(res: Response, accessToken: string, refreshToken: string) {

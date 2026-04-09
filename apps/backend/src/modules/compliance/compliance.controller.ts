@@ -1,72 +1,92 @@
-import { Controller, Get, Post, Body, Param } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Param, Post, Request, UseGuards } from '@nestjs/common';
 import { ComplianceService } from './compliance.service';
+import { ApiBearerAuth } from '@nestjs/swagger';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../auth/guards/roles.guard';
+import { Roles } from '../auth/decorators/roles.decorator';
 
 @Controller('compliance')
+@UseGuards(JwtAuthGuard, RolesGuard)
+@ApiBearerAuth()
+@Roles('ADMIN')
 export class ComplianceController {
   constructor(private complianceService: ComplianceService) {}
 
   @Post('export')
   async requestDataExport(
-    @Body() body: { organizationId: string; contactId: string; requestedBy: string },
+    @Request() req,
+    @Body() body?: { contactId?: string },
   ) {
+    if (!body?.contactId) {
+      throw new BadRequestException('contactId is required');
+    }
+
     const request = await this.complianceService.requestDataExport(
-      body.organizationId,
+      req.user.organization_id,
       body.contactId,
-      body.requestedBy,
+      req.user.id,
     );
     return { request };
   }
 
   @Post('delete')
   async requestDataDeletion(
-    @Body() body: { organizationId: string; contactId: string; requestedBy: string },
+    @Request() req,
+    @Body() body?: { contactId?: string },
   ) {
+    if (!body?.contactId) {
+      throw new BadRequestException('contactId is required');
+    }
+
     const request = await this.complianceService.requestDataDeletion(
-      body.organizationId,
+      req.user.organization_id,
       body.contactId,
-      body.requestedBy,
+      req.user.id,
     );
     return { request };
   }
 
   @Get('export/:contactId/:organizationId')
   async exportData(
+    @Request() req,
     @Param('contactId') contactId: string,
-    @Param('organizationId') organizationId: string,
+    @Param('organizationId') _organizationId: string,
   ) {
-    const csv = await this.complianceService.exportContactData(contactId, organizationId);
+    const csv = await this.complianceService.exportContactData(contactId, req.user.organization_id);
     return { data: csv };
   }
 
   @Get('retention-policy/:organizationId')
-  async getRetentionPolicy(@Param('organizationId') organizationId: string) {
-    const policy = await this.complianceService.getDataRetentionPolicy(organizationId);
+  async getRetentionPolicy(@Request() req, @Param('organizationId') _organizationId: string) {
+    const policy = await this.complianceService.getDataRetentionPolicy(req.user.organization_id);
     return { policy };
   }
 
   @Post('retention-policy/:organizationId')
   async updateRetentionPolicy(
+    @Request() req,
     @Param('organizationId') organizationId: string,
     @Body() body: any,
   ) {
     const policy = await this.complianceService.updateDataRetentionPolicy(
-      organizationId,
+      req.user.organization_id,
       body,
     );
     return { policy };
   }
 
   @Post('purge/:organizationId')
-  async applyRetentionPolicies(@Param('organizationId') organizationId: string) {
-    const result = await this.complianceService.applyDataRetentionPolicies(organizationId);
+  async applyRetentionPolicies(@Request() req, @Param('organizationId') _organizationId: string) {
+    const result = await this.complianceService.applyDataRetentionPolicies(req.user.organization_id);
     return { result };
   }
 
   @Get('audit-trail/:organizationId')
   async getAuditTrail(
-    @Param('organizationId') organizationId: string,
+    @Request() req,
+    @Param('organizationId') _organizationId: string,
   ) {
-    const trail = await this.complianceService.getComplianceAuditTrail(organizationId, 90);
+    const trail = await this.complianceService.getComplianceAuditTrail(req.user.organization_id, 90);
     return { trail };
   }
 }

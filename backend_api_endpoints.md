@@ -17,6 +17,12 @@ Every endpoint below includes:
 - `PATCH /groups/:id/detach`
 - `GET /forms/:id/groups`
 - `GET /auth/organization-email/status`
+- `GET /auth/2fa/status`
+- `POST /auth/2fa/setup`
+- `POST /auth/2fa/enable`
+- `POST /auth/2fa/disable`
+- `POST /auth/2fa/verify-login`
+- `POST /auth/2fa/recovery-codes/regenerate`
 - `POST /contact-auth/logout`
 - `POST /contacts/imports/csv/validate`
 - `POST /contacts/imports/csv/commit`
@@ -40,6 +46,8 @@ Every endpoint below includes:
 - `POST /auth/login`
 - `POST /auth/refresh`
   Updated to support cookie-backed auth sessions in addition to token responses.
+- `POST /auth/login`
+  Updated to return a two-factor challenge when staff 2FA is enabled.
 - `POST /contact-auth/login`
   Updated to support contact auth cookie session.
 
@@ -61,7 +69,12 @@ Every endpoint below includes:
 
 ### `POST /auth/login`
 - Parameters: Body `{ email, password, organization_id?, organization_subdomain?, organization_domain? }`
-- How to use: Admin/staff login. On tenant subdomains or custom domains, backend binds login to the request host. On shared/root login screens, FE can provide organization context when needed. Response returns auth payload and also sets admin auth cookies.
+- How to use: Admin/staff login. On tenant subdomains or custom domains, backend binds login to the request host. On shared/root login screens, FE can provide organization context when needed. If 2FA is disabled, response returns auth payload and also sets admin auth cookies. If 2FA is enabled, response returns `{ requires_two_factor: true, challenge_token, challenge_expires_in, user }` and FE must call `POST /auth/2fa/verify-login` before treating the session as authenticated.
+
+### `POST /auth/2fa/verify-login`
+- Status: New
+- Parameters: Body `{ challenge_token, code?, recovery_code? }`
+- How to use: Complete the second step of an admin/staff login. FE should send the six-digit authenticator code or one recovery code. Successful response returns auth payload and sets admin auth cookies.
 
 ### `POST /auth/invite`
 - Parameters: Auth required. Body `{ first_name, last_name, email }`
@@ -111,6 +124,31 @@ Every endpoint below includes:
 ### `GET /auth/me`
 - Parameters: Auth required
 - How to use: FE app bootstrap endpoint for current admin/staff session.
+
+### `GET /auth/2fa/status`
+- Status: New
+- Parameters: Auth required
+- How to use: Fetch current 2FA state for the authenticated admin/staff user. Response includes `enabled`, `setup_pending`, and `recovery_codes_remaining`.
+
+### `POST /auth/2fa/setup`
+- Status: New
+- Parameters: Auth required
+- How to use: Start 2FA enrollment for the authenticated admin/staff user. Response returns `secret`, `manual_entry_key`, `otpauth_url`, and `expires_at`. FE should render the secret as a QR code or show the manual key.
+
+### `POST /auth/2fa/enable`
+- Status: New
+- Parameters: Auth required. Body `{ code }`
+- How to use: Confirm the authenticator app pairing using the current six-digit code. Response returns `recovery_codes`; FE should show them once and require the user to save them.
+
+### `POST /auth/2fa/disable`
+- Status: New
+- Parameters: Auth required. Body `{ code? , recovery_code? }`
+- How to use: Disable 2FA for the authenticated admin/staff user. FE must send either a current authenticator code or an unused recovery code.
+
+### `POST /auth/2fa/recovery-codes/regenerate`
+- Status: New
+- Parameters: Auth required. Body `{ code? , recovery_code? }`
+- How to use: Replace all existing recovery codes after verifying the current user with either a live authenticator code or an unused recovery code.
 
 ## 2. Organization APIs
 
@@ -490,6 +528,11 @@ Every endpoint below includes:
 - Parameters: Auth required. Query `start_date?`, `end_date?`
 - How to use: Fetch per-form performance and conversion metrics.
 
+### `GET /reports/forms/:formId/submission-summary`
+- Status: New
+- Parameters: Auth required. Path `formId`. Query `start_date?`, `end_date?`
+- How to use: Fetch one form's submission source totals, payment breakdown, and field-level response summaries for both registered contacts and public users.
+
 ### `GET /reports/groups/contributions`
 - Status: New
 - Parameters: Auth required. Query `form_id?`, `start_date?`, `end_date?`
@@ -536,12 +579,12 @@ Every endpoint below includes:
 ## 17. Compliance APIs
 
 ### `POST /compliance/export`
-- Parameters: Body `{ organizationId, contactId, requestedBy }`
-- How to use: Create a data export request for one contact.
+- Parameters: Auth required. Body `{ contactId }`
+- How to use: Create a data export request for one contact. Backend derives organization and requester from the authenticated admin.
 
 ### `POST /compliance/delete`
-- Parameters: Body `{ organizationId, contactId, requestedBy }`
-- How to use: Create a data deletion request for one contact.
+- Parameters: Auth required. Body `{ contactId }`
+- How to use: Create a data deletion request for one contact. Backend derives organization and requester from the authenticated admin.
 
 ### `GET /compliance/export/:contactId/:organizationId`
 - Parameters: Path `contactId`, `organizationId`

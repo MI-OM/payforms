@@ -1,4 +1,4 @@
-import { Controller, Get, Query, Res, UseGuards, Request } from '@nestjs/common';
+import { Controller, Get, Param, Query, Res, UseGuards, Request } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { ReportService } from '../services/report.service';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
@@ -36,6 +36,16 @@ export class ReportController {
     @Query('end_date') endDate?: string,
   ) {
     return this.reportService.getFormPerformance(req.user.organization_id, startDate, endDate);
+  }
+
+  @Get('forms/:formId/submission-summary')
+  async getFormSubmissionSummary(
+    @Request() req,
+    @Param('formId') formId: string,
+    @Query('start_date') startDate?: string,
+    @Query('end_date') endDate?: string,
+  ) {
+    return this.reportService.getFormSubmissionSummary(req.user.organization_id, formId, startDate, endDate);
   }
 
   @Get('groups/contributions')

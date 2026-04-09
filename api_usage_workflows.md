@@ -551,10 +551,10 @@ For each workflow below, FE gets:
   - `POST /compliance/purge/:organizationId`
   - `GET /compliance/audit-trail/:organizationId`
 - Parameters:
-  - Export/delete body `{ organizationId, contactId, requestedBy }`
+  - Export/delete body `{ contactId }`
   - Retention update body `policy object`
 - How to use:
-  - FE compliance tools can request export/delete, inspect policy, update retention policy, and review compliance trail.
+  - FE compliance tools can request export/delete, inspect policy, update retention policy, and review compliance trail. Backend derives organization and requester from the authenticated admin session.
 
 ## FE Integration Notes
 

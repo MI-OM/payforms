@@ -330,6 +330,239 @@ export class ReportService {
     };
   }
 
+  async getFormSubmissionSummary(organizationId: string, formId: string, startDate?: string, endDate?: string) {
+    const { start, end } = this.parseDateRange(startDate, endDate);
+
+    const form = await this.formRepository.findOne({
+      where: { id: formId, organization_id: organizationId },
+      relations: ['fields'],
+    });
+
+    if (!form) {
+      throw new BadRequestException('Form not found');
+    }
+
+    const fields = [...(form.fields ?? [])].sort((a, b) => a.order_index - b.order_index);
+    const fieldLabels = new Set(fields.map(field => field.label));
+
+    const submissionQuery = this.submissionRepository
+      .createQueryBuilder('submission')
+      .leftJoinAndSelect('submission.contact', 'contact')
+      .where('submission.organization_id = :organizationId', { organizationId })
+      .andWhere('submission.form_id = :formId', { formId });
+
+    if (start) {
+      submissionQuery.andWhere('submission.created_at >= :start', { start });
+    }
+    if (end) {
+      submissionQuery.andWhere('submission.created_at <= :end', { end });
+    }
+
+    const submissions = await submissionQuery
+      .orderBy('submission.created_at', 'DESC')
+      .getMany();
+
+    const paymentQuery = this.paymentRepository
+      .createQueryBuilder('payment')
+      .innerJoinAndSelect('payment.submission', 'submission')
+      .where('payment.organization_id = :organizationId', { organizationId })
+      .andWhere('submission.form_id = :formId', { formId });
+
+    if (start) {
+      paymentQuery.andWhere('payment.created_at >= :start', { start });
+    }
+    if (end) {
+      paymentQuery.andWhere('payment.created_at <= :end', { end });
+    }
+
+    const payments = await paymentQuery.getMany();
+
+    const submissionSources = submissions.reduce(
+      (acc, submission) => {
+        if (submission.contact_id) {
+          acc.registered_contacts += 1;
+        } else {
+          acc.public_users += 1;
+        }
+        return acc;
+      },
+      { registered_contacts: 0, public_users: 0 },
+    );
+
+    const paymentSources = {
+      registered_contacts: { count: 0, amount_total: 0, paid_amount_total: 0 },
+      public_users: { count: 0, amount_total: 0, paid_amount_total: 0 },
+    };
+
+    const paymentBreakdownMap = new Map(
+      ['PAID', 'PENDING', 'FAILED', 'PARTIAL'].map(status => [
+        status,
+        { status, count: 0, amount_total: 0 },
+      ]),
+    );
+
+    for (const payment of payments) {
+      const status = String(payment.status || 'PENDING').toUpperCase();
+      const amount = Number(payment.amount || 0);
+      const sourceKey = payment.submission?.contact_id ? 'registered_contacts' : 'public_users';
+      const existing = paymentBreakdownMap.get(status) ?? { status, count: 0, amount_total: 0 };
+
+      existing.count += 1;
+      existing.amount_total += amount;
+      paymentBreakdownMap.set(status, existing);
+
+      paymentSources[sourceKey].count += 1;
+      paymentSources[sourceKey].amount_total += amount;
+      if (status === 'PAID') {
+        paymentSources[sourceKey].paid_amount_total += amount;
+      }
+    }
+
+    const fieldSummaries = fields.map(field =>
+      this.buildFieldSummary(field.label, field.type, field.required, field.options, field.order_index, submissions.map(submission => submission.data?.[field.label])),
+    ).map((summary, index) => ({
+      field_id: fields[index].id,
+      ...summary,
+    }));
+
+    const unmappedFieldLabels = Array.from(
+      submissions.reduce((labels, submission) => {
+        Object.keys(submission.data || {}).forEach(label => {
+          if (!fieldLabels.has(label)) {
+            labels.add(label);
+          }
+        });
+        return labels;
+      }, new Set<string>()),
+    ).sort((a, b) => a.localeCompare(b));
+
+    const unmappedFields = unmappedFieldLabels.map(label => ({
+      field_id: null,
+      ...this.buildFieldSummary(label, 'UNKNOWN', false, null, null, submissions.map(submission => submission.data?.[label])),
+    }));
+
+    const paidAmountTotal = paymentBreakdownMap.get('PAID')?.amount_total ?? 0;
+    const pendingAmountTotal = paymentBreakdownMap.get('PENDING')?.amount_total ?? 0;
+    const failedAmountTotal = paymentBreakdownMap.get('FAILED')?.amount_total ?? 0;
+    const partialAmountTotal = paymentBreakdownMap.get('PARTIAL')?.amount_total ?? 0;
+
+    return {
+      range: {
+        start: start?.toISOString() ?? null,
+        end: end?.toISOString() ?? null,
+      },
+      form: {
+        id: form.id,
+        title: form.title,
+        slug: form.slug,
+        category: form.category,
+        payment_type: form.payment_type,
+        amount: form.amount === null || form.amount === undefined ? null : Number(form.amount),
+        access_mode: form.access_mode,
+        is_active: form.is_active,
+        created_at: form.created_at.toISOString(),
+      },
+      totals: {
+        submissions: submissions.length,
+        registered_contact_submissions: submissionSources.registered_contacts,
+        public_submissions: submissionSources.public_users,
+        payments: payments.length,
+        amount_total: payments.reduce((sum, payment) => sum + Number(payment.amount || 0), 0),
+        paid_amount_total: paidAmountTotal,
+        pending_amount_total: pendingAmountTotal,
+        failed_amount_total: failedAmountTotal,
+        partial_amount_total: partialAmountTotal,
+      },
+      payment_breakdown: Array.from(paymentBreakdownMap.values()),
+      payment_sources: paymentSources,
+      field_summaries: fieldSummaries,
+      unmapped_fields: unmappedFields,
+      latest_submission_at: submissions[0]?.created_at?.toISOString() ?? null,
+      latest_payment_at: payments
+        .slice()
+        .sort((left, right) => right.created_at.getTime() - left.created_at.getTime())[0]?.created_at?.toISOString() ?? null,
+    };
+  }
+
+  private buildFieldSummary(
+    label: string,
+    type: Form['fields'][number]['type'] | 'UNKNOWN',
+    required: boolean,
+    options: string[] | null,
+    orderIndex: number | null,
+    rawValues: unknown[],
+  ) {
+    const normalizedValues = rawValues
+      .map(value => this.normalizeFieldValue(value))
+      .filter((value): value is string => value !== null);
+
+    const counts = new Map<string, number>();
+    for (const value of normalizedValues) {
+      counts.set(value, (counts.get(value) ?? 0) + 1);
+    }
+
+    const topResponses = Array.from(counts.entries())
+      .sort((left, right) => {
+        if (right[1] !== left[1]) {
+          return right[1] - left[1];
+        }
+        return left[0].localeCompare(right[0]);
+      })
+      .slice(0, 10)
+      .map(([value, count]) => ({ value, count }));
+
+    const numericValues = type === 'NUMBER'
+      ? normalizedValues
+        .map(value => Number(value))
+        .filter(value => Number.isFinite(value))
+      : [];
+
+    return {
+      label,
+      type,
+      required,
+      options,
+      order_index: orderIndex,
+      response_count: normalizedValues.length,
+      blank_count: rawValues.length - normalizedValues.length,
+      unique_response_count: counts.size,
+      top_responses: topResponses,
+      numeric_summary: numericValues.length > 0
+        ? {
+          min: Math.min(...numericValues),
+          max: Math.max(...numericValues),
+          average: Number((numericValues.reduce((sum, value) => sum + value, 0) / numericValues.length).toFixed(2)),
+          sum: Number(numericValues.reduce((sum, value) => sum + value, 0).toFixed(2)),
+        }
+        : null,
+    };
+  }
+
+  private normalizeFieldValue(value: unknown): string | null {
+    if (value === null || value === undefined) {
+      return null;
+    }
+
+    if (typeof value === 'string') {
+      const trimmed = value.trim();
+      return trimmed.length > 0 ? trimmed : null;
+    }
+
+    if (typeof value === 'number' || typeof value === 'boolean') {
+      return String(value);
+    }
+
+    if (Array.isArray(value)) {
+      return value.length > 0 ? JSON.stringify(value) : null;
+    }
+
+    if (typeof value === 'object') {
+      return Object.keys(value as Record<string, unknown>).length > 0 ? JSON.stringify(value) : null;
+    }
+
+    return String(value);
+  }
+
   async getGroupContributions(organizationId: string, formId?: string, startDate?: string, endDate?: string) {
     const { start, end } = this.parseDateRange(startDate, endDate);
 
