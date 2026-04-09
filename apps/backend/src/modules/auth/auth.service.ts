@@ -36,6 +36,8 @@ const TWO_FACTOR_RECOVERY_CODE_COUNT = 8;
 
 @Injectable()
 export class AuthService {
+  private twoFactorSchemaAvailable: boolean | null = null;
+
   constructor(
     @InjectRepository(User)
     private userRepository: Repository<User>,
@@ -255,10 +257,7 @@ export class AuthService {
   }
 
   async getProfile(userId: string) {
-    const user = await this.userRepository.findOne({ where: { id: userId } });
-    if (!user) {
-      throw new NotFoundException('User not found');
-    }
+    const user = await this.requireUser(userId, { includeTwoFactor: true });
 
     return this.mapAuthUser(user);
   }
@@ -443,9 +442,19 @@ export class AuthService {
   }
 
   async getTwoFactorStatus(userId: string) {
-    const user = await this.requireUser(userId);
+    if (!(await this.isTwoFactorAvailable())) {
+      return {
+        available: false,
+        enabled: false,
+        setup_pending: false,
+        recovery_codes_remaining: 0,
+      };
+    }
+
+    const user = await this.requireUser(userId, { includeTwoFactor: true });
 
     return {
+      available: true,
       enabled: user.two_factor_enabled,
       setup_pending:
         !!user.two_factor_temp_secret &&
@@ -456,7 +465,8 @@ export class AuthService {
   }
 
   async initiateTwoFactorSetup(userId: string) {
-    const user = await this.requireUser(userId);
+    await this.assertTwoFactorAvailable();
+    const user = await this.requireUser(userId, { includeTwoFactor: true });
     if (user.two_factor_enabled && user.two_factor_secret) {
       throw new BadRequestException('Two-factor authentication is already enabled');
     }
@@ -478,7 +488,8 @@ export class AuthService {
   }
 
   async enableTwoFactor(userId: string, dto: EnableTwoFactorDto) {
-    const user = await this.requireUser(userId);
+    await this.assertTwoFactorAvailable();
+    const user = await this.requireUser(userId, { includeTwoFactor: true });
     if (user.two_factor_enabled && user.two_factor_secret) {
       throw new BadRequestException('Two-factor authentication is already enabled');
     }
@@ -513,7 +524,8 @@ export class AuthService {
   }
 
   async disableTwoFactor(userId: string, dto: TwoFactorRecoveryActionDto) {
-    const user = await this.requireUser(userId);
+    await this.assertTwoFactorAvailable();
+    const user = await this.requireUser(userId, { includeTwoFactor: true });
     if (!user.two_factor_enabled || !user.two_factor_secret) {
       throw new BadRequestException('Two-factor authentication is not enabled');
     }
@@ -531,7 +543,8 @@ export class AuthService {
   }
 
   async regenerateTwoFactorRecoveryCodes(userId: string, dto: TwoFactorRecoveryActionDto) {
-    const user = await this.requireUser(userId);
+    await this.assertTwoFactorAvailable();
+    const user = await this.requireUser(userId, { includeTwoFactor: true });
     if (!user.two_factor_enabled || !user.two_factor_secret) {
       throw new BadRequestException('Two-factor authentication is not enabled');
     }
@@ -550,6 +563,8 @@ export class AuthService {
   }
 
   async verifyTwoFactorLogin(dto: VerifyTwoFactorLoginDto) {
+    await this.assertTwoFactorAvailable();
+
     let payload: any;
     try {
       payload = this.jwtService.verify(dto.challenge_token);
@@ -561,7 +576,7 @@ export class AuthService {
       throw new UnauthorizedException('Invalid two-factor challenge');
     }
 
-    const user = await this.requireUser(payload.sub);
+    const user = await this.requireUser(payload.sub, { includeTwoFactor: true });
     if (!user.two_factor_enabled || !user.two_factor_secret) {
       throw new BadRequestException('Two-factor authentication is not enabled for this account');
     }
@@ -637,12 +652,13 @@ export class AuthService {
   }
 
   private async buildLoginSuccessResponse(user: User) {
-    if (user.two_factor_enabled && user.two_factor_secret) {
+    const userWithTwoFactor = await this.hydrateUserWithTwoFactor(user);
+    if (userWithTwoFactor.two_factor_enabled && userWithTwoFactor.two_factor_secret) {
       return {
         requires_two_factor: true,
         challenge_token: this.jwtService.sign(
           {
-            sub: user.id,
+            sub: userWithTwoFactor.id,
             purpose: TWO_FACTOR_CHALLENGE_PURPOSE,
           },
           {
@@ -650,19 +666,21 @@ export class AuthService {
           },
         ),
         challenge_expires_in: this.configService.get('AUTH_TWO_FACTOR_CHALLENGE_TTL', '10m'),
-        user: this.mapAuthUser(user),
+        user: this.mapAuthUser(userWithTwoFactor),
       };
     }
 
     const tokens = await this.createTokens(user);
     return {
       ...tokens,
-      user: this.mapAuthUser(user),
+      user: this.mapAuthUser(userWithTwoFactor),
     };
   }
 
-  private async requireUser(userId: string) {
-    const user = await this.userRepository.findOne({ where: { id: userId } });
+  private async requireUser(userId: string, options?: { includeTwoFactor?: boolean }) {
+    const user = options?.includeTwoFactor
+      ? await this.findUserWithOptionalTwoFactor(userId)
+      : await this.userRepository.findOne({ where: { id: userId } });
     if (!user) {
       throw new NotFoundException('User not found');
     }
@@ -681,8 +699,81 @@ export class AuthService {
       last_name: user.last_name,
       title: user.title,
       designation: user.designation,
-      two_factor_enabled: user.two_factor_enabled,
+      two_factor_enabled: Boolean(user.two_factor_enabled),
     };
+  }
+
+  private async hydrateUserWithTwoFactor(user: User) {
+    if (!(await this.isTwoFactorAvailable())) {
+      return user;
+    }
+
+    return (await this.findUserWithOptionalTwoFactor(user.id)) ?? user;
+  }
+
+  private async findUserWithOptionalTwoFactor(userId: string) {
+    if (!(await this.isTwoFactorAvailable())) {
+      return this.userRepository.findOne({ where: { id: userId } });
+    }
+
+    return this.userRepository
+      .createQueryBuilder('user')
+      .addSelect([
+        'user.two_factor_enabled',
+        'user.two_factor_secret',
+        'user.two_factor_temp_secret',
+        'user.two_factor_temp_expires_at',
+        'user.two_factor_recovery_codes',
+      ])
+      .where('user.id = :userId', { userId })
+      .getOne();
+  }
+
+  private async assertTwoFactorAvailable() {
+    if (!this.isTwoFactorFeatureEnabled()) {
+      throw new BadRequestException('Two-factor authentication is currently disabled');
+    }
+
+    if (!(await this.hasTwoFactorSchema())) {
+      throw new BadRequestException('Two-factor authentication is unavailable until the database migration is applied');
+    }
+  }
+
+  private async isTwoFactorAvailable() {
+    return this.isTwoFactorFeatureEnabled() && (await this.hasTwoFactorSchema());
+  }
+
+  private isTwoFactorFeatureEnabled() {
+    const rawValue = this.configService.get<string>('AUTH_ENABLE_2FA');
+    return ['1', 'true', 'yes', 'on'].includes(String(rawValue || '').trim().toLowerCase());
+  }
+
+  private async hasTwoFactorSchema() {
+    if (this.twoFactorSchemaAvailable !== null) {
+      return this.twoFactorSchemaAvailable;
+    }
+
+    try {
+      const result = await this.userRepository.query(`
+        SELECT COUNT(*)::int AS count
+        FROM information_schema.columns
+        WHERE table_schema = current_schema()
+          AND table_name = 'users'
+          AND column_name IN (
+            'two_factor_enabled',
+            'two_factor_secret',
+            'two_factor_temp_secret',
+            'two_factor_temp_expires_at',
+            'two_factor_recovery_codes'
+          )
+      `);
+
+      this.twoFactorSchemaAvailable = Number(result?.[0]?.count ?? 0) === 5;
+    } catch (error) {
+      this.twoFactorSchemaAvailable = false;
+    }
+
+    return this.twoFactorSchemaAvailable;
   }
 
   private buildOtpAuthUrl(email: string, secret: string) {
