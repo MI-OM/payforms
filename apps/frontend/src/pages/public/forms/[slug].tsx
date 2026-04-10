@@ -22,10 +22,13 @@ interface FormData {
   fields: FormField[];
 }
 
+type PaymentMethod = 'ONLINE' | 'CASH' | 'BANK_TRANSFER' | 'POS' | 'CHEQUE';
+
 interface SubmissionData {
   [key: string]: any;
   contact_email?: string;
   contact_name?: string;
+  payment_method?: PaymentMethod;
 }
 
 export default function PublicForm() {
@@ -36,6 +39,7 @@ export default function PublicForm() {
   const [submitting, setSubmitting] = useState(false);
   const [data, setData] = useState<SubmissionData>({});
   const [errors, setErrors] = useState<{ [key: string]: string }>({});
+  const [submissionMessage, setSubmissionMessage] = useState('');
 
   useEffect(() => {
     if (slug) {
@@ -101,6 +105,7 @@ export default function PublicForm() {
     }
 
     setSubmitting(true);
+    setSubmissionMessage('');
     try {
       // Include callback_url so Paystack returns to the frontend callback page
       // Use environment-configured URL instead of window.location.origin to support Vercel deployments
@@ -109,9 +114,22 @@ export default function PublicForm() {
         data,
         contact_email: data.contact_email,
         contact_name: data.contact_name,
+        payment_method: data.payment_method || 'ONLINE',
       });
 
-      const { authorization, submission } = response.data;
+      const { authorization, payment, offline_payment, message } = response.data;
+
+      if (offline_payment) {
+        await router.push({
+          pathname: '/payment/success',
+          query: {
+            reference: payment?.reference,
+            status: 'pending',
+            message: message || 'Payment recorded and awaiting admin confirmation.',
+          },
+        });
+        return;
+      }
 
       // Check if payment is required
       if (authorization?.authorization_url) {
@@ -126,6 +144,7 @@ export default function PublicForm() {
       if (error.response?.data?.errors) {
         setErrors(error.response.data.errors);
       }
+      setSubmissionMessage(error.response?.data?.message || 'Submission failed. Please try again.');
     } finally {
       setSubmitting(false);
     }
@@ -201,12 +220,36 @@ export default function PublicForm() {
             </div>
           ))}
 
+          {form.amount > 0 && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Payment Method</label>
+              <select
+                value={data.payment_method || 'ONLINE'}
+                onChange={(e) => handleInputChange('payment_method', e.target.value as PaymentMethod)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="ONLINE">Pay Online</option>
+                <option value="CASH">Cash</option>
+                <option value="BANK_TRANSFER">Bank Transfer</option>
+                <option value="POS">POS</option>
+                <option value="CHEQUE">Cheque</option>
+              </select>
+              <p className="mt-1 text-xs text-gray-500">
+                Offline methods remain pending until an admin confirms the transaction.
+              </p>
+            </div>
+          )}
+
+          {submissionMessage && (
+            <p className="text-sm text-red-600">{submissionMessage}</p>
+          )}
+
           <button
             type="submit"
             disabled={submitting}
             className="w-full bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
           >
-            {submitting ? 'Submitting...' : 'Submit & Pay'}
+            {submitting ? 'Submitting...' : (data.payment_method && data.payment_method !== 'ONLINE' ? 'Submit Payment Record' : 'Submit & Pay')}
           </button>
         </form>
       </div>

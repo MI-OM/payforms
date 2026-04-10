@@ -1,6 +1,7 @@
 import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, ManyToOne, JoinColumn, Index } from 'typeorm';
 import { Organization } from '../../organization/entities/organization.entity';
 import { User } from '../../auth/entities/user.entity';
+import { Contact } from '../../contact/entities/contact.entity';
 
 @Entity('activity_logs')
 @Index(['organization_id', 'created_at'])
@@ -15,6 +16,9 @@ export class ActivityLog {
 
   @Column({ type: 'uuid', nullable: true })
   user_id: string | null;
+
+  @Column({ type: 'uuid', nullable: true })
+  contact_id: string | null;
 
   @Column()
   action: string;
@@ -45,4 +49,8 @@ export class ActivityLog {
   @ManyToOne(() => User, { onDelete: 'SET NULL' })
   @JoinColumn({ name: 'user_id' })
   user: User;
+
+  @ManyToOne(() => Contact, { onDelete: 'SET NULL' })
+  @JoinColumn({ name: 'contact_id' })
+  contact: Contact;
 }

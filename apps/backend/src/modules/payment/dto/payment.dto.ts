@@ -1,6 +1,7 @@
 import { IsString, IsNumber, IsOptional, IsEnum, IsIn } from 'class-validator';
 import { Transform, Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { PAYMENT_METHODS, PaymentMethod } from '../entities/payment.entity';
 
 export class CreatePaymentDto {
   @ApiProperty({ example: 'submission-uuid' })
@@ -20,6 +21,12 @@ export class CreatePaymentDto {
   @IsOptional()
   @IsString()
   reference?: string;
+
+  @ApiPropertyOptional({ enum: PAYMENT_METHODS, example: 'ONLINE' })
+  @IsOptional()
+  @Transform(({ value }) => typeof value === 'string' ? value.trim().toUpperCase() : value)
+  @IsEnum(PAYMENT_METHODS)
+  payment_method?: PaymentMethod;
 }
 
 export class VerifyPaymentDto {
@@ -49,6 +56,12 @@ export class TransactionQueryDto {
   @IsOptional()
   @IsString()
   contact_id?: string;
+
+  @ApiPropertyOptional({ enum: PAYMENT_METHODS, example: 'CASH' })
+  @IsOptional()
+  @Transform(({ value }) => typeof value === 'string' ? value.trim().toUpperCase() : value)
+  @IsEnum(PAYMENT_METHODS)
+  payment_method?: PaymentMethod;
 
   @ApiPropertyOptional({ example: '2026-01-01' })
   @IsOptional()
@@ -91,6 +104,22 @@ export class UpdatePaymentStatusDto {
   @IsOptional()
   @IsNumber()
   amount_paid?: number;
+
+  @ApiPropertyOptional({ enum: PAYMENT_METHODS, example: 'CASH' })
+  @IsOptional()
+  @Transform(({ value }) => typeof value === 'string' ? value.trim().toUpperCase() : value)
+  @IsEnum(PAYMENT_METHODS)
+  payment_method?: PaymentMethod;
+
+  @ApiPropertyOptional({ example: 'Confirmed against teller 447120 on 2026-04-10.' })
+  @IsOptional()
+  @IsString()
+  confirmation_note?: string;
+
+  @ApiPropertyOptional({ example: 'TELLER-447120' })
+  @IsOptional()
+  @IsString()
+  external_reference?: string;
 }
 
 export class PaystackWebhookDto {

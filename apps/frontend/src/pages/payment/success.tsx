@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 
 export default function PaymentSuccess() {
   const router = useRouter();
-  const { reference, status, error } = router.query;
+  const { reference, status, error, message: queryMessage } = router.query;
   const [message, setMessage] = useState('Thank you for your payment. Your transaction has been processed successfully.');
   const [isSuccess, setIsSuccess] = useState(true);
 
@@ -27,8 +27,15 @@ export default function PaymentSuccess() {
     } else if (status === 'failed') {
       setIsSuccess(false);
       setMessage('Payment was not successful. Please try again or contact support.');
+    } else if (status === 'pending') {
+      setIsSuccess(true);
+      setMessage(
+        typeof queryMessage === 'string' && queryMessage.trim()
+          ? queryMessage
+          : 'Your payment has been recorded and is awaiting admin confirmation.',
+      );
     }
-  }, [error, status]);
+  }, [error, status, queryMessage]);
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50">
@@ -47,7 +54,7 @@ export default function PaymentSuccess() {
           </div>
 
           <h1 className={`text-2xl font-bold mb-4 ${isSuccess ? 'text-gray-900' : 'text-red-900'}`}>
-            {isSuccess ? 'Payment Successful!' : 'Payment Failed'}
+            {isSuccess ? (status === 'pending' ? 'Payment Pending Confirmation' : 'Payment Successful!') : 'Payment Failed'}
           </h1>
 
           <p className="text-gray-600 mb-6">

@@ -24,6 +24,7 @@ export class TransactionsController {
         reference: query.reference,
         form_id: query.form_id,
         contact_id: query.contact_id,
+        payment_method: query.payment_method,
         start_date: query.start_date,
         end_date: query.end_date,
       });
@@ -40,6 +41,7 @@ export class TransactionsController {
       reference: query.reference,
       form_id: query.form_id,
       contact_id: query.contact_id,
+      payment_method: query.payment_method,
       start_date: query.start_date,
       end_date: query.end_date,
     },

@@ -1,6 +1,7 @@
 import { Transform, Type } from 'class-transformer';
 import { IsString, IsOptional, IsObject, IsEmail, IsNumber, IsIn } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { PAYMENT_METHODS, PaymentMethod } from '../../payment/entities/payment.entity';
 
 export class CreateSubmissionDto {
   @ApiProperty({ type: 'object', additionalProperties: true, example: { student_name: 'John Doe' } })
@@ -32,6 +33,12 @@ export class PublicSubmitFormDto {
   @IsOptional()
   @IsNumber()
   partial_amount?: number;
+
+  @ApiPropertyOptional({ enum: PAYMENT_METHODS, example: 'ONLINE' })
+  @IsOptional()
+  @Transform(({ value }) => typeof value === 'string' ? value.trim().toUpperCase() : value)
+  @IsIn(PAYMENT_METHODS)
+  payment_method?: PaymentMethod;
 }
 
 export class SubmissionExportQueryDto {

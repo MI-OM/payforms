@@ -12,6 +12,18 @@ import { Response } from 'express';
 export class PaymentController {
   constructor(private paymentService: PaymentService) {}
 
+  @Get('offline/pending')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN')
+  @ApiBearerAuth()
+  async listPendingOfflinePayments(
+    @Request() req,
+    @Query('page') page: number = 1,
+    @Query('limit') limit: number = 20,
+  ) {
+    return this.paymentService.listPendingOfflinePayments(req.user.organization_id, page, limit);
+  }
+
   @Get()
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
@@ -30,6 +42,30 @@ export class PaymentController {
     }
 
     return this.paymentService.findByOrganization(req.user.organization_id, page, limit);
+  }
+
+  @Get('reference/:reference/receipt')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  async downloadPaymentReceiptByReference(
+    @Request() req,
+    @Param('reference') reference: string,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const receipt = await this.paymentService.generateOrganizationReceiptByReference(req.user.organization_id, reference);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${receipt.fileName}"`);
+    return receipt.content;
+  }
+
+  @Get(':id/receipt')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  async downloadPaymentReceipt(@Request() req, @Param('id') id: string, @Res({ passthrough: true }) res: Response) {
+    const receipt = await this.paymentService.generateOrganizationReceiptByPaymentId(req.user.organization_id, id);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${receipt.fileName}"`);
+    return receipt.content;
   }
 
   @Get(':id')
@@ -74,6 +110,26 @@ export class PaymentController {
     @Param('id') id: string,
     @Body() dto: UpdatePaymentStatusDto,
   ) {
-    return this.paymentService.updateStatus(req.user.organization_id, id, dto);
+    return this.paymentService.updateStatus(req.user.organization_id, id, dto, {
+      actorUserId: req.user.id,
+      source: 'admin_update',
+    });
+  }
+
+  @Post(':id/offline-review')
+  @Patch(':id/offline-review')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN')
+  @ApiBearerAuth()
+  async reviewOfflinePayment(
+    @Request() req,
+    @Param('id') id: string,
+    @Body() dto: UpdatePaymentStatusDto,
+  ) {
+    return this.paymentService.updateStatus(req.user.organization_id, id, dto, {
+      actorUserId: req.user.id,
+      source: 'admin_update',
+      offlineReviewOnly: true,
+    });
   }
 }

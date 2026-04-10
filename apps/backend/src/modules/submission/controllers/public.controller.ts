@@ -8,6 +8,7 @@ import { PaymentService } from '../../payment/services/payment.service';
 import { ContactService } from '../../contact/services/contact.service';
 import { NotificationService } from '../../notification/notification.service';
 import { PublicSubmitFormDto } from '../dto/submission.dto';
+import { PaymentMethod } from '../../payment/entities/payment.entity';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { Request } from 'express';
@@ -283,6 +284,7 @@ export class PublicController {
 
     // Check if payment is required
     const requiresPayment = totalAmount && totalAmount > 0;
+    const paymentMethod = (dto.payment_method || 'ONLINE') as PaymentMethod;
 
     if (!requiresPayment) {
       // Free form - no payment required
@@ -300,7 +302,17 @@ export class PublicController {
       submission_id: submission.id,
       amount: paymentAmount,
       total_amount: totalAmount, // Track the full amount owed
+      payment_method: paymentMethod,
     });
+
+    if (paymentMethod !== 'ONLINE') {
+      return {
+        submission,
+        payment,
+        offline_payment: true,
+        message: `${paymentMethod.replace(/_/g, ' ')} payment has been recorded and is awaiting admin confirmation.`,
+      };
+    }
 
     let paymentAuthorization: any;
     try {
@@ -929,6 +941,14 @@ export class PublicController {
             formEl.appendChild(variableLabel);
           }
 
+          const paymentMethodLabel = document.createElement('label');
+          paymentMethodLabel.className = 'field';
+          paymentMethodLabel.textContent = 'Payment Method';
+          const paymentMethodSelect = document.createElement('select');
+          paymentMethodSelect.innerHTML = '<option value="ONLINE">Pay Online</option><option value="CASH">Cash</option><option value="BANK_TRANSFER">Bank Transfer</option><option value="POS">POS</option><option value="CHEQUE">Cheque</option>';
+          paymentMethodLabel.appendChild(paymentMethodSelect);
+          formEl.appendChild(paymentMethodLabel);
+
           const submitButton = document.createElement('button');
           submitButton.type = 'submit';
           submitButton.textContent = 'Proceed to Payment';
@@ -959,6 +979,7 @@ export class PublicController {
             if (contactName.value.trim()) {
               payload.contact_name = contactName.value.trim();
             }
+            payload.payment_method = paymentMethodSelect.value;
 
             const submitUrl = new URL(config.apiBaseUrl + '/public/forms/' + encodeURIComponent(config.slug) + '/submit');
             if (config.callbackUrl) {
@@ -981,6 +1002,17 @@ export class PublicController {
                 submission_id: result.submission && result.submission.id,
                 payment_reference: result.payment && result.payment.reference,
               });
+
+              if (result.offline_payment) {
+                setStatus(result.message || 'Payment recorded and awaiting admin confirmation.', 'success');
+                emit('payment_initialized', {
+                  payment_reference: result.payment && result.payment.reference,
+                  offline_payment: true,
+                  payment_method: result.payment && result.payment.payment_method,
+                });
+                submitButton.disabled = false;
+                return;
+              }
 
               const authUrl = result.authorization && result.authorization.authorization_url;
               if (!authUrl) {

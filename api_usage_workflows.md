@@ -360,13 +360,14 @@ For each workflow below, FE gets:
 - Status: Updated
 - Parameters:
   - Query `callback_url?`
-  - Body `{ data, contact_email?, contact_name?, partial_amount? }`
+  - Body `{ data, contact_email?, contact_name?, partial_amount?, payment_method? }`
   - Optional contact bearer token for targeted forms
 - How to use:
   1. FE posts submission payload.
   2. If form is free, backend returns direct success flow.
-  3. If payment is required, backend returns Paystack authorization flow.
-  4. If partial payment is allowed, FE may pass `partial_amount`.
+  3. If payment is required and `payment_method` is `ONLINE` (or omitted), backend returns Paystack authorization flow.
+  4. If payment method is offline (`CASH`, `BANK_TRANSFER`, `POS`, `CHEQUE`), backend returns `offline_payment=true` and keeps the payment pending for admin confirmation.
+  5. If partial payment is allowed, FE may pass `partial_amount`.
 
 ### 9.3 Handle payment verification after Paystack
 
@@ -386,19 +387,26 @@ For each workflow below, FE gets:
 
 - Endpoints:
   - `GET /payments`
+  - `GET /payments/offline/pending` `New`
   - `GET /payments/:id`
+  - `GET /payments/:id/receipt` `New`
+  - `GET /payments/reference/:reference/receipt` `New`
   - `GET /payments/verify/:reference`
   - `POST /payments`
   - `POST /payments/:id/status`
   - `PATCH /payments/:id/status`
+  - `POST /payments/:id/offline-review` `New`
+  - `PATCH /payments/:id/offline-review` `New`
 - Parameters:
   - List query `page?`, `limit?`, `format?=csv`
-  - Create body `{ submission_id, amount, total_amount?, reference? }`
-  - Update status body `{ status, paid_at?, amount_paid? }`
+  - Create body `{ submission_id, amount, total_amount?, reference?, payment_method? }`
+  - Update status body `{ status, paid_at?, amount_paid?, payment_method?, confirmation_note?, external_reference? }`
 - How to use:
   1. FE uses `/payments` for admin payment table and CSV export.
-  2. Use `/payments/verify/:reference` for manual verification actions.
-  3. Use status update only for admin override flows.
+  2. FE uses `/payments/offline/pending` for the pending manual-review queue.
+  3. Use `/payments/verify/:reference` for manual verification actions.
+  4. Use status update for generic admin overrides; use `/payments/:id/offline-review` when reviewing offline payments with note/reference metadata.
+  5. Use the receipt endpoints to download/reprint transaction receipts from admin screens. Receipts now include offline confirmation metadata when available.
 
 ### 10.2 Transaction history
 
@@ -407,10 +415,10 @@ For each workflow below, FE gets:
   - `GET /transactions/:id`
   - `GET /transactions/:id/history`
 - Parameters:
-  - List query `{ status?, reference?, form_id?, contact_id?, start_date?, end_date?, page?, limit?, format? }`
+  - List query `{ status?, reference?, form_id?, contact_id?, payment_method?, start_date?, end_date?, page?, limit?, format? }`
 - How to use:
   1. FE uses `/transactions` for filtered history and export.
-  2. When `format=csv`, backend returns `reference, amount, status, paid_at, created_at, form_name, contact_name` only.
+  2. When `format=csv`, backend returns `reference, amount, payment_method, status, paid_at, created_at, form_name, contact_name`.
   3. FE uses `/transactions/:id/history` for event timeline UI.
 
 ## 11. Submission Export Workflow
@@ -480,9 +488,10 @@ For each workflow below, FE gets:
 ### 13.1 Activity audit log
 
 - Endpoint: `GET /audit/logs`
-- Parameters: Query `{ page?, limit?, action?, entity_type?, entity_id?, user_id?, ip_address?, user_agent?, keyword?, from?, to? }`
+- Parameters: Query `{ page?, limit?, action?, entity_type?, entity_id?, user_id?, contact_id?, ip_address?, user_agent?, keyword?, from?, to? }`
 - How to use:
   1. FE uses this for admin activity monitoring and audit filters.
+  2. Actor payloads may now represent an admin/staff user, a contact-auth session, or a system-generated action.
 
 ### 13.2 Payment audit log
 

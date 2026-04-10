@@ -1,24 +1,24 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Brackets } from 'typeorm';
 import { ActivityLog } from '../entities/activity-log.entity';
 import { PaymentLog } from '../entities/payment-log.entity';
-import { User } from '../../auth/entities/user.entity';
 
 @Injectable()
 export class AuditService {
+  private readonly logger = new Logger(AuditService.name);
+
   constructor(
     @InjectRepository(ActivityLog)
     private activityLogRepository: Repository<ActivityLog>,
     @InjectRepository(PaymentLog)
     private paymentLogRepository: Repository<PaymentLog>,
-    @InjectRepository(User)
-    private userRepository: Repository<User>,
   ) {}
 
   async createActivityLog(
     organizationId: string,
     userId: string | null,
+    contactId: string | null,
     action: string,
     entityType: string,
     entityId: string,
@@ -29,6 +29,7 @@ export class AuditService {
     const log = this.activityLogRepository.create({
       organization_id: organizationId,
       user_id: userId,
+      contact_id: contactId,
       action,
       entity_type: entityType,
       entity_id: entityId,
@@ -36,7 +37,15 @@ export class AuditService {
       ip_address: ipAddress,
       user_agent: userAgent,
     } as any);
-    return this.activityLogRepository.save(log);
+
+    try {
+      return await this.activityLogRepository.save(log);
+    } catch (error) {
+      this.logger.warn(
+        `Failed to persist activity log for action "${action}" in organization ${organizationId}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return null;
+    }
   }
 
   async listActivityLogs(
@@ -48,6 +57,7 @@ export class AuditService {
       entity_type?: string;
       entity_id?: string;
       user_id?: string;
+      contact_id?: string;
       ip_address?: string;
       user_agent?: string;
       keyword?: string;
@@ -56,7 +66,8 @@ export class AuditService {
     } = {},
   ) {
     const query = this.activityLogRepository.createQueryBuilder('log')
-      .leftJoinAndSelect('log.user', 'user');
+      .leftJoinAndSelect('log.user', 'user')
+      .leftJoinAndSelect('log.contact', 'contact');
 
     query.where('log.organization_id = :organizationId', { organizationId });
 
@@ -71,6 +82,9 @@ export class AuditService {
     }
     if (filters.user_id) {
       query.andWhere('log.user_id = :user_id', { user_id: filters.user_id });
+    }
+    if (filters.contact_id) {
+      query.andWhere('log.contact_id = :contact_id', { contact_id: filters.contact_id });
     }
     if (filters.ip_address) {
       query.andWhere('log.ip_address ILIKE :ip_address', { ip_address: `%${filters.ip_address}%` });
@@ -104,15 +118,16 @@ export class AuditService {
 
   formatActor(log: ActivityLog) {
     const relatedUser = log.user;
+    const relatedContact = log.contact;
     const actorMetadata = log.metadata?.actor;
-    const firstName = relatedUser?.first_name ?? actorMetadata?.first_name ?? null;
-    const middleName = relatedUser?.middle_name ?? actorMetadata?.middle_name ?? null;
-    const lastName = relatedUser?.last_name ?? actorMetadata?.last_name ?? null;
-    const role = relatedUser?.role ?? actorMetadata?.role ?? null;
-    const email = relatedUser?.email ?? actorMetadata?.email ?? null;
+    const firstName = relatedUser?.first_name ?? relatedContact?.first_name ?? actorMetadata?.first_name ?? null;
+    const middleName = relatedUser?.middle_name ?? relatedContact?.middle_name ?? actorMetadata?.middle_name ?? null;
+    const lastName = relatedUser?.last_name ?? relatedContact?.last_name ?? actorMetadata?.last_name ?? null;
+    const role = relatedUser?.role ?? actorMetadata?.role ?? (relatedContact ? 'CONTACT' : null);
+    const email = relatedUser?.email ?? relatedContact?.email ?? actorMetadata?.email ?? null;
     const name = [firstName, middleName, lastName].filter(Boolean).join(' ').trim();
 
-    if (!relatedUser && !actorMetadata && !log.user_id) {
+    if (!relatedUser && !relatedContact && !actorMetadata && !log.user_id && !log.contact_id) {
       return {
         id: null,
         name: 'System',
@@ -122,11 +137,11 @@ export class AuditService {
       };
     }
 
-    const resolvedName = name || email || log.user_id || 'Unknown User';
+    const resolvedName = name || email || log.user_id || log.contact_id || 'Unknown User';
     const roleSuffix = role ? ` (${role})` : '';
 
     return {
-      id: relatedUser?.id ?? actorMetadata?.id ?? log.user_id,
+      id: relatedUser?.id ?? relatedContact?.id ?? actorMetadata?.id ?? log.user_id ?? log.contact_id,
       name: resolvedName,
       role,
       email,

@@ -10,7 +10,7 @@ export class AuditInterceptor implements NestInterceptor {
     const req = context.switchToHttp().getRequest();
     const user = req.user;
     const organizationId = user?.organization_id;
-    const userId = user?.id ?? user?.sub ?? null;
+    const actor = this.resolveAuditActor(user);
 
     if (!organizationId) {
       return next.handle();
@@ -34,7 +34,7 @@ export class AuditInterceptor implements NestInterceptor {
       user_agent: userAgent,
       actor: user
         ? {
-            id: userId,
+            id: actor.userId ?? actor.contactId,
             email: user.email ?? null,
             role: user.role ?? null,
             first_name: user.first_name ?? null,
@@ -48,7 +48,8 @@ export class AuditInterceptor implements NestInterceptor {
       tap(() => {
         this.auditService.createActivityLog(
           organizationId,
-          userId,
+          actor.userId,
+          actor.contactId,
           action,
           entityType,
           entityId,
@@ -176,5 +177,23 @@ export class AuditInterceptor implements NestInterceptor {
       default:
         return 'VIEW';
     }
+  }
+
+  private resolveAuditActor(user: any): { userId: string | null; contactId: string | null } {
+    if (!user) {
+      return { userId: null, contactId: null };
+    }
+
+    if (String(user.role || '').toUpperCase() === 'CONTACT') {
+      return {
+        userId: null,
+        contactId: user.id ?? user.sub ?? null,
+      };
+    }
+
+    return {
+      userId: user.id ?? user.sub ?? null,
+      contactId: null,
+    };
   }
 }

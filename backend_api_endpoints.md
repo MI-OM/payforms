@@ -24,9 +24,16 @@ Every endpoint below includes:
 - `POST /auth/2fa/verify-login`
 - `POST /auth/2fa/recovery-codes/regenerate`
 - `POST /contact-auth/logout`
+- `GET /contact-auth/payments/:id/receipt`
+- `GET /contact-auth/payments/reference/:reference/receipt`
 - `POST /contacts/imports/csv/validate`
 - `POST /contacts/imports/csv/commit`
 - `GET /public/payments/verify`
+- `GET /payments/:id/receipt`
+- `GET /payments/reference/:reference/receipt`
+- `GET /payments/offline/pending`
+- `POST /payments/:id/offline-review`
+- `PATCH /payments/:id/offline-review`
 - `GET /notifications/scheduled`
 - `POST /notifications/internal`
 - `GET /notifications/internal`
@@ -37,7 +44,15 @@ Every endpoint below includes:
 ### Updated Endpoints
 
 - `POST /public/forms/:slug/submit`
-  Updated with `partial_amount` support and free-form submission handling.
+  Updated with `partial_amount`, `payment_method`, and offline-payment initiation support.
+- `POST /payments`
+  Updated with `payment_method` support.
+- `PATCH /payments/:id/status`
+  Updated with `payment_method` support and offline confirmation metadata.
+- `GET /transactions`
+  Updated with `payment_method` filters and CSV export field updates.
+- `GET /audit/logs`
+  Updated with contact actor support and `contact_id` filtering.
 - `PATCH /organization/keys`
   Updated with `paystack_webhook_url` support.
 - `PATCH /organization`
@@ -50,6 +65,12 @@ Every endpoint below includes:
   Updated to return a two-factor challenge when staff 2FA is enabled.
 - `POST /contact-auth/login`
   Updated to support contact auth cookie session.
+
+### Migration Notes
+
+- `1744396800000-AddPaymentMethodToPayments.ts`: required for payment method selection, offline payment initiation, and transaction filtering.
+- `1775779200000-AddOfflinePaymentConfirmationFields.ts`: required for offline review metadata and enriched receipts.
+- `1775865600000-AddContactActorToActivityLogs.ts`: required for first-class contact actor audit logs.
 
 ## Conventions
 
@@ -380,15 +401,15 @@ Every endpoint below includes:
 
 ### `GET /contact-auth/me`
 - Parameters: Auth required
-- How to use: Fetch authenticated contact profile.
+- How to use: Fetch authenticated contact profile. Successful requests are now safely audit-logged with contact actor support.
 
 ### `GET /contact-auth/payments/:id/receipt`
 - Parameters: Auth required. Path `id`
-- How to use: Download a styled PDF receipt for the authenticated contact's payment. Receipt now shows the form name instead of form ID and no longer exposes submission ID.
+- How to use: Download a styled PDF receipt for the authenticated contact's payment. Receipt now shows the form name instead of form ID, no longer exposes submission ID, and includes payment method plus offline confirmation details when available.
 
 ### `GET /contact-auth/payments/reference/:reference/receipt`
 - Parameters: Auth required. Path `reference`
-- How to use: Download a styled PDF receipt by payment reference. Receipt now shows the form name instead of form ID and no longer exposes submission ID.
+- How to use: Download a styled PDF receipt by payment reference. Receipt now shows the form name instead of form ID, no longer exposes submission ID, and includes payment method plus offline confirmation details when available.
 
 ## 7. Payment APIs
 
@@ -405,19 +426,38 @@ Every endpoint below includes:
 - How to use: Manually verify and finalize a payment against Paystack.
 
 ### `POST /payments`
-- Parameters: Auth required. Body `{ submission_id, amount, total_amount?, reference? }`
+- Parameters: Auth required. Body `{ submission_id, amount, total_amount?, reference?, payment_method? }`
 - How to use: Create a payment record manually or internally.
 
 ### `POST /payments/:id/status`
 ### `PATCH /payments/:id/status`
-- Parameters: Auth required. Body `{ status, paid_at?, amount_paid? }`
-- How to use: Admin-only manual payment status update. `status` is `PENDING | PAID | PARTIAL | FAILED`.
+- Parameters: Auth required. Body `{ status, paid_at?, amount_paid?, payment_method?, confirmation_note?, external_reference? }`
+- How to use: Admin-only manual payment status update. `status` is `PENDING | PAID | PARTIAL | FAILED`. Use the dedicated offline-review route when confirming offline payments with review metadata.
+
+### `GET /payments/:id/receipt`
+- Parameters: Auth required. Path `id`
+- How to use: Download a PDF receipt for a payment record from admin/staff context. Receipt includes payment method and, for offline reviews, the confirmation timestamp, confirmer, note, and external reference.
+
+### `GET /payments/reference/:reference/receipt`
+- Parameters: Auth required. Path `reference`
+- How to use: Download a PDF receipt by payment reference from admin/staff context. Receipt includes payment method and offline confirmation metadata when present.
+
+### `GET /payments/offline/pending`
+- Status: New
+- Parameters: Admin auth required. Query `page?`, `limit?`, `form_id?`, `contact_id?`, `payment_method?`, `start_date?`, `end_date?`
+- How to use: Fetch the pending offline-payment review queue. Returns only non-`ONLINE` payments still in `PENDING` status, including submission/contact context for review screens.
+
+### `POST /payments/:id/offline-review`
+### `PATCH /payments/:id/offline-review`
+- Status: New
+- Parameters: Admin auth required. Path `id`. Body `{ status, paid_at?, amount_paid?, payment_method?, confirmation_note?, external_reference? }`
+- How to use: Confirm or reject an offline payment without changing the online Paystack flow. Use `status=PAID` or `PARTIAL` to confirm, or `status=FAILED` to reject. Backend stamps confirmation metadata automatically.
 
 ## 8. Transaction APIs
 
 ### `GET /transactions`
-- Parameters: Auth required. Query `{ status?, reference?, form_id?, contact_id?, start_date?, end_date?, page?, limit?, format? }`
-- How to use: Filter transaction history and optionally export CSV with `format=csv`. The CSV now returns only `reference, amount, status, paid_at, created_at, form_name, contact_name`.
+- Parameters: Auth required. Query `{ status?, reference?, form_id?, contact_id?, payment_method?, start_date?, end_date?, page?, limit?, format? }`
+- How to use: Filter transaction history and optionally export CSV with `format=csv`. The CSV returns `reference, amount, payment_method, status, paid_at, created_at, form_name, contact_name`.
 
 ### `GET /transactions/:id`
 - Parameters: Auth required. Path `id`
@@ -453,8 +493,8 @@ Every endpoint below includes:
 - How to use: Load iframe-ready widget HTML.
 
 ### `POST /public/forms/:slug/submit`
-- Parameters: Path `slug`. Query `callback_url?`. Optional contact auth header. Body `{ data, contact_email?, contact_name?, partial_amount? }`
-- How to use: Submit public form. FE should handle either direct success response for free forms or Paystack authorization response for payable forms.
+- Parameters: Path `slug`. Query `callback_url?`. Optional contact auth header. Body `{ data, contact_email?, contact_name?, partial_amount?, payment_method? }`
+- How to use: Submit public form. FE should handle three outcomes: direct success for free forms, Paystack authorization response for `payment_method=ONLINE`, or `offline_payment=true` response for offline methods (`CASH`, `BANK_TRANSFER`, `POS`, `CHEQUE`) that remain pending until admin confirmation.
 
 ### `GET /public/payments/callback`
 - Parameters: Query `reference?`, `trxref?`
@@ -506,8 +546,8 @@ Every endpoint below includes:
 ## 12. Audit APIs
 
 ### `GET /audit/logs`
-- Parameters: Auth required. Query `{ page?, limit?, action?, entity_type?, entity_id?, user_id?, ip_address?, user_agent?, keyword?, from?, to? }`
-- How to use: Admin-only activity log filtering.
+- Parameters: Auth required. Query `{ page?, limit?, action?, entity_type?, entity_id?, user_id?, contact_id?, ip_address?, user_agent?, keyword?, from?, to? }`
+- How to use: Admin-only activity log filtering. Response actor data can now resolve admin/staff users, authenticated contacts, or system actions.
 
 ### `GET /audit/payment-logs/:payment_id`
 - Parameters: Auth required. Path `payment_id`. Query `{ page?, limit?, event?, event_id?, keyword?, from?, to? }`

@@ -4,7 +4,7 @@ import { Repository, Not, IsNull } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
 import axios from 'axios';
 import * as crypto from 'crypto';
-import { Payment } from '../entities/payment.entity';
+import { Payment, PaymentMethod } from '../entities/payment.entity';
 import { Organization } from '../../organization/entities/organization.entity';
 import { PaymentLog } from '../../audit/entities/payment-log.entity';
 import { Submission } from '../../submission/entities/submission.entity';
@@ -12,12 +12,14 @@ import { Contact } from '../../contact/entities/contact.entity';
 import { Form } from '../../form/entities/form.entity';
 import { NotificationService } from '../../notification/notification.service';
 import { CreatePaymentDto, UpdatePaymentStatusDto } from '../dto/payment.dto';
+import { User } from '../../auth/entities/user.entity';
 
 type TransactionFilters = {
   status?: 'PENDING' | 'PAID' | 'PARTIAL' | 'FAILED';
   reference?: string;
   form_id?: string;
   contact_id?: string;
+  payment_method?: PaymentMethod;
   start_date?: string;
   end_date?: string;
 };
@@ -37,6 +39,8 @@ export class PaymentService {
     private formRepository: Repository<Form>,
     @InjectRepository(PaymentLog)
     private paymentLogRepository: Repository<PaymentLog>,
+    @InjectRepository(User)
+    private userRepository: Repository<User>,
     private configService: ConfigService,
     private notificationService: NotificationService,
   ) {}
@@ -61,6 +65,7 @@ export class PaymentService {
       balance_due: balanceDue,
       reference,
       status: 'PENDING',
+      payment_method: dto.payment_method || 'ONLINE',
     });
     return this.paymentRepository.save(payment);
   }
@@ -106,6 +111,22 @@ export class PaymentService {
     return { data, total, page, limit };
   }
 
+  async listPendingOfflinePayments(organizationId: string, page: number = 1, limit: number = 20) {
+    const [data, total] = await this.paymentRepository.findAndCount({
+      where: {
+        organization_id: organizationId,
+        status: 'PENDING',
+        payment_method: Not('ONLINE' as PaymentMethod),
+      },
+      relations: ['submission', 'submission.contact'],
+      order: { created_at: 'ASC' },
+      skip: (page - 1) * limit,
+      take: limit,
+    });
+
+    return { data, total, page, limit };
+  }
+
   async exportTransactions(organizationId: string, filters: TransactionFilters) {
     const rows = await this.buildTransactionsQuery(organizationId, filters)
       .leftJoin(Form, 'form', 'form.id = submission.form_id')
@@ -113,6 +134,7 @@ export class PaymentService {
       .select([
         'payment.reference AS reference',
         'payment.amount AS amount',
+        'payment.payment_method AS payment_method',
         'payment.status AS status',
         'payment.paid_at AS paid_at',
         'payment.created_at AS created_at',
@@ -144,6 +166,14 @@ export class PaymentService {
 
   async generateContactReceiptByReference(organizationId: string, contactId: string, reference: string) {
     return this.generateContactReceipt(organizationId, contactId, { reference });
+  }
+
+  async generateOrganizationReceiptByPaymentId(organizationId: string, paymentId: string) {
+    return this.generateOrganizationReceipt(organizationId, { paymentId });
+  }
+
+  async generateOrganizationReceiptByReference(organizationId: string, reference: string) {
+    return this.generateOrganizationReceipt(organizationId, { reference });
   }
 
   async getTransactionHistory(
@@ -188,10 +218,26 @@ export class PaymentService {
     return null;
   }
 
-  async updateStatus(organizationId: string, id: string, dto: UpdatePaymentStatusDto) {
+  async updateStatus(
+    organizationId: string,
+    id: string,
+    dto: UpdatePaymentStatusDto,
+    options: {
+      actorUserId?: string;
+      source?: 'admin_update' | 'paystack' | 'system';
+      offlineReviewOnly?: boolean;
+    } = {},
+  ) {
     const payment = await this.findById(organizationId, id);
     if (!payment) {
       throw new NotFoundException('Payment not found');
+    }
+
+    const nextPaymentMethod = dto.payment_method ?? payment.payment_method;
+    const isOfflinePayment = nextPaymentMethod !== 'ONLINE';
+
+    if (options.offlineReviewOnly && !isOfflinePayment) {
+      throw new BadRequestException('Offline review is available only for offline payments');
     }
 
     let amount_paid = payment.amount_paid ?? 0;
@@ -222,12 +268,49 @@ export class PaymentService {
       }
     }
 
+    const confirmationMetadata = this.resolveConfirmationMetadata(payment, dto, {
+      actorUserId: options.actorUserId,
+      isOfflinePayment,
+      source: options.source,
+      nextStatus: dto.status,
+    });
+
+    const paidAt = dto.status === 'PAID' || dto.status === 'PARTIAL'
+      ? (dto.paid_at ?? payment.paid_at ?? new Date())
+      : null;
+
     await this.paymentRepository.update({ id, organization_id: organizationId }, {
       status: dto.status,
-      paid_at: dto.status === 'PAID' || dto.status === 'PARTIAL' ? (dto.paid_at ?? new Date()) : null,
+      payment_method: nextPaymentMethod,
+      paid_at: paidAt,
       amount_paid,
       balance_due,
+      confirmed_at: confirmationMetadata.confirmed_at,
+      confirmed_by_user_id: confirmationMetadata.confirmed_by_user_id,
+      confirmation_note: confirmationMetadata.confirmation_note,
+      external_reference: confirmationMetadata.external_reference,
     });
+
+    if (options.source === 'admin_update') {
+      await this.paymentLogRepository.save(
+        this.paymentLogRepository.create({
+          organization_id: organizationId,
+          payment_id: payment.id,
+          event_id: `payment.admin_update:${payment.id}:${crypto.randomUUID()}`,
+          event: this.resolveAdminUpdateEvent(dto.status, isOfflinePayment),
+          payload: {
+            previous_status: payment.status,
+            next_status: dto.status,
+            payment_method: nextPaymentMethod,
+            actor_user_id: options.actorUserId || null,
+            confirmation_note: confirmationMetadata.confirmation_note,
+            external_reference: confirmationMetadata.external_reference,
+            confirmed_at: confirmationMetadata.confirmed_at,
+            confirmed_by_user_id: confirmationMetadata.confirmed_by_user_id,
+          },
+        }),
+      );
+    }
 
     return this.findById(organizationId, id);
   }
@@ -462,6 +545,10 @@ export class PaymentService {
       qb.andWhere('submission.contact_id = :contact_id', { contact_id: filters.contact_id });
     }
 
+    if (filters.payment_method) {
+      qb.andWhere('payment.payment_method = :payment_method', { payment_method: filters.payment_method });
+    }
+
     if (filters.start_date) {
       qb.andWhere('payment.created_at >= :start_date', { start_date: this.normalizeTransactionDate(filters.start_date, 'start') });
     }
@@ -497,6 +584,7 @@ export class PaymentService {
         payment.id,
         payment.reference,
         payment.amount,
+        payment.payment_method,
         payment.status,
         payment.paid_at ? payment.paid_at.toISOString() : '',
         payment.created_at ? payment.created_at.toISOString() : '',
@@ -506,12 +594,13 @@ export class PaymentService {
       ].map(value => this.escapeCsv(value)).join(','),
     );
 
-    return `id,reference,amount,status,paid_at,created_at,submission_id,form_id,contact_id\n${rows.join('\n')}`;
+    return `id,reference,amount,payment_method,status,paid_at,created_at,submission_id,form_id,contact_id\n${rows.join('\n')}`;
   }
 
   private buildTransactionsCsv(rows: Array<{
     reference: string;
     amount: string | number;
+    payment_method: string;
     status: string;
     paid_at: Date | string | null;
     created_at: Date | string | null;
@@ -532,6 +621,7 @@ export class PaymentService {
       return [
         row.reference,
         row.amount,
+        row.payment_method,
         row.status,
         row.paid_at ? new Date(row.paid_at).toISOString() : '',
         row.created_at ? new Date(row.created_at).toISOString() : '',
@@ -540,7 +630,7 @@ export class PaymentService {
       ].map(value => this.escapeCsv(value)).join(',');
     });
 
-    return `reference,amount,status,paid_at,created_at,form_name,contact_name\n${csvRows.join('\n')}`;
+    return `reference,amount,payment_method,status,paid_at,created_at,form_name,contact_name\n${csvRows.join('\n')}`;
   }
 
   private buildContactDisplayName(payload: {
@@ -602,15 +692,94 @@ export class PaymentService {
         : Promise.resolve(null),
     ]);
 
+    const confirmingUser = payment.confirmed_by_user_id
+      ? await this.userRepository.findOne({
+          where: { id: payment.confirmed_by_user_id, organization_id: organizationId },
+          select: ['id', 'first_name', 'middle_name', 'last_name', 'email'],
+        })
+      : null;
+
     if (!organization || !contact) {
       throw new NotFoundException('Receipt owner not found');
     }
 
+    const contactName = [contact.first_name, contact.last_name].filter(Boolean).join(' ').trim() || 'N/A';
+
     const pdf = await this.buildReceiptPdf({
       organization,
-      contact,
+      recipientName: contactName,
+      recipientEmail: contact.email || 'N/A',
       payment,
       formName: form?.title || 'N/A',
+      confirmedByName: this.buildUserDisplayName(confirmingUser),
+    });
+
+    const normalizedReference = String(payment.reference || payment.id).replace(/[^a-zA-Z0-9_-]+/g, '_');
+    return {
+      fileName: `receipt-${normalizedReference}.pdf`,
+      content: pdf,
+    };
+  }
+
+  private async generateOrganizationReceipt(
+    organizationId: string,
+    lookup: { paymentId?: string; reference?: string },
+  ) {
+    const paymentQuery = this.paymentRepository
+      .createQueryBuilder('payment')
+      .leftJoinAndSelect('payment.submission', 'submission')
+      .where('payment.organization_id = :organizationId', { organizationId });
+
+    if (lookup.paymentId) {
+      paymentQuery.andWhere('payment.id = :paymentId', { paymentId: lookup.paymentId });
+    } else if (lookup.reference) {
+      paymentQuery.andWhere('payment.reference = :reference', { reference: lookup.reference });
+    } else {
+      throw new BadRequestException('Payment lookup is required');
+    }
+
+    const payment = await paymentQuery.getOne();
+    if (!payment) {
+      throw new NotFoundException('Payment not found');
+    }
+
+    const [organization, contact, form, confirmingUser] = await Promise.all([
+      this.organizationRepository.findOne({ where: { id: organizationId }, select: ['id', 'name', 'email'] }),
+      payment.submission?.contact_id
+        ? this.contactRepository.findOne({
+            where: { id: payment.submission.contact_id, organization_id: organizationId },
+            select: ['id', 'first_name', 'last_name', 'email'],
+          })
+        : Promise.resolve(null),
+      payment.submission?.form_id
+        ? this.formRepository.findOne({
+            where: { id: payment.submission.form_id, organization_id: organizationId },
+            select: ['id', 'title'],
+          })
+        : Promise.resolve(null),
+      payment.confirmed_by_user_id
+        ? this.userRepository.findOne({
+            where: { id: payment.confirmed_by_user_id, organization_id: organizationId },
+            select: ['id', 'first_name', 'middle_name', 'last_name', 'email'],
+          })
+        : Promise.resolve(null),
+    ]);
+
+    if (!organization) {
+      throw new NotFoundException('Organization not found');
+    }
+
+    const submissionData = payment.submission?.data || {};
+    const recipientName = this.resolveReceiptRecipientName(contact, submissionData);
+    const recipientEmail = this.resolveReceiptRecipientEmail(contact, submissionData);
+
+    const pdf = await this.buildReceiptPdf({
+      organization,
+      recipientName,
+      recipientEmail,
+      payment,
+      formName: form?.title || 'N/A',
+      confirmedByName: this.buildUserDisplayName(confirmingUser),
     });
 
     const normalizedReference = String(payment.reference || payment.id).replace(/[^a-zA-Z0-9_-]+/g, '_');
@@ -622,9 +791,11 @@ export class PaymentService {
 
   private async buildReceiptPdf(payload: {
     organization: Pick<Organization, 'id' | 'name' | 'email'>;
-    contact: Pick<Contact, 'id' | 'first_name' | 'last_name' | 'email'>;
+    recipientName: string;
+    recipientEmail: string;
     payment: Payment;
     formName: string;
+    confirmedByName?: string;
   }): Promise<Buffer> {
     return new Promise((resolve, reject) => {
       const PDFDocument = require('pdfkit');
@@ -635,12 +806,14 @@ export class PaymentService {
       pdf.on('end', () => resolve(Buffer.concat(chunks)));
       pdf.on('error', reject);
 
-      const { organization, contact, payment, formName } = payload;
-      const contactName = [contact.first_name, contact.last_name].filter(Boolean).join(' ').trim() || 'N/A';
+      const { organization, recipientName, recipientEmail, payment, formName, confirmedByName } = payload;
       const amount = Number(payment.amount || 0);
       const paidAt = payment.paid_at ? payment.paid_at.toISOString().replace('T', ' ').replace('Z', '') : 'N/A';
       const createdAt = payment.created_at ? payment.created_at.toISOString().replace('T', ' ').replace('Z', '') : 'N/A';
+      const confirmedAt = payment.confirmed_at ? payment.confirmed_at.toISOString().replace('T', ' ').replace('Z', '') : 'N/A';
       const paymentType = payment.total_amount && Number(payment.amount) < Number(payment.total_amount) ? 'Partial' : 'Full';
+      const paymentMethod = this.formatPaymentMethod(payment.payment_method);
+      const gateway = payment.payment_method === 'ONLINE' ? 'Paystack' : 'Manual / Offline';
       const accentColor = '#0f766e';
       const accentSoft = '#ccfbf1';
       const textMuted = '#64748b';
@@ -704,22 +877,29 @@ export class PaymentService {
       drawLabelValue('Amount Paid', `NGN ${amount.toFixed(2)}`, 60, 180, 170);
       drawLabelValue('Status', payment.status, 238, 180, 100);
       drawLabelValue('Payment Type', paymentType, 350, 180, 110);
-      drawLabelValue('Gateway', 'Paystack', 462, 180, 70);
+      drawLabelValue('Method', paymentMethod, 462, 180, 70);
       drawLabelValue('Paid At', paidAt, 60, 214, 220);
+      drawLabelValue('Gateway', gateway, 350, 214, 182);
 
       const leftCardHeight = drawDetailCard(44, 262, 252, 'Receipt Details', [
         ['Form', formName],
-        ['Contact', contactName],
-        ['Contact Email', contact.email || 'N/A'],
+        ['Payer', recipientName],
+        ['Payer Email', recipientEmail],
+        ['Reference', payment.reference],
       ]);
       const rightCardHeight = drawDetailCard(315, 262, 252, 'Organization', [
         ['Organization', organization.name],
         ['Contact', organization.email || 'N/A'],
-        ['Reference', payment.reference],
+        ['Status', payment.status],
+        ['Method', paymentMethod],
+        ['Confirmed At', payment.confirmed_at ? confirmedAt : 'N/A'],
+        ['Confirmed By', confirmedByName || 'N/A'],
+        ['External Ref', payment.external_reference || 'N/A'],
       ]);
 
       const footerTop = 262 + Math.max(leftCardHeight, rightCardHeight) + 18;
-      pdf.roundedRect(pageLeft, footerTop, pageWidth, 66, 14).fill('#f8fafc');
+      const footerHeight = payment.confirmation_note ? 92 : 66;
+      pdf.roundedRect(pageLeft, footerTop, pageWidth, footerHeight, 14).fill('#f8fafc');
       pdf.font('Helvetica-Bold').fontSize(11).fillColor(textStrong).text('Note', 60, footerTop + 14);
       pdf.font('Helvetica').fontSize(10).fillColor(textMuted).text(
         'Thank you for your payment. Please keep this receipt for your records. If you need assistance, contact the receiving organization directly.',
@@ -727,15 +907,137 @@ export class PaymentService {
         footerTop + 32,
         { width: 490, lineGap: 3 },
       );
+      if (payment.confirmation_note) {
+        pdf.font('Helvetica-Bold').fontSize(10).fillColor(textStrong).text('Admin Note', 60, footerTop + 62);
+        pdf.font('Helvetica').fontSize(10).fillColor(textMuted).text(payment.confirmation_note, 128, footerTop + 62, {
+          width: 422,
+          lineGap: 2,
+        });
+      }
 
       pdf.end();
     });
+  }
+
+  private buildUserDisplayName(user: Pick<User, 'first_name' | 'middle_name' | 'last_name' | 'email'> | null) {
+    if (!user) {
+      return '';
+    }
+
+    const name = [user.first_name, user.middle_name, user.last_name]
+      .map(value => value?.trim())
+      .filter((value): value is string => !!value)
+      .join(' ');
+
+    return name || user.email?.trim() || '';
   }
 
   private escapeCsv(value: unknown) {
     const raw = String(value ?? '');
     const safeValue = /^[=+\-@]/.test(raw) ? `'${raw}` : raw;
     return `"${safeValue.replace(/"/g, '""')}"`;
+  }
+
+  private resolveReceiptRecipientName(
+    contact: Pick<Contact, 'first_name' | 'last_name' | 'email'> | null,
+    submissionData: Record<string, any>,
+  ) {
+    const contactName = [contact?.first_name, contact?.last_name].filter(Boolean).join(' ').trim();
+    if (contactName) {
+      return contactName;
+    }
+
+    for (const key of ['name', 'full_name', 'student_name', 'payer_name', 'parent_name']) {
+      const value = submissionData?.[key];
+      if (typeof value === 'string' && value.trim()) {
+        return value.trim();
+      }
+    }
+
+    return contact?.email?.trim() || 'N/A';
+  }
+
+  private resolveReceiptRecipientEmail(
+    contact: Pick<Contact, 'email'> | null,
+    submissionData: Record<string, any>,
+  ) {
+    if (contact?.email?.trim()) {
+      return contact.email.trim();
+    }
+
+    for (const key of ['email', 'contact_email', 'payer_email', 'parent_email']) {
+      const value = submissionData?.[key];
+      if (typeof value === 'string' && value.trim()) {
+        return value.trim();
+      }
+    }
+
+    return 'N/A';
+  }
+
+  private formatPaymentMethod(method?: string | null) {
+    return String(method || 'ONLINE')
+      .trim()
+      .toUpperCase()
+      .split('_')
+      .map(part => part.charAt(0) + part.slice(1).toLowerCase())
+      .join(' ');
+  }
+
+  private resolveConfirmationMetadata(
+    payment: Payment,
+    dto: UpdatePaymentStatusDto,
+    options: {
+      actorUserId?: string;
+      isOfflinePayment: boolean;
+      source?: 'admin_update' | 'paystack' | 'system';
+      nextStatus: UpdatePaymentStatusDto['status'];
+    },
+  ) {
+    const next = {
+      confirmed_at: payment.confirmed_at ?? null,
+      confirmed_by_user_id: payment.confirmed_by_user_id ?? null,
+      confirmation_note: dto.confirmation_note ?? payment.confirmation_note ?? null,
+      external_reference: dto.external_reference ?? payment.external_reference ?? null,
+    };
+
+    if (options.source !== 'admin_update' || !options.isOfflinePayment) {
+      return next;
+    }
+
+    if (options.nextStatus === 'PAID' || options.nextStatus === 'PARTIAL') {
+      return {
+        ...next,
+        confirmed_at: new Date(),
+        confirmed_by_user_id: options.actorUserId ?? payment.confirmed_by_user_id ?? null,
+      };
+    }
+
+    if (options.nextStatus === 'PENDING') {
+      return next;
+    }
+
+    return {
+      ...next,
+      confirmed_at: payment.confirmed_at ?? null,
+      confirmed_by_user_id: payment.confirmed_by_user_id ?? null,
+    };
+  }
+
+  private resolveAdminUpdateEvent(status: UpdatePaymentStatusDto['status'], isOfflinePayment: boolean) {
+    if (!isOfflinePayment) {
+      return 'payment.admin.status_updated';
+    }
+
+    if (status === 'FAILED') {
+      return 'payment.offline.rejected';
+    }
+
+    if (status === 'PAID' || status === 'PARTIAL') {
+      return 'payment.offline.confirmed';
+    }
+
+    return 'payment.offline.updated';
   }
 
   private async applyPaystackOutcome(params: {
@@ -774,6 +1076,8 @@ export class PaymentService {
       status,
       paid_at: paidAt,
       amount_paid: paystackAmount,
+    }, {
+      source: 'paystack',
     });
 
     await this.paymentLogRepository.save(

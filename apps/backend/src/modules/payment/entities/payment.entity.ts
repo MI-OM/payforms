@@ -2,6 +2,9 @@ import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, ManyToOne, Jo
 import { Organization } from '../../organization/entities/organization.entity';
 import { Submission } from '../../submission/entities/submission.entity';
 
+export const PAYMENT_METHODS = ['ONLINE', 'CASH', 'BANK_TRANSFER', 'POS', 'CHEQUE'] as const;
+export type PaymentMethod = typeof PAYMENT_METHODS[number];
+
 @Entity('payments')
 @Index(['organization_id', 'reference'], { unique: true })
 @Index(['organization_id', 'status'])
@@ -33,6 +36,21 @@ export class Payment {
 
   @Column({ type: 'varchar', enum: ['PENDING', 'PAID', 'PARTIAL', 'FAILED'], default: 'PENDING' })
   status: 'PENDING' | 'PAID' | 'PARTIAL' | 'FAILED';
+
+  @Column({ type: 'varchar', enum: PAYMENT_METHODS, default: 'ONLINE' })
+  payment_method: PaymentMethod;
+
+  @Column({ type: 'timestamp', nullable: true })
+  confirmed_at: Date | null;
+
+  @Column({ type: 'uuid', nullable: true })
+  confirmed_by_user_id: string | null;
+
+  @Column({ type: 'text', nullable: true })
+  confirmation_note: string | null;
+
+  @Column({ type: 'varchar', nullable: true })
+  external_reference: string | null;
 
   @Column({ type: 'timestamp', nullable: true })
   paid_at: Date | null;
