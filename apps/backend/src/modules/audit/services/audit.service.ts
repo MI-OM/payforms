@@ -7,6 +7,7 @@ import { PaymentLog } from '../entities/payment-log.entity';
 @Injectable()
 export class AuditService {
   private readonly logger = new Logger(AuditService.name);
+  private activityLogContactColumnPromise: Promise<boolean> | null = null;
 
   constructor(
     @InjectRepository(ActivityLog)
@@ -26,17 +27,23 @@ export class AuditService {
     ipAddress?: string | null,
     userAgent?: string | null,
   ) {
-    const log = this.activityLogRepository.create({
+    const hasContactIdColumn = await this.hasActivityLogContactIdColumn();
+    const payload: Record<string, any> = {
       organization_id: organizationId,
       user_id: userId,
-      contact_id: contactId,
       action,
       entity_type: entityType,
       entity_id: entityId,
       metadata,
       ip_address: ipAddress,
       user_agent: userAgent,
-    } as any);
+    };
+
+    if (hasContactIdColumn) {
+      payload.contact_id = contactId;
+    }
+
+    const log = this.activityLogRepository.create(payload as any);
 
     try {
       return await this.activityLogRepository.save(log);
@@ -65,9 +72,14 @@ export class AuditService {
       to?: string;
     } = {},
   ) {
+    const hasContactIdColumn = await this.hasActivityLogContactIdColumn();
     const query = this.activityLogRepository.createQueryBuilder('log')
-      .leftJoinAndSelect('log.user', 'user')
-      .leftJoinAndSelect('log.contact', 'contact');
+      .leftJoinAndSelect('log.user', 'user');
+
+    if (hasContactIdColumn) {
+      query.addSelect('log.contact_id');
+      query.leftJoinAndSelect('log.contact', 'contact');
+    }
 
     query.where('log.organization_id = :organizationId', { organizationId });
 
@@ -84,7 +96,14 @@ export class AuditService {
       query.andWhere('log.user_id = :user_id', { user_id: filters.user_id });
     }
     if (filters.contact_id) {
-      query.andWhere('log.contact_id = :contact_id', { contact_id: filters.contact_id });
+      if (hasContactIdColumn) {
+        query.andWhere('log.contact_id = :contact_id', { contact_id: filters.contact_id });
+      } else {
+        query.andWhere(
+          `COALESCE(log.metadata->'actor'->>'role', '') = 'CONTACT' AND COALESCE(log.metadata->'actor'->>'id', '') = :contact_id`,
+          { contact_id: filters.contact_id },
+        );
+      }
     }
     if (filters.ip_address) {
       query.andWhere('log.ip_address ILIKE :ip_address', { ip_address: `%${filters.ip_address}%` });
@@ -194,5 +213,27 @@ export class AuditService {
 
     const [data, total] = await query.getManyAndCount();
     return { data, total, page, limit };
+  }
+
+  private async hasActivityLogContactIdColumn() {
+    if (!this.activityLogContactColumnPromise) {
+      this.activityLogContactColumnPromise = this.activityLogRepository
+        .query(`
+          SELECT EXISTS (
+            SELECT 1
+            FROM information_schema.columns
+            WHERE table_schema = 'public'
+              AND table_name = 'activity_logs'
+              AND column_name = 'contact_id'
+          ) AS exists
+        `)
+        .then((rows: Array<{ exists: boolean }>) => Boolean(rows?.[0]?.exists))
+        .catch(error => {
+          this.activityLogContactColumnPromise = null;
+          throw error;
+        });
+    }
+
+    return this.activityLogContactColumnPromise;
   }
 }

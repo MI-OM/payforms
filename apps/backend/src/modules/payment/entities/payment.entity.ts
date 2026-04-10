@@ -37,19 +37,19 @@ export class Payment {
   @Column({ type: 'varchar', enum: ['PENDING', 'PAID', 'PARTIAL', 'FAILED'], default: 'PENDING' })
   status: 'PENDING' | 'PAID' | 'PARTIAL' | 'FAILED';
 
-  @Column({ type: 'varchar', enum: PAYMENT_METHODS, default: 'ONLINE' })
+  @Column({ type: 'varchar', enum: PAYMENT_METHODS, default: 'ONLINE', select: false })
   payment_method: PaymentMethod;
 
-  @Column({ type: 'timestamp', nullable: true })
+  @Column({ type: 'timestamp', nullable: true, select: false })
   confirmed_at: Date | null;
 
-  @Column({ type: 'uuid', nullable: true })
+  @Column({ type: 'uuid', nullable: true, select: false })
   confirmed_by_user_id: string | null;
 
-  @Column({ type: 'text', nullable: true })
+  @Column({ type: 'text', nullable: true, select: false })
   confirmation_note: string | null;
 
-  @Column({ type: 'varchar', nullable: true })
+  @Column({ type: 'varchar', nullable: true, select: false })
   external_reference: string | null;
 
   @Column({ type: 'timestamp', nullable: true })

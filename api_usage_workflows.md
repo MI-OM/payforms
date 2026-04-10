@@ -329,12 +329,14 @@ For each workflow below, FE gets:
 
 - Endpoints:
   - `GET /contact-auth/me`
+  - `GET /contact-auth/transactions` `New`
   - `GET /contact-auth/payments/:id/receipt`
   - `GET /contact-auth/payments/reference/:reference/receipt`
 - Parameters: Auth required
 - How to use:
   1. `/me` loads contact profile.
-  2. Receipt endpoints download PDF receipts.
+  2. `/transactions` returns the current contact's payment history and supports `format=csv` for export.
+  3. Receipt endpoints download PDF receipts.
 
 ## 9. Public Form Workflow
 

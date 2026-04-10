@@ -24,6 +24,7 @@ Every endpoint below includes:
 - `POST /auth/2fa/verify-login`
 - `POST /auth/2fa/recovery-codes/regenerate`
 - `POST /contact-auth/logout`
+- `GET /contact-auth/transactions`
 - `GET /contact-auth/payments/:id/receipt`
 - `GET /contact-auth/payments/reference/:reference/receipt`
 - `POST /contacts/imports/csv/validate`
@@ -402,6 +403,11 @@ Every endpoint below includes:
 ### `GET /contact-auth/me`
 - Parameters: Auth required
 - How to use: Fetch authenticated contact profile. Successful requests are now safely audit-logged with contact actor support.
+
+### `GET /contact-auth/transactions`
+- Status: New
+- Parameters: Auth required. Query `{ page?, limit?, format?=csv }`
+- How to use: Fetch the authenticated contact's own transaction history without admin auth. When `format=csv`, backend returns a CSV export for only that contact's transactions.
 
 ### `GET /contact-auth/payments/:id/receipt`
 - Parameters: Auth required. Path `id`

@@ -1,14 +1,16 @@
-import { Controller, Post, Body, Get, UseGuards, Request, Param, Res } from '@nestjs/common';
+import { Controller, Post, Body, Get, UseGuards, Request, Param, Res, Query } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import { ContactAuthService } from './contact-auth.service';
 import { PaymentService } from '../payment/services/payment.service';
+import { ContactService } from '../contact/services/contact.service';
 import {
   ContactLoginDto,
   ContactSetPasswordDto,
   ContactPasswordResetRequestDto,
   ContactResetPasswordDto,
 } from './dto/contact-auth.dto';
+import { ContactTransactionQueryDto } from '../contact/dto/contact.dto';
 import { ContactJwtAuthGuard } from './guards/contact-jwt-auth.guard';
 import { Response } from 'express';
 import { ConfigService } from '@nestjs/config';
@@ -20,6 +22,7 @@ export class ContactAuthController {
   constructor(
     private contactAuthService: ContactAuthService,
     private paymentService: PaymentService,
+    private contactService: ContactService,
     private configService: ConfigService,
   ) {}
 
@@ -74,6 +77,29 @@ export class ContactAuthController {
   @ApiBearerAuth()
   async getCurrentContact(@Request() req) {
     return req.user;
+  }
+
+  @Get('transactions')
+  @UseGuards(ContactJwtAuthGuard)
+  @ApiBearerAuth()
+  async getCurrentContactTransactions(
+    @Request() req,
+    @Query() query: ContactTransactionQueryDto,
+    @Res({ passthrough: true }) res?: Response,
+  ) {
+    if (query.format === 'csv' && res) {
+      const csv = await this.contactService.exportTransactionHistory(req.user.organization_id, req.user.id);
+      res.setHeader('Content-Type', 'text/csv');
+      res.setHeader('Content-Disposition', 'attachment; filename="contact_transactions.csv"');
+      return csv;
+    }
+
+    return this.contactService.getTransactionHistory(
+      req.user.organization_id,
+      req.user.id,
+      query.page ?? 1,
+      query.limit ?? 20,
+    );
   }
 
   @Get('payments/:id/receipt')

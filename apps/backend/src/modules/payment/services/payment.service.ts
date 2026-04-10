@@ -1,4 +1,4 @@
-import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
+import { Injectable, BadRequestException, NotFoundException, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Not, IsNull } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
@@ -24,8 +24,19 @@ type TransactionFilters = {
   end_date?: string;
 };
 
+type PaymentSchemaAvailability = {
+  payment_method: boolean;
+  confirmed_at: boolean;
+  confirmed_by_user_id: boolean;
+  confirmation_note: boolean;
+  external_reference: boolean;
+};
+
 @Injectable()
 export class PaymentService {
+  private readonly logger = new Logger(PaymentService.name);
+  private paymentSchemaAvailabilityPromise: Promise<PaymentSchemaAvailability> | null = null;
+
   constructor(
     @InjectRepository(Payment)
     private paymentRepository: Repository<Payment>,
@@ -46,7 +57,13 @@ export class PaymentService {
   ) {}
 
   async create(organizationId: string, dto: CreatePaymentDto) {
+    const schema = await this.getPaymentSchemaAvailability();
     const reference = dto.reference || `REF-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    const requestedPaymentMethod = dto.payment_method || 'ONLINE';
+
+    if (!schema.payment_method && requestedPaymentMethod !== 'ONLINE') {
+      throw new BadRequestException('Offline payment methods are unavailable until the payment_method migration is applied');
+    }
 
     const org = await this.organizationRepository.findOne({ where: { id: organizationId } });
     if (org?.partial_payment_limit && Number(dto.amount) < Number(org.partial_payment_limit)) {
@@ -56,7 +73,7 @@ export class PaymentService {
     const totalAmount = dto.total_amount || dto.amount;
     const balanceDue = dto.total_amount ? dto.total_amount : dto.amount; // For partial payments, balance_due starts as total_amount, for full payments as amount
 
-    const payment = this.paymentRepository.create({
+    const paymentPayload: Partial<Payment> = {
       organization_id: organizationId,
       submission_id: dto.submission_id,
       amount: dto.amount,
@@ -65,33 +82,55 @@ export class PaymentService {
       balance_due: balanceDue,
       reference,
       status: 'PENDING',
-      payment_method: dto.payment_method || 'ONLINE',
-    });
-    return this.paymentRepository.save(payment);
+    };
+
+    if (schema.payment_method) {
+      paymentPayload.payment_method = requestedPaymentMethod;
+    }
+
+    const payment = this.paymentRepository.create(paymentPayload);
+    const savedPayment = await this.paymentRepository.save(payment);
+    return this.hydratePayment(savedPayment, schema);
   }
 
   async findByOrganization(organizationId: string, page: number = 1, limit: number = 20) {
-    const [data, total] = await this.paymentRepository.findAndCount({
-      where: { organization_id: organizationId },
-      skip: (page - 1) * limit,
-      take: limit,
-      order: { created_at: 'DESC' },
-    });
-    return { data, total, page, limit };
+    const schema = await this.getPaymentSchemaAvailability();
+    const query = this.paymentRepository.createQueryBuilder('payment')
+      .where('payment.organization_id = :organizationId', { organizationId })
+      .orderBy('payment.created_at', 'DESC')
+      .skip((page - 1) * limit)
+      .take(limit);
+
+    this.applyOptionalPaymentColumns(query, 'payment', schema);
+
+    const [data, total] = await query.getManyAndCount();
+    return { data: data.map(item => this.hydratePayment(item, schema)), total, page, limit };
   }
 
   async findById(organizationId: string, id: string) {
-    return this.paymentRepository.findOne({
-      where: { id, organization_id: organizationId },
-      relations: ['submission'],
-    });
+    const schema = await this.getPaymentSchemaAvailability();
+    const query = this.paymentRepository.createQueryBuilder('payment')
+      .leftJoinAndSelect('payment.submission', 'submission')
+      .where('payment.id = :id', { id })
+      .andWhere('payment.organization_id = :organizationId', { organizationId });
+
+    this.applyOptionalPaymentColumns(query, 'payment', schema);
+
+    const payment = await query.getOne();
+    return payment ? this.hydratePayment(payment, schema) : null;
   }
 
   async findByReference(organizationId: string, reference: string) {
-    return this.paymentRepository.findOne({
-      where: { reference, organization_id: organizationId },
-      relations: ['submission'],
-    });
+    const schema = await this.getPaymentSchemaAvailability();
+    const query = this.paymentRepository.createQueryBuilder('payment')
+      .leftJoinAndSelect('payment.submission', 'submission')
+      .where('payment.reference = :reference', { reference })
+      .andWhere('payment.organization_id = :organizationId', { organizationId });
+
+    this.applyOptionalPaymentColumns(query, 'payment', schema);
+
+    const payment = await query.getOne();
+    return payment ? this.hydratePayment(payment, schema) : null;
   }
 
   async findTransactions(
@@ -100,7 +139,8 @@ export class PaymentService {
     page: number = 1,
     limit: number = 20,
   ) {
-    const qb = this.buildTransactionsQuery(organizationId, filters);
+    const schema = await this.getPaymentSchemaAvailability();
+    const qb = this.buildTransactionsQuery(organizationId, filters, schema);
 
     const [data, total] = await qb
       .orderBy('payment.created_at', 'DESC')
@@ -108,33 +148,39 @@ export class PaymentService {
       .take(limit)
       .getManyAndCount();
 
-    return { data, total, page, limit };
+    return { data: data.map(item => this.hydratePayment(item, schema)), total, page, limit };
   }
 
   async listPendingOfflinePayments(organizationId: string, page: number = 1, limit: number = 20) {
-    const [data, total] = await this.paymentRepository.findAndCount({
-      where: {
-        organization_id: organizationId,
-        status: 'PENDING',
-        payment_method: Not('ONLINE' as PaymentMethod),
-      },
-      relations: ['submission', 'submission.contact'],
-      order: { created_at: 'ASC' },
-      skip: (page - 1) * limit,
-      take: limit,
-    });
+    const schema = await this.getPaymentSchemaAvailability();
+    if (!schema.payment_method) {
+      return { data: [], total: 0, page, limit };
+    }
 
-    return { data, total, page, limit };
+    const query = this.paymentRepository.createQueryBuilder('payment')
+      .leftJoinAndSelect('payment.submission', 'submission')
+      .leftJoinAndSelect('submission.contact', 'contact')
+      .where('payment.organization_id = :organizationId', { organizationId })
+      .andWhere('payment.status = :status', { status: 'PENDING' })
+      .andWhere('payment.payment_method <> :online', { online: 'ONLINE' })
+      .orderBy('payment.created_at', 'ASC')
+      .skip((page - 1) * limit)
+      .take(limit);
+
+    this.applyOptionalPaymentColumns(query, 'payment', schema);
+
+    const [data, total] = await query.getManyAndCount();
+    return { data: data.map(item => this.hydratePayment(item, schema)), total, page, limit };
   }
 
   async exportTransactions(organizationId: string, filters: TransactionFilters) {
-    const rows = await this.buildTransactionsQuery(organizationId, filters)
+    const schema = await this.getPaymentSchemaAvailability();
+    const query = this.buildTransactionsQuery(organizationId, filters, schema)
       .leftJoin(Form, 'form', 'form.id = submission.form_id')
       .leftJoin(Contact, 'contact', 'contact.id = submission.contact_id')
       .select([
         'payment.reference AS reference',
         'payment.amount AS amount',
-        'payment.payment_method AS payment_method',
         'payment.status AS status',
         'payment.paid_at AS paid_at',
         'payment.created_at AS created_at',
@@ -144,20 +190,33 @@ export class PaymentService {
         'contact.last_name AS contact_last_name',
         'contact.email AS contact_email',
       ])
-      .orderBy('payment.created_at', 'DESC')
-      .getRawMany();
+      .orderBy('payment.created_at', 'DESC');
+
+    if (schema.payment_method) {
+      query.addSelect('payment.payment_method', 'payment_method');
+    } else {
+      query.addSelect(`'ONLINE'`, 'payment_method');
+    }
+
+    const rows = await query.getRawMany();
 
     return this.buildTransactionsCsv(rows);
   }
 
   async exportByOrganization(organizationId: string) {
+    const schema = await this.getPaymentSchemaAvailability();
     const payments = await this.paymentRepository.createQueryBuilder('payment')
       .leftJoinAndSelect('payment.submission', 'submission')
       .where('payment.organization_id = :organizationId', { organizationId })
+      .orderBy('payment.created_at', 'DESC');
+
+    this.applyOptionalPaymentColumns(payments, 'payment', schema);
+
+    const rows = await payments
       .orderBy('payment.created_at', 'DESC')
       .getMany();
 
-    return this.buildPaymentsCsv(payments);
+    return this.buildPaymentsCsv(rows.map(item => this.hydratePayment(item, schema)));
   }
 
   async generateContactReceiptByPaymentId(organizationId: string, contactId: string, paymentId: string) {
@@ -198,9 +257,14 @@ export class PaymentService {
   }
 
   async findByReferenceGlobal(reference: string) {
-    return this.paymentRepository.findOne({
-      where: { reference },
-    });
+    const schema = await this.getPaymentSchemaAvailability();
+    const query = this.paymentRepository.createQueryBuilder('payment')
+      .where('payment.reference = :reference', { reference });
+
+    this.applyOptionalPaymentColumns(query, 'payment', schema);
+
+    const payment = await query.getOne();
+    return payment ? this.hydratePayment(payment, schema) : null;
   }
 
   async validatePaystackWebhookSignature(rawBody: string, signature: string) {
@@ -228,13 +292,24 @@ export class PaymentService {
       offlineReviewOnly?: boolean;
     } = {},
   ) {
+    const schema = await this.getPaymentSchemaAvailability();
     const payment = await this.findById(organizationId, id);
     if (!payment) {
       throw new NotFoundException('Payment not found');
     }
 
-    const nextPaymentMethod = dto.payment_method ?? payment.payment_method;
-    const isOfflinePayment = nextPaymentMethod !== 'ONLINE';
+    if (!schema.payment_method && dto.payment_method && dto.payment_method !== 'ONLINE') {
+      throw new BadRequestException('Offline payment methods are unavailable until the payment_method migration is applied');
+    }
+
+    if (options.offlineReviewOnly && !this.hasOfflineReviewSchema(schema)) {
+      throw new BadRequestException('Offline review is unavailable until the payment migrations are applied');
+    }
+
+    const nextPaymentMethod = schema.payment_method
+      ? (dto.payment_method ?? payment.payment_method ?? 'ONLINE')
+      : 'ONLINE';
+    const isOfflinePayment = schema.payment_method && nextPaymentMethod !== 'ONLINE';
 
     if (options.offlineReviewOnly && !isOfflinePayment) {
       throw new BadRequestException('Offline review is available only for offline payments');
@@ -279,17 +354,30 @@ export class PaymentService {
       ? (dto.paid_at ?? payment.paid_at ?? new Date())
       : null;
 
-    await this.paymentRepository.update({ id, organization_id: organizationId }, {
+    const updatePayload: Partial<Payment> = {
       status: dto.status,
-      payment_method: nextPaymentMethod,
       paid_at: paidAt,
       amount_paid,
       balance_due,
-      confirmed_at: confirmationMetadata.confirmed_at,
-      confirmed_by_user_id: confirmationMetadata.confirmed_by_user_id,
-      confirmation_note: confirmationMetadata.confirmation_note,
-      external_reference: confirmationMetadata.external_reference,
-    });
+    };
+
+    if (schema.payment_method) {
+      updatePayload.payment_method = nextPaymentMethod;
+    }
+    if (schema.confirmed_at) {
+      updatePayload.confirmed_at = confirmationMetadata.confirmed_at;
+    }
+    if (schema.confirmed_by_user_id) {
+      updatePayload.confirmed_by_user_id = confirmationMetadata.confirmed_by_user_id;
+    }
+    if (schema.confirmation_note) {
+      updatePayload.confirmation_note = confirmationMetadata.confirmation_note;
+    }
+    if (schema.external_reference) {
+      updatePayload.external_reference = confirmationMetadata.external_reference;
+    }
+
+    await this.paymentRepository.update({ id, organization_id: organizationId }, updatePayload);
 
     if (options.source === 'admin_update') {
       await this.paymentLogRepository.save(
@@ -524,10 +612,16 @@ export class PaymentService {
     return 'PENDING';
   }
 
-  private buildTransactionsQuery(organizationId: string, filters: TransactionFilters) {
+  private buildTransactionsQuery(
+    organizationId: string,
+    filters: TransactionFilters,
+    schema: PaymentSchemaAvailability,
+  ) {
     const qb = this.paymentRepository.createQueryBuilder('payment')
       .leftJoinAndSelect('payment.submission', 'submission')
       .where('payment.organization_id = :organizationId', { organizationId });
+
+    this.applyOptionalPaymentColumns(qb, 'payment', schema);
 
     if (filters.status) {
       qb.andWhere('UPPER(payment.status) = :status', { status: this.normalizeTransactionStatus(filters.status) });
@@ -546,7 +640,13 @@ export class PaymentService {
     }
 
     if (filters.payment_method) {
-      qb.andWhere('payment.payment_method = :payment_method', { payment_method: filters.payment_method });
+      if (!schema.payment_method) {
+        if (filters.payment_method !== 'ONLINE') {
+          qb.andWhere('1 = 0');
+        }
+      } else {
+        qb.andWhere('payment.payment_method = :payment_method', { payment_method: filters.payment_method });
+      }
     }
 
     if (filters.start_date) {
@@ -584,7 +684,7 @@ export class PaymentService {
         payment.id,
         payment.reference,
         payment.amount,
-        payment.payment_method,
+        payment.payment_method || 'ONLINE',
         payment.status,
         payment.paid_at ? payment.paid_at.toISOString() : '',
         payment.created_at ? payment.created_at.toISOString() : '',
@@ -652,11 +752,14 @@ export class PaymentService {
     contactId: string,
     lookup: { paymentId?: string; reference?: string },
   ) {
+    const schema = await this.getPaymentSchemaAvailability();
     const paymentQuery = this.paymentRepository
       .createQueryBuilder('payment')
       .leftJoinAndSelect('payment.submission', 'submission')
       .where('payment.organization_id = :organizationId', { organizationId })
       .andWhere('submission.contact_id = :contactId', { contactId });
+
+    this.applyOptionalPaymentColumns(paymentQuery, 'payment', schema);
 
     if (lookup.paymentId) {
       paymentQuery.andWhere('payment.id = :paymentId', { paymentId: lookup.paymentId });
@@ -666,7 +769,8 @@ export class PaymentService {
       throw new BadRequestException('Payment lookup is required');
     }
 
-    const payment = await paymentQuery.getOne();
+    const paymentRecord = await paymentQuery.getOne();
+    const payment = paymentRecord ? this.hydratePayment(paymentRecord, schema) : null;
     if (!payment) {
       throw new NotFoundException('Payment not found');
     }
@@ -692,7 +796,7 @@ export class PaymentService {
         : Promise.resolve(null),
     ]);
 
-    const confirmingUser = payment.confirmed_by_user_id
+    const confirmingUser = schema.confirmed_by_user_id && payment.confirmed_by_user_id
       ? await this.userRepository.findOne({
           where: { id: payment.confirmed_by_user_id, organization_id: organizationId },
           select: ['id', 'first_name', 'middle_name', 'last_name', 'email'],
@@ -725,10 +829,13 @@ export class PaymentService {
     organizationId: string,
     lookup: { paymentId?: string; reference?: string },
   ) {
+    const schema = await this.getPaymentSchemaAvailability();
     const paymentQuery = this.paymentRepository
       .createQueryBuilder('payment')
       .leftJoinAndSelect('payment.submission', 'submission')
       .where('payment.organization_id = :organizationId', { organizationId });
+
+    this.applyOptionalPaymentColumns(paymentQuery, 'payment', schema);
 
     if (lookup.paymentId) {
       paymentQuery.andWhere('payment.id = :paymentId', { paymentId: lookup.paymentId });
@@ -738,7 +845,8 @@ export class PaymentService {
       throw new BadRequestException('Payment lookup is required');
     }
 
-    const payment = await paymentQuery.getOne();
+    const paymentRecord = await paymentQuery.getOne();
+    const payment = paymentRecord ? this.hydratePayment(paymentRecord, schema) : null;
     if (!payment) {
       throw new NotFoundException('Payment not found');
     }
@@ -757,7 +865,7 @@ export class PaymentService {
             select: ['id', 'title'],
           })
         : Promise.resolve(null),
-      payment.confirmed_by_user_id
+      schema.confirmed_by_user_id && payment.confirmed_by_user_id
         ? this.userRepository.findOne({
             where: { id: payment.confirmed_by_user_id, organization_id: organizationId },
             select: ['id', 'first_name', 'middle_name', 'last_name', 'email'],
@@ -982,6 +1090,93 @@ export class PaymentService {
       .split('_')
       .map(part => part.charAt(0) + part.slice(1).toLowerCase())
       .join(' ');
+  }
+
+  private async getPaymentSchemaAvailability(): Promise<PaymentSchemaAvailability> {
+    if (!this.paymentSchemaAvailabilityPromise) {
+      this.paymentSchemaAvailabilityPromise = this.paymentRepository
+        .query(`
+          SELECT column_name
+          FROM information_schema.columns
+          WHERE table_schema = 'public'
+            AND table_name = 'payments'
+            AND column_name IN (
+              'payment_method',
+              'confirmed_at',
+              'confirmed_by_user_id',
+              'confirmation_note',
+              'external_reference'
+            )
+        `)
+        .then((rows: Array<{ column_name: string }>) => {
+          const columns = new Set(rows.map(row => row.column_name));
+          const schema = {
+            payment_method: columns.has('payment_method'),
+            confirmed_at: columns.has('confirmed_at'),
+            confirmed_by_user_id: columns.has('confirmed_by_user_id'),
+            confirmation_note: columns.has('confirmation_note'),
+            external_reference: columns.has('external_reference'),
+          };
+
+          if (!schema.payment_method) {
+            this.logger.warn('payments.payment_method is missing; payment method and offline flows are running in compatibility mode');
+          }
+
+          return schema;
+        })
+        .catch(error => {
+          this.paymentSchemaAvailabilityPromise = null;
+          throw error;
+        });
+    }
+
+    return this.paymentSchemaAvailabilityPromise;
+  }
+
+  private hasOfflineReviewSchema(schema: PaymentSchemaAvailability) {
+    return schema.payment_method
+      && schema.confirmed_at
+      && schema.confirmed_by_user_id
+      && schema.confirmation_note
+      && schema.external_reference;
+  }
+
+  private applyOptionalPaymentColumns(query: any, alias: string, schema: PaymentSchemaAvailability) {
+    const selects: string[] = [];
+
+    if (schema.payment_method) {
+      selects.push(`${alias}.payment_method`);
+    }
+    if (schema.confirmed_at) {
+      selects.push(`${alias}.confirmed_at`);
+    }
+    if (schema.confirmed_by_user_id) {
+      selects.push(`${alias}.confirmed_by_user_id`);
+    }
+    if (schema.confirmation_note) {
+      selects.push(`${alias}.confirmation_note`);
+    }
+    if (schema.external_reference) {
+      selects.push(`${alias}.external_reference`);
+    }
+
+    if (selects.length > 0) {
+      query.addSelect(selects);
+    }
+  }
+
+  private hydratePayment(payment: Payment, schema: PaymentSchemaAvailability): Payment {
+    if (!payment) {
+      return payment;
+    }
+
+    return Object.assign(payment, {
+      payment_method: schema.payment_method ? (payment.payment_method || 'ONLINE') : 'ONLINE',
+      confirmed_at: schema.confirmed_at ? (payment.confirmed_at ?? null) : null,
+      confirmed_by_user_id: schema.confirmed_by_user_id ? (payment.confirmed_by_user_id ?? null) : null,
+      confirmation_note: schema.confirmation_note ? (payment.confirmation_note ?? null) : null,
+      external_reference: schema.external_reference ? (payment.external_reference ?? null) : null,
+    });
   }
 
   private resolveConfirmationMetadata(

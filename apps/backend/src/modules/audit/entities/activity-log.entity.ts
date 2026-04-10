@@ -17,7 +17,7 @@ export class ActivityLog {
   @Column({ type: 'uuid', nullable: true })
   user_id: string | null;
 
-  @Column({ type: 'uuid', nullable: true })
+  @Column({ type: 'uuid', nullable: true, select: false })
   contact_id: string | null;
 
   @Column()
