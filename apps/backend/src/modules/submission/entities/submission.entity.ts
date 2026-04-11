@@ -11,13 +11,13 @@ export class Submission {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column()
+  @Column({ type: 'uuid' })
   form_id: string;
 
-  @Column()
+  @Column({ type: 'uuid' })
   organization_id: string;
 
-  @Column({ nullable: true })
+  @Column({ type: 'uuid', nullable: true })
   contact_id: string;
 
   @Column({ type: 'json' })

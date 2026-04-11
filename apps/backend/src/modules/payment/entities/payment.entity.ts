@@ -13,10 +13,10 @@ export class Payment {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column()
+  @Column({ type: 'uuid' })
   submission_id: string;
 
-  @Column()
+  @Column({ type: 'uuid' })
   organization_id: string;
 
   @Column()
