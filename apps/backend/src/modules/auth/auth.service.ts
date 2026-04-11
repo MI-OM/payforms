@@ -2,7 +2,7 @@ import { Injectable, UnauthorizedException, NotFoundException, BadRequestExcepti
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, In } from 'typeorm';
+import { Repository, In, QueryFailedError } from 'typeorm';
 import * as bcrypt from 'bcrypt';
 import * as crypto from 'crypto';
 import { User } from './entities/user.entity';
@@ -33,6 +33,7 @@ const TWO_FACTOR_DIGITS = 6;
 const TWO_FACTOR_PERIOD_SECONDS = 30;
 const TWO_FACTOR_SETUP_WINDOW_MINUTES = 10;
 const TWO_FACTOR_RECOVERY_CODE_COUNT = 8;
+const DUPLICATE_USER_EMAIL_MESSAGE = 'A user with this email already exists';
 
 @Injectable()
 export class AuthService {
@@ -77,7 +78,7 @@ export class AuthService {
       role: 'ADMIN',
     });
 
-    const savedUser = await this.userRepository.save(user);
+    const savedUser = await this.saveUserWithDuplicateEmailHandling(user);
 
     try {
       await this.sendOrganizationEmailVerification(savedOrg);
@@ -99,7 +100,7 @@ export class AuthService {
 
     const existingUser = await this.userRepository.findOne({ where: { email } });
     if (existingUser) {
-      throw new BadRequestException('A user with this email already exists');
+      throw new BadRequestException(DUPLICATE_USER_EMAIL_MESSAGE);
     }
 
     const existingInvite = await this.invitationRepository.findOne({
@@ -183,7 +184,7 @@ export class AuthService {
 
     const existingUser = await this.userRepository.findOne({ where: { email: invitation.email } });
     if (existingUser) {
-      throw new BadRequestException('A user with this email already exists');
+      throw new BadRequestException(DUPLICATE_USER_EMAIL_MESSAGE);
     }
 
     const passwordHash = await bcrypt.hash(dto.password, 10);
@@ -199,7 +200,7 @@ export class AuthService {
       role: invitation.role,
     });
 
-    const savedUser = await this.userRepository.save(user);
+    const savedUser = await this.saveUserWithDuplicateEmailHandling(user);
     invitation.accepted = true;
     invitation.accepted_at = new Date();
     await this.invitationRepository.save(invitation);
@@ -209,6 +210,24 @@ export class AuthService {
       ...tokens,
       user: this.mapAuthUser(savedUser),
     };
+  }
+
+  private async saveUserWithDuplicateEmailHandling(user: User): Promise<User> {
+    try {
+      return await this.userRepository.save(user);
+    } catch (error) {
+      if (error instanceof QueryFailedError) {
+        const driverError = error.driverError as { code?: string; detail?: string } | undefined;
+        const isDuplicateUserEmail = driverError?.code === '23505'
+          && driverError.detail?.includes('(organization_id, email)');
+
+        if (isDuplicateUserEmail) {
+          throw new BadRequestException(DUPLICATE_USER_EMAIL_MESSAGE);
+        }
+      }
+
+      throw error;
+    }
   }
 
   async login(dto: LoginDto, requestHost?: string | null) {

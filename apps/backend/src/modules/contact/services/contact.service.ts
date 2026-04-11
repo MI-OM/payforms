@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, In } from 'typeorm';
+import { Repository, In, QueryFailedError } from 'typeorm';
 import * as crypto from 'crypto';
 import { Contact } from '../entities/contact.entity';
 import { Payment } from '../../payment/entities/payment.entity';
@@ -63,7 +63,27 @@ export class ContactService {
       password_reset_token: passwordResetToken ? this.hashOpaqueToken(passwordResetToken) : null,
       password_reset_expires_at: passwordResetExpiresAt,
     });
-    const savedContact = await this.contactRepository.save(contact);
+    let savedContact: Contact;
+
+    try {
+      savedContact = await this.contactRepository.save(contact);
+    } catch (error) {
+      if (error instanceof QueryFailedError) {
+        const driverError = error.driverError as { code?: string; detail?: string; constraint?: string } | undefined;
+        const isDuplicateContactEmail = driverError?.code === '23505'
+          && (
+            driverError.constraint === 'IDX_4add4c3da31cc512f7dd525c47'
+            || driverError.detail?.includes('(organization_id, email)')
+          );
+
+        if (isDuplicateContactEmail) {
+          throw new BadRequestException('A contact with this email already exists in this organization');
+        }
+      }
+
+      throw error;
+    }
+
     return Object.assign(savedContact, {
       password_setup_token: passwordResetToken,
     }) as ContactWithPasswordSetupToken;
