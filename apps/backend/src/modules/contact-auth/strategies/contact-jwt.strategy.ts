@@ -31,9 +31,14 @@ export class ContactJwtStrategy extends PassportStrategy(Strategy, 'contact-jwt'
     }
 
     return {
-      id: payload.sub,
-      email: payload.email,
-      organization_id: payload.organization_id,
+      id: contact.id,
+      email: contact.email,
+      first_name: contact.first_name,
+      last_name: contact.last_name,
+      is_active: contact.is_active,
+      student_id: contact.student_id,
+      phone: contact.phone,
+      organization_id: contact.organization_id,
       role: payload.role,
     };
   }
