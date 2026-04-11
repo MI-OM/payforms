@@ -33,6 +33,14 @@ function isStringCompatibleColumn(columnType: ColumnType | null): boolean {
   return columnType?.data_type === 'character varying' || columnType?.data_type === 'text';
 }
 
+function buildMissingValuePredicate(columnName: string, columnType: ColumnType | null): string {
+  if (isStringCompatibleColumn(columnType)) {
+    return `COALESCE(NULLIF(BTRIM("${columnName}"), ''), NULL) IS NULL`;
+  }
+
+  return `"${columnName}" IS NULL`;
+}
+
 export class AlignPaymentSubmissionUuidColumns1776100000000 implements MigrationInterface {
   name = 'AlignPaymentSubmissionUuidColumns1776100000000';
 
@@ -47,10 +55,14 @@ export class AlignPaymentSubmissionUuidColumns1776100000000 implements Migration
       isStringCompatibleColumn(paymentsOrganizationIdType)
       || isStringCompatibleColumn(paymentsSubmissionIdType)
     ) {
+      const paymentCleanupPredicates = [
+        buildMissingValuePredicate('organization_id', paymentsOrganizationIdType),
+        buildMissingValuePredicate('submission_id', paymentsSubmissionIdType),
+      ];
+
       await queryRunner.query(`
         DELETE FROM "payments"
-        WHERE COALESCE(NULLIF(TRIM("organization_id"), ''), NULL) IS NULL
-           OR COALESCE(NULLIF(TRIM("submission_id"), ''), NULL) IS NULL
+        WHERE ${paymentCleanupPredicates.join('\n           OR ')}
       `);
     }
 
@@ -58,7 +70,7 @@ export class AlignPaymentSubmissionUuidColumns1776100000000 implements Migration
       await queryRunner.query(`
         UPDATE "submissions"
         SET "contact_id" = NULL
-        WHERE COALESCE(NULLIF(TRIM("contact_id"), ''), NULL) IS NULL
+        WHERE ${buildMissingValuePredicate('contact_id', submissionsContactIdType)}
       `);
     }
 
@@ -66,10 +78,14 @@ export class AlignPaymentSubmissionUuidColumns1776100000000 implements Migration
       isStringCompatibleColumn(submissionsOrganizationIdType)
       || isStringCompatibleColumn(submissionsFormIdType)
     ) {
+      const submissionCleanupPredicates = [
+        buildMissingValuePredicate('organization_id', submissionsOrganizationIdType),
+        buildMissingValuePredicate('form_id', submissionsFormIdType),
+      ];
+
       await queryRunner.query(`
         DELETE FROM "submissions"
-        WHERE COALESCE(NULLIF(TRIM("organization_id"), ''), NULL) IS NULL
-           OR COALESCE(NULLIF(TRIM("form_id"), ''), NULL) IS NULL
+        WHERE ${submissionCleanupPredicates.join('\n           OR ')}
       `);
     }
 
