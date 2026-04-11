@@ -5,7 +5,7 @@ export class AddInternalNotifications1743708000000 implements MigrationInterface
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(`
-      CREATE TABLE "internal_notifications" (
+      CREATE TABLE IF NOT EXISTS "internal_notifications" (
         "id" uuid NOT NULL,
         "organization_id" uuid NOT NULL,
         "created_by_user_id" uuid,
@@ -21,7 +21,7 @@ export class AddInternalNotifications1743708000000 implements MigrationInterface
     `);
 
     await queryRunner.query(`
-      CREATE INDEX "IDX_internal_notifications_org_created_at"
+      CREATE INDEX IF NOT EXISTS "IDX_internal_notifications_org_created_at"
       ON "internal_notifications" ("organization_id", "created_at")
     `);
   }
