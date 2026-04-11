@@ -28,25 +28,19 @@ export class AuditService {
     userAgent?: string | null,
   ) {
     const hasContactIdColumn = await this.hasActivityLogContactIdColumn();
-    const payload: Record<string, any> = {
-      organization_id: organizationId,
-      user_id: userId,
-      action,
-      entity_type: entityType,
-      entity_id: entityId,
-      metadata,
-      ip_address: ipAddress,
-      user_agent: userAgent,
-    };
-
-    if (hasContactIdColumn) {
-      payload.contact_id = contactId;
-    }
-
-    const log = this.activityLogRepository.create(payload as any);
-
     try {
-      return await this.activityLogRepository.save(log);
+      return await this.insertActivityLog({
+        organizationId,
+        userId,
+        contactId,
+        action,
+        entityType,
+        entityId,
+        metadata,
+        ipAddress,
+        userAgent,
+        hasContactIdColumn,
+      });
     } catch (error) {
       this.logger.warn(
         `Failed to persist activity log for action "${action}" in organization ${organizationId}: ${error instanceof Error ? error.message : String(error)}`,
@@ -235,5 +229,72 @@ export class AuditService {
     }
 
     return this.activityLogContactColumnPromise;
+  }
+
+  private async insertActivityLog(payload: {
+    organizationId: string;
+    userId: string | null;
+    contactId: string | null;
+    action: string;
+    entityType: string;
+    entityId: string;
+    metadata: Record<string, any>;
+    ipAddress?: string | null;
+    userAgent?: string | null;
+    hasContactIdColumn: boolean;
+  }) {
+    const values = [
+      payload.organizationId,
+      payload.userId,
+      payload.action,
+      payload.entityType,
+      payload.entityId,
+      JSON.stringify(payload.metadata ?? {}),
+      payload.ipAddress ?? null,
+      payload.userAgent ?? null,
+    ];
+
+    if (payload.hasContactIdColumn) {
+      values.splice(2, 0, payload.contactId);
+      const [row] = await this.activityLogRepository.query(
+        `
+          INSERT INTO "activity_logs" (
+            "organization_id",
+            "user_id",
+            "contact_id",
+            "action",
+            "entity_type",
+            "entity_id",
+            "metadata",
+            "ip_address",
+            "user_agent"
+          )
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+          RETURNING "id", "created_at"
+        `,
+        values,
+      );
+      return row ?? null;
+    }
+
+    const [row] = await this.activityLogRepository.query(
+      `
+        INSERT INTO "activity_logs" (
+          "organization_id",
+          "user_id",
+          "action",
+          "entity_type",
+          "entity_id",
+          "metadata",
+          "ip_address",
+          "user_agent"
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        RETURNING "id", "created_at"
+      `,
+      values,
+    );
+
+    return row ?? null;
   }
 }
