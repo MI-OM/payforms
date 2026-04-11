@@ -145,6 +145,7 @@ export class FormService {
         organization: {
           id: true,
           require_contact_login: true,
+          enabled_payment_methods: true,
         }
       }
     });

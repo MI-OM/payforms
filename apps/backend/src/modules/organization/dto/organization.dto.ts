@@ -1,5 +1,7 @@
-import { IsString, IsEmail, IsOptional, IsBoolean, IsNumber } from 'class-validator';
+import { IsString, IsEmail, IsOptional, IsBoolean, IsNumber, IsArray, ArrayUnique, IsEnum } from 'class-validator';
+import { Transform } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { PAYMENT_METHODS, PaymentMethod } from '../../payment/entities/payment.entity';
 
 export class CreateOrganizationDto {
   @ApiProperty({ example: 'Acme Corp' })
@@ -56,6 +58,23 @@ export class UpdateOrganizationDto {
   @IsOptional()
   @IsNumber()
   partial_payment_limit?: number;
+
+  @ApiPropertyOptional({ enum: PAYMENT_METHODS, isArray: true, example: ['ONLINE', 'CASH'] })
+  @IsOptional()
+  @Transform(({ value }) => {
+    if (value === undefined || value === null) {
+      return undefined;
+    }
+
+    const values = Array.isArray(value) ? value : [value];
+    return values
+      .map(item => (typeof item === 'string' ? item.trim().toUpperCase() : item))
+      .filter(Boolean);
+  })
+  @IsArray()
+  @ArrayUnique()
+  @IsEnum(PAYMENT_METHODS, { each: true })
+  enabled_payment_methods?: PaymentMethod[];
 }
 
 export class UpdateOrganizationKeysDto {

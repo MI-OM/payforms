@@ -48,6 +48,7 @@ export class PublicController {
       amount: form.amount,
       allow_partial: form.allow_partial,
       access_mode: form.access_mode ?? 'OPEN',
+      enabled_payment_methods: this.paymentService.getEnabledPaymentMethods(form.organization),
       identity_validation_mode: form.identity_validation_mode ?? 'NONE',
       identity_field_label: form.identity_field_label ?? null,
       fields: form.fields,
@@ -87,6 +88,7 @@ export class PublicController {
         payment_type: form.payment_type,
         amount: form.amount,
         allow_partial: form.allow_partial,
+        enabled_payment_methods: this.paymentService.getEnabledPaymentMethods(form.organization),
         access_mode: form.access_mode ?? 'OPEN',
         identity_validation_mode: form.identity_validation_mode ?? 'NONE',
         identity_field_label: form.identity_field_label ?? null,
@@ -348,6 +350,11 @@ export class PublicController {
     // Check if payment is required
     const requiresPayment = totalAmount && totalAmount > 0;
     const paymentMethod = (dto.payment_method || 'ONLINE') as PaymentMethod;
+
+    const enabledPaymentMethods = this.paymentService.getEnabledPaymentMethods(form.organization);
+    if (!enabledPaymentMethods.includes(paymentMethod)) {
+      throw new BadRequestException(`${paymentMethod.replace(/_/g, ' ')} payments are disabled for this organization`);
+    }
 
     if (!requiresPayment) {
       // Free form - no payment required
@@ -1034,11 +1041,27 @@ export class PublicController {
             formEl.appendChild(variableLabel);
           }
 
+          const paymentMethodLabels = {
+            ONLINE: 'Pay Online',
+            CASH: 'Cash',
+            BANK_TRANSFER: 'Bank Transfer',
+            POS: 'POS',
+            CHEQUE: 'Cheque',
+          };
+          const enabledPaymentMethods = Array.isArray(form.enabled_payment_methods) && form.enabled_payment_methods.length
+            ? form.enabled_payment_methods
+            : ['ONLINE'];
+
           const paymentMethodLabel = document.createElement('label');
           paymentMethodLabel.className = 'field';
           paymentMethodLabel.textContent = 'Payment Method';
           const paymentMethodSelect = document.createElement('select');
-          paymentMethodSelect.innerHTML = '<option value="ONLINE">Pay Online</option><option value="CASH">Cash</option><option value="BANK_TRANSFER">Bank Transfer</option><option value="POS">POS</option><option value="CHEQUE">Cheque</option>';
+          for (const method of enabledPaymentMethods) {
+            const option = document.createElement('option');
+            option.value = method;
+            option.textContent = paymentMethodLabels[method] || method;
+            paymentMethodSelect.appendChild(option);
+          }
           paymentMethodLabel.appendChild(paymentMethodSelect);
           formEl.appendChild(paymentMethodLabel);
 

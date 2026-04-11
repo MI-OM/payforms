@@ -14,6 +14,8 @@ import { NotificationService } from '../../notification/notification.service';
 import { CreatePaymentDto, UpdatePaymentStatusDto } from '../dto/payment.dto';
 import { User } from '../../auth/entities/user.entity';
 
+const DEFAULT_ENABLED_PAYMENT_METHODS: PaymentMethod[] = ['ONLINE'];
+
 type TransactionFilters = {
   status?: 'PENDING' | 'PAID' | 'PARTIAL' | 'FAILED';
   reference?: string;
@@ -66,6 +68,7 @@ export class PaymentService {
     }
 
     const org = await this.organizationRepository.findOne({ where: { id: organizationId } });
+    this.assertPaymentMethodEnabled(org, requestedPaymentMethod);
     if (org?.partial_payment_limit && Number(dto.amount) < Number(org.partial_payment_limit)) {
       throw new BadRequestException(`Payment total must be at least ${org.partial_payment_limit}`);
     }
@@ -383,6 +386,9 @@ export class PaymentService {
     }
 
     const org = await this.organizationRepository.findOne({ where: { id: organizationId } });
+    if (dto.payment_method && dto.payment_method !== payment.payment_method) {
+      this.assertPaymentMethodEnabled(org, dto.payment_method);
+    }
     if (dto.status === 'PARTIAL' && org?.partial_payment_limit !== null && org?.partial_payment_limit !== undefined) {
       const partialLimit = Number(org.partial_payment_limit);
       if (amount_paid < partialLimit) {
@@ -448,6 +454,28 @@ export class PaymentService {
     }
 
     return this.findById(organizationId, id);
+  }
+
+  getEnabledPaymentMethods(org?: Pick<Organization, 'enabled_payment_methods'> | null): PaymentMethod[] {
+    const values = Array.isArray(org?.enabled_payment_methods)
+      ? org.enabled_payment_methods
+      : DEFAULT_ENABLED_PAYMENT_METHODS;
+
+    const normalized = values
+      .map(value => String(value || '').trim().toUpperCase())
+      .filter((value): value is PaymentMethod => ['ONLINE', 'CASH', 'BANK_TRANSFER', 'POS', 'CHEQUE'].includes(value));
+
+    return normalized.length ? Array.from(new Set(normalized)) : [...DEFAULT_ENABLED_PAYMENT_METHODS];
+  }
+
+  private assertPaymentMethodEnabled(
+    org: Pick<Organization, 'enabled_payment_methods'> | null,
+    paymentMethod: PaymentMethod,
+  ) {
+    const enabledMethods = this.getEnabledPaymentMethods(org);
+    if (!enabledMethods.includes(paymentMethod)) {
+      throw new BadRequestException(`${paymentMethod.replace(/_/g, ' ')} payments are disabled for this organization`);
+    }
   }
 
   async initializePaystack(organizationId: string, payment: Payment, callbackUrl: string, customerEmail?: string) {

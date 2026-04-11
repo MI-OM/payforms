@@ -5,6 +5,7 @@ import { Group } from '../../group/entities/group.entity';
 import { Form } from '../../form/entities/form.entity';
 import { ActivityLog } from '../../audit/entities/activity-log.entity';
 import { PaymentLog } from '../../audit/entities/payment-log.entity';
+import { PaymentMethod } from '../../payment/entities/payment.entity';
 
 @Entity('organizations')
 @Index('IDX_org_email_verification_token', ['email_verification_token'])
@@ -61,6 +62,9 @@ export class Organization {
 
   @Column({ type: 'decimal', precision: 10, scale: 2, nullable: true })
   partial_payment_limit: number | null;
+
+  @Column({ type: 'varchar', array: true, default: () => "ARRAY['ONLINE']::varchar[]" })
+  enabled_payment_methods: PaymentMethod[];
 
   @Column({ type: 'varchar', default: 'free' })
   billing_plan_tier: string;

@@ -4,9 +4,11 @@ import { Repository } from 'typeorm';
 import { Organization } from '../entities/organization.entity';
 import { CreateOrganizationDto, UpdateOrganizationDto, UpdateOrganizationKeysDto } from '../dto/organization.dto';
 import { StorageService } from '../../../modules/storage/storage.service';
+import { PAYMENT_METHODS, PaymentMethod } from '../../payment/entities/payment.entity';
 
 const SUBDOMAIN_PATTERN = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
 const DOMAIN_PATTERN = /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/;
+const DEFAULT_ENABLED_PAYMENT_METHODS: PaymentMethod[] = ['ONLINE'];
 
 @Injectable()
 export class OrganizationService {
@@ -17,7 +19,10 @@ export class OrganizationService {
   ) {}
 
   async create(dto: CreateOrganizationDto) {
-    const org = this.organizationRepository.create(dto);
+    const org = this.organizationRepository.create({
+      ...dto,
+      enabled_payment_methods: DEFAULT_ENABLED_PAYMENT_METHODS,
+    });
     return this.organizationRepository.save(org);
   }
 
@@ -36,6 +41,7 @@ export class OrganizationService {
         'notify_submission_confirmation',
         'notify_payment_confirmation',
         'notify_payment_failure',
+        'enabled_payment_methods',
         'created_at',
       ],
     });
@@ -69,6 +75,9 @@ export class OrganizationService {
     }
     if (dto.custom_domain !== undefined) {
       updatePayload.custom_domain = this.normalizeCustomDomain(dto.custom_domain);
+    }
+    if (dto.enabled_payment_methods !== undefined) {
+      updatePayload.enabled_payment_methods = this.normalizeEnabledPaymentMethods(dto.enabled_payment_methods);
     }
 
     await this.ensureTenantIdentifiersAreUnique(
@@ -146,7 +155,18 @@ export class OrganizationService {
       notify_submission_confirmation: org.notify_submission_confirmation,
       notify_payment_confirmation: org.notify_payment_confirmation,
       notify_payment_failure: org.notify_payment_failure,
+      enabled_payment_methods: this.normalizeEnabledPaymentMethods(org.enabled_payment_methods),
     };
+  }
+
+  normalizeEnabledPaymentMethods(methods?: PaymentMethod[] | null): PaymentMethod[] {
+    const candidates = Array.isArray(methods) ? methods : [];
+    const normalized = candidates
+      .map(method => String(method || '').trim().toUpperCase())
+      .filter((method): method is PaymentMethod => PAYMENT_METHODS.includes(method as PaymentMethod));
+
+    const unique = Array.from(new Set<PaymentMethod>(normalized));
+    return unique.length > 0 ? unique : [...DEFAULT_ENABLED_PAYMENT_METHODS];
   }
 
   private normalizeSubdomain(value: string | null) {

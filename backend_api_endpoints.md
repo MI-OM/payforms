@@ -60,7 +60,7 @@ Every endpoint below includes:
 - `PATCH /organization/keys`
   Updated with `paystack_webhook_url` support.
 - `PATCH /organization`
-  Updated with `partial_payment_limit` support.
+  Updated with `partial_payment_limit` and `enabled_payment_methods` support.
 - `PATCH /contacts/:id`
   Updated with hard deactivation behavior: when `is_active=false`, existing contact sessions are invalidated and stale tokens are rejected.
 - `POST /auth/register`
@@ -83,6 +83,7 @@ Every endpoint below includes:
 - `1775779200000-AddOfflinePaymentConfirmationFields.ts`: required for offline review metadata and enriched receipts.
 - `1775865600000-AddContactActorToActivityLogs.ts`: required for first-class contact actor audit logs.
 - `1776000000000-AddContactNotifications.ts`: required for contact-facing in-app notifications and read tracking.
+- `1776200000000-AddEnabledPaymentMethodsToOrganizations.ts`: required for organization-level checkout payment method control.
 
 ## Conventions
 
@@ -190,12 +191,12 @@ Every endpoint below includes:
 - How to use: Fetch full organization record for dashboard bootstrap.
 
 ### `PATCH /organization`
-- Parameters: Auth required. Body `{ name?, email?, subdomain?, custom_domain?, require_contact_login?, notify_submission_confirmation?, notify_payment_confirmation?, notify_payment_failure?, partial_payment_limit? }`
-- How to use: Update organization settings including tenant host fields and notification preferences.
+- Parameters: Auth required. Body `{ name?, email?, subdomain?, custom_domain?, require_contact_login?, notify_submission_confirmation?, notify_payment_confirmation?, notify_payment_failure?, partial_payment_limit?, enabled_payment_methods? }`
+- How to use: Update organization settings including tenant host fields, notification preferences, and allowed checkout payment methods. `enabled_payment_methods` accepts any subset of `ONLINE | CASH | BANK_TRANSFER | POS | CHEQUE` and defaults to `['ONLINE']`.
 
 ### `GET /organization/settings`
 - Parameters: Auth required
-- How to use: Fetch settings-focused organization payload.
+- How to use: Fetch settings-focused organization payload. Response includes `enabled_payment_methods` for payment-settings UI.
 
 ### `PATCH /organization/settings`
 - Parameters: Auth required. Body uses same settings fields as `PATCH /organization`.
@@ -510,11 +511,11 @@ Every endpoint below includes:
 
 ### `GET /public/forms/:slug`
 - Parameters: Path `slug`. Optional header `Authorization: Bearer <contact token>`
-- How to use: Load public form definition by slug.
+- How to use: Load public form definition by slug. Response includes `enabled_payment_methods`, which FE should use to render only allowed checkout methods.
 
 ### `GET /public/forms/:slug/widget-config`
 - Parameters: Path `slug`. Optional contact auth header
-- How to use: Fetch widget bootstrap config for embed flows.
+- How to use: Fetch widget bootstrap config for embed flows. `form.enabled_payment_methods` contains the checkout methods allowed for the organization.
 
 ### `GET /public/forms/:slug/embed.js`
 - Status: Legacy (use `/public/forms/:slug/embed/v1.js` for new embeds)
@@ -538,7 +539,7 @@ Every endpoint below includes:
 
 ### `POST /public/forms/:slug/submit`
 - Parameters: Path `slug`. Query `callback_url?`. Optional contact auth header. Body `{ data, contact_email?, contact_name?, partial_amount?, payment_method? }`
-- How to use: Submit public form. FE should handle three outcomes: direct success for free forms, Paystack authorization response for `payment_method=ONLINE`, or `offline_payment=true` response for offline methods (`CASH`, `BANK_TRANSFER`, `POS`, `CHEQUE`) that remain pending until admin confirmation.
+- How to use: Submit public form. FE should only send a `payment_method` from the form's `enabled_payment_methods` list. Backend rejects disabled methods with a validation error. FE should handle three outcomes: direct success for free forms, Paystack authorization response for `payment_method=ONLINE`, or `offline_payment=true` response for offline methods (`CASH`, `BANK_TRANSFER`, `POS`, `CHEQUE`) that remain pending until admin confirmation.
 
 #### Embed security configuration
 - `EMBED_ALLOWED_ORIGINS` (comma-delimited): Allowlist for widget parent origins. Supports exact origins (`https://payforms.com`), host-only rules (`payforms.com`), and wildcards (`*.payforms.com`, `https://*.payforms.com`).
