@@ -96,7 +96,7 @@ export class PaymentService {
   async findByOrganization(organizationId: string, page: number = 1, limit: number = 20) {
     const schema = await this.getPaymentSchemaAvailability();
     const query = this.paymentRepository.createQueryBuilder('payment')
-      .where('payment.organization_id = :organizationId', { organizationId })
+      .where(this.organizationScopeClause('payment'), { organizationId })
       .orderBy('payment.created_at', 'DESC')
       .skip((page - 1) * limit)
       .take(limit);
@@ -112,7 +112,7 @@ export class PaymentService {
     const query = this.paymentRepository.createQueryBuilder('payment')
       .leftJoinAndSelect('payment.submission', 'submission')
       .where('payment.id = :id', { id })
-      .andWhere('payment.organization_id = :organizationId', { organizationId });
+      .andWhere(this.organizationScopeClause('payment'), { organizationId });
 
     this.applyOptionalPaymentColumns(query, 'payment', schema);
 
@@ -125,7 +125,7 @@ export class PaymentService {
     const query = this.paymentRepository.createQueryBuilder('payment')
       .leftJoinAndSelect('payment.submission', 'submission')
       .where('payment.reference = :reference', { reference })
-      .andWhere('payment.organization_id = :organizationId', { organizationId });
+      .andWhere(this.organizationScopeClause('payment'), { organizationId });
 
     this.applyOptionalPaymentColumns(query, 'payment', schema);
 
@@ -208,7 +208,7 @@ export class PaymentService {
     const query = this.paymentRepository.createQueryBuilder('payment')
       .leftJoinAndSelect('payment.submission', 'submission')
       .leftJoinAndSelect('submission.contact', 'contact')
-      .where('payment.organization_id = :organizationId', { organizationId })
+      .where(this.organizationScopeClause('payment'), { organizationId })
       .andWhere('payment.status = :status', { status: 'PENDING' })
       .andWhere('payment.payment_method <> :online', { online: 'ONLINE' })
       .orderBy('payment.created_at', 'ASC')
@@ -255,7 +255,7 @@ export class PaymentService {
     const schema = await this.getPaymentSchemaAvailability();
     const payments = await this.paymentRepository.createQueryBuilder('payment')
       .leftJoinAndSelect('payment.submission', 'submission')
-      .where('payment.organization_id = :organizationId', { organizationId })
+      .where(this.organizationScopeClause('payment'), { organizationId })
       .orderBy('payment.created_at', 'DESC');
 
     this.applyOptionalPaymentColumns(payments, 'payment', schema);
@@ -667,7 +667,7 @@ export class PaymentService {
   ) {
     const qb = this.paymentRepository.createQueryBuilder('payment')
       .leftJoinAndSelect('payment.submission', 'submission')
-      .where('payment.organization_id = :organizationId', { organizationId });
+      .where(this.organizationScopeClause('payment'), { organizationId });
 
     this.applyOptionalPaymentColumns(qb, 'payment', schema);
 
@@ -796,6 +796,11 @@ export class PaymentService {
     return name || payload.email?.trim() || 'N/A';
   }
 
+  private organizationScopeClause(alias: string) {
+    // Ensure UUID comparison works across environments where org_id is UUID.
+    return `${alias}.organization_id = CAST(:organizationId AS uuid)`;
+  }
+
   private async generateContactReceipt(
     organizationId: string,
     contactId: string,
@@ -805,7 +810,7 @@ export class PaymentService {
     const paymentQuery = this.paymentRepository
       .createQueryBuilder('payment')
       .leftJoinAndSelect('payment.submission', 'submission')
-      .where('payment.organization_id = :organizationId', { organizationId })
+      .where(this.organizationScopeClause('payment'), { organizationId })
       .andWhere('submission.contact_id = :contactId', { contactId });
 
     this.applyOptionalPaymentColumns(paymentQuery, 'payment', schema);
@@ -882,7 +887,7 @@ export class PaymentService {
     const paymentQuery = this.paymentRepository
       .createQueryBuilder('payment')
       .leftJoinAndSelect('payment.submission', 'submission')
-      .where('payment.organization_id = :organizationId', { organizationId });
+      .where(this.organizationScopeClause('payment'), { organizationId });
 
     this.applyOptionalPaymentColumns(paymentQuery, 'payment', schema);
 
