@@ -14,6 +14,7 @@ import { NotificationModule } from '../notification/notification.module';
 import { PaymentModule } from '../payment/payment.module';
 import { TenantResolverModule } from '../tenant/tenant-resolver.module';
 import { ContactModule } from '../contact/contact.module';
+import { FormModule } from '../form/form.module';
 
 @Module({
   imports: [
@@ -30,6 +31,7 @@ import { ContactModule } from '../contact/contact.module';
     }),
     NotificationModule,
     PaymentModule,
+    FormModule,
     TenantResolverModule,
     ContactModule,
   ],

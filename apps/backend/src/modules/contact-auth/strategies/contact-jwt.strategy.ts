@@ -26,9 +26,23 @@ export class ContactJwtStrategy extends PassportStrategy(Strategy, 'contact-jwt'
       payload.organization_id,
     );
 
-    if (!contact) {
+    if (!contact || !contact.is_active) {
       throw new UnauthorizedException('Invalid contact credentials');
     }
+
+    const tokenIssuedAt = typeof payload?.iat === 'number'
+      ? new Date(payload.iat * 1000)
+      : null;
+
+    if (
+      tokenIssuedAt &&
+      contact.token_invalidated_at &&
+      contact.token_invalidated_at > tokenIssuedAt
+    ) {
+      throw new UnauthorizedException('Contact token has been invalidated');
+    }
+
+    const organization = await this.contactAuthService.getOrganizationBranding(contact.organization_id);
 
     return {
       id: contact.id,
@@ -39,6 +53,7 @@ export class ContactJwtStrategy extends PassportStrategy(Strategy, 'contact-jwt'
       student_id: contact.student_id,
       phone: contact.phone,
       organization_id: contact.organization_id,
+      organization,
       role: payload.role,
     };
   }

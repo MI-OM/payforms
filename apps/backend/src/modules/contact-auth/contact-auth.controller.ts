@@ -1,9 +1,11 @@
-import { Controller, Post, Body, Get, UseGuards, Request, Param, Res, Query } from '@nestjs/common';
+import { Controller, Post, Body, Get, UseGuards, Request, Param, Res, Query, Patch } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import { ContactAuthService } from './contact-auth.service';
 import { PaymentService } from '../payment/services/payment.service';
 import { ContactService } from '../contact/services/contact.service';
+import { FormService } from '../form/services/form.service';
+import { NotificationService } from '../notification/notification.service';
 import {
   ContactLoginDto,
   ContactSetPasswordDto,
@@ -23,6 +25,8 @@ export class ContactAuthController {
     private contactAuthService: ContactAuthService,
     private paymentService: PaymentService,
     private contactService: ContactService,
+    private formService: FormService,
+    private notificationService: NotificationService,
     private configService: ConfigService,
   ) {}
 
@@ -77,6 +81,51 @@ export class ContactAuthController {
   @ApiBearerAuth()
   async getCurrentContact(@Request() req) {
     return req.user;
+  }
+
+  @Get('forms')
+  @UseGuards(ContactJwtAuthGuard)
+  @ApiBearerAuth()
+  async getCurrentContactForms(
+    @Request() req,
+    @Query('page') page: number = 1,
+    @Query('limit') limit: number = 20,
+  ) {
+    return this.formService.findAccessibleByContact(
+      req.user.organization_id,
+      req.user.id,
+      Number(page),
+      Number(limit),
+    );
+  }
+
+  @Get('notifications')
+  @UseGuards(ContactJwtAuthGuard)
+  @ApiBearerAuth()
+  async getCurrentContactNotifications(
+    @Request() req,
+    @Query('page') page: number = 1,
+    @Query('limit') limit: number = 20,
+    @Query('unread_only') unreadOnly?: string,
+  ) {
+    return this.notificationService.listContactNotifications(
+      req.user.organization_id,
+      req.user.id,
+      Number(page),
+      Number(limit),
+      unreadOnly === 'true',
+    );
+  }
+
+  @Patch('notifications/:id/read')
+  @UseGuards(ContactJwtAuthGuard)
+  @ApiBearerAuth()
+  async markCurrentContactNotificationRead(@Request() req, @Param('id') id: string) {
+    return this.notificationService.markContactNotificationRead(
+      req.user.organization_id,
+      req.user.id,
+      id,
+    );
   }
 
   @Get('transactions')

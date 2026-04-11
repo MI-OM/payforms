@@ -99,6 +99,25 @@ export class ContactAuthService {
     return this.contactRepository.findOne({ where: { id, organization_id: organizationId } });
   }
 
+  async getOrganizationBranding(organizationId: string) {
+    const organization = await this.organizationRepository.findOne({
+      where: { id: organizationId },
+      select: ['id', 'name', 'logo_url', 'subdomain', 'custom_domain'],
+    });
+
+    if (!organization) {
+      return null;
+    }
+
+    return {
+      id: organization.id,
+      name: organization.name,
+      logo_url: organization.logo_url || null,
+      subdomain: organization.subdomain || null,
+      custom_domain: organization.custom_domain || null,
+    };
+  }
+
   async setPassword(dto: ContactSetPasswordDto) {
     return this.confirmPasswordReset(dto as ContactResetPasswordDto);
   }

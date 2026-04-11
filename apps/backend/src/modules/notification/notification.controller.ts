@@ -80,14 +80,33 @@ export class NotificationController {
     @UploadedFile() attachment?: UploadedAttachment,
   ) {
     const message = dto.message || 'Please complete your payment as soon as possible.';
-    const recipients = await Promise.all(
-      dto.contact_ids.map(contactId =>
-        this.notificationService.getContactEmail(req.user.organization_id, contactId),
-      ),
+    const contacts = await this.notificationService.getContactsByIds(
+      req.user.organization_id,
+      dto.contact_ids,
+    );
+    const recipients = contacts.map(contact => contact.email);
+    const result = await this.notificationService.sendReminder(
+      recipients,
+      message,
+      this.mapAttachment(attachment),
     );
 
-    const filtered = recipients.filter((email): email is string => !!email);
-    return this.notificationService.sendReminder(filtered, message, this.mapAttachment(attachment));
+    await this.notificationService.createContactNotification(
+      req.user.organization_id,
+      req.user.id,
+      {
+        title: 'Payment Reminder',
+        body: message,
+        type: 'REMINDER',
+        contact_ids: contacts.map(contact => contact.id),
+        metadata: {
+          has_attachment: !!attachment,
+          channel: 'email',
+        },
+      },
+    );
+
+    return result;
   }
 
   @Post('reminder/groups')
@@ -117,12 +136,35 @@ export class NotificationController {
     @UploadedFile() attachment?: UploadedAttachment,
   ) {
     const message = dto.message || 'Please complete your payment as soon as possible.';
-    const recipients = await this.notificationService.getGroupContactEmails(
+    const contacts = await this.notificationService.getGroupContacts(
       req.user.organization_id,
       dto.group_ids,
     );
+    const recipients = contacts.map(contact => contact.email);
 
-    return this.notificationService.sendReminder(recipients, message, this.mapAttachment(attachment));
+    const result = await this.notificationService.sendReminder(
+      recipients,
+      message,
+      this.mapAttachment(attachment),
+    );
+
+    await this.notificationService.createContactNotification(
+      req.user.organization_id,
+      req.user.id,
+      {
+        title: 'Payment Reminder',
+        body: message,
+        type: 'REMINDER',
+        contact_ids: contacts.map(contact => contact.id),
+        metadata: {
+          has_attachment: !!attachment,
+          group_ids: dto.group_ids,
+          channel: 'email',
+        },
+      },
+    );
+
+    return result;
   }
 
   @Post('schedule')

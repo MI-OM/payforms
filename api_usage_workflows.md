@@ -18,6 +18,8 @@ For each workflow below, FE gets:
 - Form group fetch via `GET /forms/:id/groups`
 - Organization email verification status via `GET /auth/organization-email/status`
 - Contact logout via `POST /contact-auth/logout`
+- Contact-accessible forms via `GET /contact-auth/forms`
+- Contact in-app notifications via `GET /contact-auth/notifications` and `PATCH /contact-auth/notifications/:id/read`
 - CSV contact import validate and commit endpoints
 - Public payment verify via `GET /public/payments/verify`
 - Scheduled notifications listing via `GET /notifications/scheduled`
@@ -28,8 +30,11 @@ For each workflow below, FE gets:
 
 - Admin auth now supports cookie-backed sessions in addition to token responses.
 - Contact auth now supports cookie-backed session.
+- Contact auth `/me` now includes organization branding (`logo_url`, `name`, etc.) for contact UI headers/branding.
 - Public form submit now supports both free forms and partial payments.
 - Notification fan-out now sends per recipient, so recipient emails are no longer exposed to each other.
+- Reminder endpoints now also create contact in-app notifications.
+- `/transactions` list responses now include `form_title`, `customer_name`, and `customer_email` directly.
 
 ## 1. Admin Authentication Workflow
 
@@ -236,6 +241,7 @@ For each workflow below, FE gets:
   1. Use `/contacts` for normal listing/filtering.
   2. Use `/contacts/:id/details` when FE needs group hierarchy paths.
   3. Use `/contacts/:id/groups` to assign group membership directly.
+  4. Setting `is_active=false` on `/contacts/:id` now hard-deactivates the contact by invalidating existing sessions/tokens.
 
 ### 6.2 Export contacts
 
@@ -329,14 +335,20 @@ For each workflow below, FE gets:
 
 - Endpoints:
   - `GET /contact-auth/me`
+  - `GET /contact-auth/forms` `New`
+  - `GET /contact-auth/notifications` `New`
+  - `PATCH /contact-auth/notifications/:id/read` `New`
   - `GET /contact-auth/transactions` `New`
   - `GET /contact-auth/payments/:id/receipt`
   - `GET /contact-auth/payments/reference/:reference/receipt`
 - Parameters: Auth required
 - How to use:
-  1. `/me` loads contact profile.
-  2. `/transactions` returns the current contact's payment history and supports `format=csv` for export.
-  3. Receipt endpoints download PDF receipts.
+  1. `/me` loads contact profile and organization branding payload (`organization.logo_url`, `organization.name`, etc.) for contact-facing UI branding.
+  2. `/forms` lists all forms accessible to the authenticated contact (including targeted/group-targeted forms they qualify for).
+  3. `/notifications` loads contact-facing in-app notifications (reminders and payment status updates).
+  4. `/notifications/:id/read` marks one notification as read.
+  5. `/transactions` returns the current contact's payment history and supports `format=csv` for export.
+  6. Receipt endpoints download PDF receipts.
 
 ## 9. Public Form Workflow
 
@@ -420,8 +432,9 @@ For each workflow below, FE gets:
   - List query `{ status?, reference?, form_id?, contact_id?, payment_method?, start_date?, end_date?, page?, limit?, format? }`
 - How to use:
   1. FE uses `/transactions` for filtered history and export.
-  2. When `format=csv`, backend returns `reference, amount, payment_method, status, paid_at, created_at, form_name, contact_name`.
-  3. FE uses `/transactions/:id/history` for event timeline UI.
+  2. `/transactions` JSON rows now include `form_title`, `customer_name`, and `customer_email`, so FE does not need N+1 follow-up calls for submission/contact metadata.
+  3. When `format=csv`, backend returns `reference,amount,payment_method,status,paid_at,created_at,form_title,customer_name,customer_email`.
+  4. FE uses `/transactions/:id/history` for event timeline UI.
 
 ## 11. Submission Export Workflow
 
@@ -445,6 +458,7 @@ For each workflow below, FE gets:
   2. FE submits `contact_ids` as either repeated form-data fields or a JSON array string.
   3. FE may include one optional attachment file up to 10MB.
   4. Backend resolves emails and sends reminders with the attachment included in the email.
+  5. Backend also creates contact in-app notifications for the same recipients.
 
 ### 12.2 Send reminder by groups
 
@@ -455,6 +469,7 @@ For each workflow below, FE gets:
   2. FE submits `group_ids` as either repeated form-data fields or a JSON array string.
   3. FE may include one optional attachment file up to 10MB.
   4. Backend resolves all group contact emails and sends reminders with the attachment included in the email.
+  5. Backend also creates contact in-app notifications for the resolved recipients.
 
 ### 12.3 Send immediate scheduled messages
 
@@ -484,6 +499,19 @@ For each workflow below, FE gets:
   1. FE creates internal notifications for all organization users or selected staff/admin users.
   2. FE polls `/notifications/internal` for in-app notification UI.
   3. FE marks a notification as read with `/notifications/internal/:id/read`.
+
+### 12.5 Contact in-app notifications
+
+- Endpoints:
+  - `GET /contact-auth/notifications` `New`
+  - `PATCH /contact-auth/notifications/:id/read` `New`
+- Parameters:
+  - List query `page?`, `limit?`, `unread_only?=true|false`
+  - Read path `id`
+- How to use:
+  1. Contact FE polls `/contact-auth/notifications` for contact-facing notification center UI.
+  2. Contact FE marks read state via `/contact-auth/notifications/:id/read`.
+  3. Reminders and payment status transitions are now delivered into this feed.
 
 ## 13. Audit Workflow
 

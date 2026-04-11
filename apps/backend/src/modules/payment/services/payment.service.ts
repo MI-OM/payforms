@@ -140,15 +140,63 @@ export class PaymentService {
     limit: number = 20,
   ) {
     const schema = await this.getPaymentSchemaAvailability();
-    const qb = this.buildTransactionsQuery(organizationId, filters, schema);
+    const safePage = Number.isFinite(page) && page > 0 ? page : 1;
+    const safeLimit = Number.isFinite(limit) && limit > 0 ? Math.min(limit, 100) : 20;
+    const qb = this.buildTransactionsQuery(organizationId, filters, schema)
+      .leftJoin(Form, 'form', 'form.id = submission.form_id')
+      .leftJoin(Contact, 'contact', 'contact.id = submission.contact_id')
+      .addSelect('payment.id', 'payment_id')
+      .addSelect('form.title', 'form_title')
+      .addSelect('contact.first_name', 'contact_first_name')
+      .addSelect('contact.middle_name', 'contact_middle_name')
+      .addSelect('contact.last_name', 'contact_last_name')
+      .addSelect('contact.email', 'contact_email');
 
-    const [data, total] = await qb
+    const total = await qb.clone().getCount();
+
+    const { entities, raw } = await qb
       .orderBy('payment.created_at', 'DESC')
-      .skip((page - 1) * limit)
-      .take(limit)
-      .getManyAndCount();
+      .skip((safePage - 1) * safeLimit)
+      .take(safeLimit)
+      .getRawAndEntities();
 
-    return { data: data.map(item => this.hydratePayment(item, schema)), total, page, limit };
+    const contextByPaymentId = new Map<string, {
+      form_title: string | null;
+      customer_name: string | null;
+      customer_email: string | null;
+    }>();
+
+    for (const row of raw || []) {
+      const paymentId = String(row?.payment_id || '').trim();
+      if (!paymentId || contextByPaymentId.has(paymentId)) {
+        continue;
+      }
+
+      const customerName = this.buildContactDisplayName({
+        firstName: row?.contact_first_name,
+        middleName: row?.contact_middle_name,
+        lastName: row?.contact_last_name,
+        email: row?.contact_email,
+      });
+
+      contextByPaymentId.set(paymentId, {
+        form_title: row?.form_title || null,
+        customer_name: customerName === 'N/A' ? null : customerName,
+        customer_email: row?.contact_email ? String(row.contact_email).trim() : null,
+      });
+    }
+
+    const data = entities.map(item => {
+      const context = contextByPaymentId.get(item.id);
+      return {
+        ...this.hydratePayment(item, schema),
+        form_title: context?.form_title ?? null,
+        customer_name: context?.customer_name ?? null,
+        customer_email: context?.customer_email ?? null,
+      };
+    });
+
+    return { data, total, page: safePage, limit: safeLimit };
   }
 
   async listPendingOfflinePayments(organizationId: string, page: number = 1, limit: number = 20) {
@@ -184,7 +232,7 @@ export class PaymentService {
         'payment.status AS status',
         'payment.paid_at AS paid_at',
         'payment.created_at AS created_at',
-        'form.title AS form_name',
+        'form.title AS form_title',
         'contact.first_name AS contact_first_name',
         'contact.middle_name AS contact_middle_name',
         'contact.last_name AS contact_last_name',
@@ -704,7 +752,7 @@ export class PaymentService {
     status: string;
     paid_at: Date | string | null;
     created_at: Date | string | null;
-    form_name: string | null;
+    form_title: string | null;
     contact_first_name: string | null;
     contact_middle_name: string | null;
     contact_last_name: string | null;
@@ -725,12 +773,13 @@ export class PaymentService {
         row.status,
         row.paid_at ? new Date(row.paid_at).toISOString() : '',
         row.created_at ? new Date(row.created_at).toISOString() : '',
-        row.form_name || 'N/A',
+        row.form_title || 'N/A',
         contactName,
+        row.contact_email || 'N/A',
       ].map(value => this.escapeCsv(value)).join(',');
     });
 
-    return `reference,amount,payment_method,status,paid_at,created_at,form_name,contact_name\n${csvRows.join('\n')}`;
+    return `reference,amount,payment_method,status,paid_at,created_at,form_title,customer_name,customer_email\n${csvRows.join('\n')}`;
   }
 
   private buildContactDisplayName(payload: {
@@ -1313,30 +1362,39 @@ export class PaymentService {
     }
 
     const recipientEmail = await this.resolveRecipientEmail(organizationId, payment, paystackData);
-    if (!recipientEmail) {
-      return;
+    if (recipientEmail) {
+      try {
+        if (nextStatus === 'PAID' && org.notify_payment_confirmation) {
+          const receiptAttachment = await this.buildReceiptAttachmentIfAvailable(organizationId, payment);
+          await this.notificationService.sendPaymentConfirmation(
+            org,
+            recipientEmail,
+            Number(payment.amount),
+            payment.reference,
+            receiptAttachment ? [receiptAttachment] : undefined,
+          );
+        } else if (nextStatus === 'FAILED' && org.notify_payment_failure) {
+          await this.notificationService.sendFailedPaymentReminder(
+            org,
+            recipientEmail,
+            Number(payment.amount),
+            payment.reference,
+          );
+        }
+      } catch (error) {
+        console.warn('Payment notification email failed:', error);
+      }
     }
 
     try {
-      if (nextStatus === 'PAID' && org.notify_payment_confirmation) {
-        const receiptAttachment = await this.buildReceiptAttachmentIfAvailable(organizationId, payment);
-        await this.notificationService.sendPaymentConfirmation(
-          org,
-          recipientEmail,
-          Number(payment.amount),
-          payment.reference,
-          receiptAttachment ? [receiptAttachment] : undefined,
-        );
-      } else if (nextStatus === 'FAILED' && org.notify_payment_failure) {
-        await this.notificationService.sendFailedPaymentReminder(
-          org,
-          recipientEmail,
-          Number(payment.amount),
-          payment.reference,
-        );
-      }
+      await this.maybeCreateContactPaymentStatusNotification(
+        organizationId,
+        payment,
+        previousStatus,
+        nextStatus,
+      );
     } catch (error) {
-      console.warn('Payment notification email failed:', error);
+      console.warn('Payment contact notification failed:', error);
     }
   }
 
@@ -1378,6 +1436,51 @@ export class PaymentService {
     } catch (error) {
       return null;
     }
+  }
+
+  private async maybeCreateContactPaymentStatusNotification(
+    organizationId: string,
+    payment: Payment,
+    previousStatus: Payment['status'],
+    nextStatus: Payment['status'],
+  ) {
+    if (previousStatus === nextStatus) {
+      return;
+    }
+
+    const contactId = payment.submission?.contact_id;
+    if (!contactId) {
+      return;
+    }
+
+    const formTitle = await this.resolveFormTitle(organizationId, payment.submission?.form_id);
+
+    await this.notificationService.createContactPaymentStatusNotification(
+      organizationId,
+      contactId,
+      {
+        payment_id: payment.id,
+        form_id: payment.submission?.form_id || null,
+        form_title: formTitle,
+        reference: payment.reference,
+        status: nextStatus,
+        previous_status: previousStatus,
+        amount: payment.amount,
+      },
+    );
+  }
+
+  private async resolveFormTitle(organizationId: string, formId?: string | null) {
+    if (!formId) {
+      return null;
+    }
+
+    const form = await this.formRepository.findOne({
+      where: { id: formId, organization_id: organizationId },
+      select: ['title'],
+    });
+
+    return form?.title || null;
   }
 
   private buildVerificationEventId(source: 'manual_verify' | 'callback_redirect', reference: string, paystackId?: string | number) {

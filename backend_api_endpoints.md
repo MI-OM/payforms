@@ -24,6 +24,9 @@ Every endpoint below includes:
 - `POST /auth/2fa/verify-login`
 - `POST /auth/2fa/recovery-codes/regenerate`
 - `POST /contact-auth/logout`
+- `GET /contact-auth/forms`
+- `GET /contact-auth/notifications`
+- `PATCH /contact-auth/notifications/:id/read`
 - `GET /contact-auth/transactions`
 - `GET /contact-auth/payments/:id/receipt`
 - `GET /contact-auth/payments/reference/:reference/receipt`
@@ -51,13 +54,15 @@ Every endpoint below includes:
 - `PATCH /payments/:id/status`
   Updated with `payment_method` support and offline confirmation metadata.
 - `GET /transactions`
-  Updated with `payment_method` filters and CSV export field updates.
+  Updated with `payment_method` filters, enriched CSV fields, and direct JSON enrichment (`form_title`, `customer_name`, `customer_email`) so FE no longer needs follow-up per-transaction lookups.
 - `GET /audit/logs`
   Updated with contact actor support and `contact_id` filtering.
 - `PATCH /organization/keys`
   Updated with `paystack_webhook_url` support.
 - `PATCH /organization`
   Updated with `partial_payment_limit` support.
+- `PATCH /contacts/:id`
+  Updated with hard deactivation behavior: when `is_active=false`, existing contact sessions are invalidated and stale tokens are rejected.
 - `POST /auth/register`
 - `POST /auth/login`
 - `POST /auth/refresh`
@@ -66,12 +71,18 @@ Every endpoint below includes:
   Updated to return a two-factor challenge when staff 2FA is enabled.
 - `POST /contact-auth/login`
   Updated to support contact auth cookie session.
+- `GET /contact-auth/me`
+  Updated to include `organization` branding payload (`id`, `name`, `logo_url`, `subdomain`, `custom_domain`) for contact FE branding.
+- `POST /notifications/reminder`
+- `POST /notifications/reminder/groups`
+  Updated to also create contact in-app notifications consumable through contact-auth notification endpoints.
 
 ### Migration Notes
 
 - `1744396800000-AddPaymentMethodToPayments.ts`: required for payment method selection, offline payment initiation, and transaction filtering.
 - `1775779200000-AddOfflinePaymentConfirmationFields.ts`: required for offline review metadata and enriched receipts.
 - `1775865600000-AddContactActorToActivityLogs.ts`: required for first-class contact actor audit logs.
+- `1776000000000-AddContactNotifications.ts`: required for contact-facing in-app notifications and read tracking.
 
 ## Conventions
 
@@ -325,7 +336,7 @@ Every endpoint below includes:
 
 ### `PATCH /contacts/:id`
 - Parameters: Auth required. Path `id`. Body `{ first_name?, middle_name?, last_name?, email?, phone?, gender?, student_id?, external_id?, guardian_name?, guardian_email?, guardian_phone?, is_active? }`
-- How to use: Update contact details or active state.
+- How to use: Update contact details or active state. Setting `is_active=false` now performs hard deactivation by invalidating existing contact sessions/tokens.
 
 ### `DELETE /contacts/:id`
 - Parameters: Auth required. Path `id`
@@ -402,7 +413,22 @@ Every endpoint below includes:
 
 ### `GET /contact-auth/me`
 - Parameters: Auth required
-- How to use: Fetch authenticated contact profile. Successful requests are now safely audit-logged with contact actor support.
+- How to use: Fetch authenticated contact profile. Response now includes `organization` branding payload (`id`, `name`, `logo_url`, `subdomain`, `custom_domain`) so contact FE can display organization identity assets like logo.
+
+### `GET /contact-auth/forms`
+- Status: New
+- Parameters: Auth required. Query `{ page?, limit? }`
+- How to use: Fetch forms accessible to the authenticated contact. Response includes active forms where access is open/login-required or where the contact is explicitly targeted (directly or via group inheritance).
+
+### `GET /contact-auth/notifications`
+- Status: New
+- Parameters: Auth required. Query `{ page?, limit?, unread_only?=true|false }`
+- How to use: Fetch contact-facing in-app notifications, including reminders and payment status updates scoped to the authenticated contact.
+
+### `PATCH /contact-auth/notifications/:id/read`
+- Status: New
+- Parameters: Auth required. Path `id`
+- How to use: Mark a contact in-app notification as read.
 
 ### `GET /contact-auth/transactions`
 - Status: New
@@ -463,7 +489,7 @@ Every endpoint below includes:
 
 ### `GET /transactions`
 - Parameters: Auth required. Query `{ status?, reference?, form_id?, contact_id?, payment_method?, start_date?, end_date?, page?, limit?, format? }`
-- How to use: Filter transaction history and optionally export CSV with `format=csv`. The CSV returns `reference, amount, payment_method, status, paid_at, created_at, form_name, contact_name`.
+- How to use: Filter transaction history and optionally export CSV with `format=csv`. JSON rows now include `form_title`, `customer_name`, and `customer_email` directly, and CSV now returns `reference,amount,payment_method,status,paid_at,created_at,form_title,customer_name,customer_email`.
 
 ### `GET /transactions/:id`
 - Parameters: Auth required. Path `id`
@@ -515,11 +541,11 @@ Every endpoint below includes:
 
 ### `POST /notifications/reminder`
 - Parameters: Auth required. `multipart/form-data` with `contact_ids`, `message?`, `attachment?`
-- How to use: Send reminder to selected contacts. `contact_ids` can be sent as a JSON array string or repeated form field values. Optional `attachment` supports one file up to 10MB and is included in the reminder email.
+- How to use: Send reminder to selected contacts. `contact_ids` can be sent as a JSON array string or repeated form field values. Optional `attachment` supports one file up to 10MB and is included in the reminder email. Backend also creates in-app contact notifications for recipients.
 
 ### `POST /notifications/reminder/groups`
 - Parameters: Auth required. `multipart/form-data` with `group_ids`, `message?`, `attachment?`
-- How to use: Send reminder to contacts resolved from selected groups. `group_ids` can be sent as a JSON array string or repeated form field values. Optional `attachment` supports one file up to 10MB and is included in the reminder email.
+- How to use: Send reminder to contacts resolved from selected groups. `group_ids` can be sent as a JSON array string or repeated form field values. Optional `attachment` supports one file up to 10MB and is included in the reminder email. Backend also creates in-app contact notifications for recipients.
 
 ### `POST /notifications/schedule`
 - Parameters: Auth required. Body `{ subject, body, recipients: string[] }`

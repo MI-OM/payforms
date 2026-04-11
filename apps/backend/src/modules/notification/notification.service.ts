@@ -7,6 +7,7 @@ import { Organization } from '../organization/entities/organization.entity';
 import { Contact } from '../contact/entities/contact.entity';
 import { User } from '../auth/entities/user.entity';
 import { InternalNotification } from './entities/internal-notification.entity';
+import { ContactNotification } from './entities/contact-notification.entity';
 
 type EmailProvider = 'sendgrid' | 'mailgun' | 'brevo';
 
@@ -14,6 +15,11 @@ type EmailAttachment = {
   filename: string;
   content: Buffer | string;
   type?: string;
+};
+
+type ContactEmailRecipient = {
+  id: string;
+  email: string;
 };
 
 @Injectable()
@@ -26,6 +32,8 @@ export class NotificationService {
     private userRepository: Repository<User>,
     @InjectRepository(InternalNotification)
     private internalNotificationRepository: Repository<InternalNotification>,
+    @InjectRepository(ContactNotification)
+    private contactNotificationRepository: Repository<ContactNotification>,
   ) {}
 
   private trimOptionalValue(value?: string | null) {
@@ -53,8 +61,38 @@ export class NotificationService {
     return contact?.email;
   }
 
-  async getGroupContactEmails(organizationId: string, groupIds: string[]) {
-    if (!groupIds.length) {
+  async getContactsByIds(organizationId: string, contactIds: string[]): Promise<ContactEmailRecipient[]> {
+    const normalizedContactIds = Array.from(new Set(
+      (contactIds || [])
+        .map(contactId => this.trimOptionalValue(contactId))
+        .filter((contactId): contactId is string => !!contactId),
+    ));
+
+    if (!normalizedContactIds.length) {
+      return [];
+    }
+
+    const contacts = await this.contactRepository.find({
+      where: { organization_id: organizationId, id: In(normalizedContactIds) },
+      select: ['id', 'email'],
+    });
+
+    return contacts
+      .map(contact => ({
+        id: contact.id,
+        email: contact.email?.trim().toLowerCase() || '',
+      }))
+      .filter(contact => !!contact.email);
+  }
+
+  async getGroupContacts(organizationId: string, groupIds: string[]): Promise<ContactEmailRecipient[]> {
+    const normalizedGroupIds = Array.from(new Set(
+      (groupIds || [])
+        .map(groupId => this.trimOptionalValue(groupId))
+        .filter((groupId): groupId is string => !!groupId),
+    ));
+
+    if (!normalizedGroupIds.length) {
       return [];
     }
 
@@ -62,18 +100,24 @@ export class NotificationService {
       .createQueryBuilder('contact')
       .innerJoin('contact.groups', 'group')
       .where('contact.organization_id = :organizationId', { organizationId })
-      .andWhere('group.id IN (:...groupIds)', { groupIds })
+      .andWhere('group.id IN (:...groupIds)', { groupIds: normalizedGroupIds })
       .andWhere('contact.email IS NOT NULL')
       .andWhere("TRIM(contact.email) <> ''")
-      .select(['contact.email'])
+      .select(['contact.id', 'contact.email'])
       .distinct(true)
       .getMany();
 
-    const normalizedEmails = contacts
-      .map(contact => contact.email?.trim().toLowerCase())
-      .filter((email): email is string => !!email);
+    return contacts
+      .map(contact => ({
+        id: contact.id,
+        email: contact.email?.trim().toLowerCase() || '',
+      }))
+      .filter(contact => !!contact.email);
+  }
 
-    return Array.from(new Set(normalizedEmails));
+  async getGroupContactEmails(organizationId: string, groupIds: string[]) {
+    const contacts = await this.getGroupContacts(organizationId, groupIds);
+    return Array.from(new Set(contacts.map(contact => contact.email)));
   }
 
   private getEmailProvider(): EmailProvider {
@@ -473,6 +517,162 @@ export class NotificationService {
     return this.sendEmail(recipients, subject, html, attachmentList);
   }
 
+  async createContactNotification(
+    organizationId: string,
+    createdByUserId: string | null,
+    input: {
+      title: string;
+      body: string;
+      type?: string;
+      contact_ids?: string[];
+      metadata?: Record<string, unknown> | null;
+    },
+  ) {
+    const title = this.trimOptionalValue(input.title);
+    const body = this.trimOptionalValue(input.body);
+    if (!title || !body) {
+      throw new BadRequestException('title and body are required');
+    }
+
+    const explicitContactIds = Array.from(new Set(
+      (input.contact_ids || [])
+        .map(contactId => this.trimOptionalValue(contactId))
+        .filter((contactId): contactId is string => !!contactId),
+    ));
+    const hasExplicitAudience = explicitContactIds.length > 0;
+
+    const recipients = await this.getContactsByIds(organizationId, explicitContactIds);
+    const recipientIds = Array.from(new Set(recipients.map(recipient => recipient.id)));
+    if (hasExplicitAudience && !recipientIds.length) {
+      return null;
+    }
+
+    const audienceType = hasExplicitAudience ? 'SELECTED_CONTACTS' : 'ALL_CONTACTS';
+
+    const notification = await this.contactNotificationRepository.save(
+      this.contactNotificationRepository.create({
+        organization_id: organizationId,
+        created_by_user_id: createdByUserId,
+        title,
+        body,
+        type: input.type || 'GENERAL',
+        audience_type: audienceType,
+        target_contact_ids: hasExplicitAudience ? recipientIds : null,
+        read_by_contact_ids: [],
+        metadata: input.metadata || null,
+      }),
+    );
+
+    return this.mapContactNotification(notification, recipientIds[0] || '');
+  }
+
+  async createContactPaymentStatusNotification(
+    organizationId: string,
+    contactId: string,
+    input: {
+      payment_id: string;
+      form_id?: string | null;
+      form_title?: string | null;
+      reference: string;
+      status: string;
+      previous_status?: string | null;
+      amount?: number | string;
+    },
+  ) {
+    if (!contactId) {
+      return null;
+    }
+
+    const normalizedStatus = String(input.status || '').toUpperCase();
+    const normalizedPreviousStatus = String(input.previous_status || '').toUpperCase() || null;
+
+    let title = 'Payment Update';
+    if (normalizedStatus === 'PAID') {
+      title = 'Payment Confirmed';
+    } else if (normalizedStatus === 'FAILED') {
+      title = 'Payment Failed';
+    } else if (normalizedStatus === 'PARTIAL') {
+      title = 'Partial Payment Received';
+    }
+
+    const formPrefix = input.form_title ? `for ${input.form_title} ` : '';
+    const amountText = input.amount !== undefined && input.amount !== null
+      ? ` Amount: ${this.formatAmount(input.amount)}.`
+      : '';
+    const body = `Your payment ${formPrefix}(ref: ${input.reference}) is now ${normalizedStatus}.${amountText}`;
+
+    return this.createContactNotification(organizationId, null, {
+      title,
+      body,
+      type: 'PAYMENT_STATUS',
+      contact_ids: [contactId],
+      metadata: {
+        payment_id: input.payment_id,
+        form_id: input.form_id || null,
+        form_title: input.form_title || null,
+        reference: input.reference,
+        status: normalizedStatus,
+        previous_status: normalizedPreviousStatus,
+      },
+    });
+  }
+
+  async listContactNotifications(
+    organizationId: string,
+    contactId: string,
+    page: number,
+    limit: number,
+    unreadOnly = false,
+  ) {
+    const safePage = Number.isFinite(page) && page > 0 ? page : 1;
+    const safeLimit = Number.isFinite(limit) && limit > 0 ? Math.min(limit, 100) : 20;
+
+    const query = this.contactNotificationRepository
+      .createQueryBuilder('notification')
+      .where('notification.organization_id = :organizationId', { organizationId })
+      .andWhere(`(
+        notification.audience_type = 'ALL_CONTACTS'
+        OR :contactId = ANY(COALESCE(notification.target_contact_ids, ARRAY[]::uuid[]))
+      )`, { contactId });
+
+    if (unreadOnly) {
+      query.andWhere('NOT (:contactId = ANY(COALESCE(notification.read_by_contact_ids, ARRAY[]::uuid[])))', { contactId });
+    }
+
+    const [notifications, total] = await query
+      .orderBy('notification.created_at', 'DESC')
+      .skip((safePage - 1) * safeLimit)
+      .take(safeLimit)
+      .getManyAndCount();
+
+    return {
+      data: notifications.map(notification => this.mapContactNotification(notification, contactId)),
+      total,
+      page: safePage,
+      limit: safeLimit,
+    };
+  }
+
+  async markContactNotificationRead(organizationId: string, contactId: string, notificationId: string) {
+    const notification = await this.contactNotificationRepository
+      .createQueryBuilder('notification')
+      .where('notification.id = :notificationId', { notificationId })
+      .andWhere('notification.organization_id = :organizationId', { organizationId })
+      .andWhere(`(
+        notification.audience_type = 'ALL_CONTACTS'
+        OR :contactId = ANY(COALESCE(notification.target_contact_ids, ARRAY[]::uuid[]))
+      )`, { contactId })
+      .getOne();
+
+    if (!notification) {
+      throw new BadRequestException('Contact notification not found');
+    }
+
+    notification.read_by_contact_ids = Array.from(new Set([...(notification.read_by_contact_ids || []), contactId]));
+    const saved = await this.contactNotificationRepository.save(notification);
+    return this.mapContactNotification(saved, contactId);
+  }
+
   async createInternalNotification(
     organizationId: string,
     createdByUserId: string,
@@ -617,6 +817,23 @@ export class NotificationService {
       audience_type: notification.audience_type,
       target_user_ids: notification.target_user_ids || [],
       is_read: (notification.read_by_user_ids || []).includes(userId),
+      created_by_user_id: notification.created_by_user_id,
+      created_at: notification.created_at,
+      metadata: notification.metadata,
+    };
+  }
+
+  private mapContactNotification(notification: ContactNotification, contactId: string) {
+    return {
+      id: notification.id,
+      title: notification.title,
+      body: notification.body,
+      type: notification.type,
+      audience_type: notification.audience_type,
+      target_contact_ids: notification.target_contact_ids || [],
+      is_read: contactId
+        ? (notification.read_by_contact_ids || []).includes(contactId)
+        : false,
       created_by_user_id: notification.created_by_user_id,
       created_at: notification.created_at,
       metadata: notification.metadata,

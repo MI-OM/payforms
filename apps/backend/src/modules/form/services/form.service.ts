@@ -48,6 +48,82 @@ export class FormService {
     return { data, total, page, limit };
   }
 
+  async findAccessibleByContact(
+    organizationId: string,
+    contactId: string,
+    page: number = 1,
+    limit: number = 20,
+  ) {
+    const safePage = Number.isFinite(Number(page)) && Number(page) > 0 ? Number(page) : 1;
+    const safeLimit = Number.isFinite(Number(limit)) && Number(limit) > 0 ? Math.min(Number(limit), 100) : 20;
+
+    const contact = await this.contactRepository.findOne({
+      where: { id: contactId, organization_id: organizationId },
+      relations: ['groups'],
+    });
+    if (!contact) {
+      throw new NotFoundException('Contact not found');
+    }
+
+    const forms = await this.formRepository.find({
+      where: { organization_id: organizationId, is_active: true },
+      relations: ['targets'],
+      order: { created_at: 'DESC' },
+    });
+
+    const contactGroupIds = new Set((contact.groups || []).map(group => group.id));
+    const targetGroupDescendantsCache = new Map<string, string[]>();
+
+    const accessibleForms: Form[] = [];
+
+    for (const form of forms) {
+      if (!form.targets?.length) {
+        accessibleForms.push(form);
+        continue;
+      }
+
+      const directContactTarget = form.targets.some(
+        target => target.target_type === 'contact' && target.target_id === contactId,
+      );
+      if (directContactTarget) {
+        accessibleForms.push(form);
+        continue;
+      }
+
+      const targetedGroupIds = form.targets
+        .filter(target => target.target_type === 'group')
+        .map(target => target.target_id);
+
+      let hasGroupAccess = false;
+      for (const targetedGroupId of targetedGroupIds) {
+        let descendants = targetGroupDescendantsCache.get(targetedGroupId);
+        if (!descendants) {
+          descendants = await this.getGroupAndDescendantIds(organizationId, targetedGroupId);
+          targetGroupDescendantsCache.set(targetedGroupId, descendants);
+        }
+
+        if (descendants.some(groupId => contactGroupIds.has(groupId))) {
+          hasGroupAccess = true;
+          break;
+        }
+      }
+
+      if (hasGroupAccess) {
+        accessibleForms.push(form);
+      }
+    }
+
+    const start = (safePage - 1) * safeLimit;
+    const paged = accessibleForms.slice(start, start + safeLimit).map(form => this.mapContactAccessibleForm(form));
+
+    return {
+      data: paged,
+      total: accessibleForms.length,
+      page: safePage,
+      limit: safeLimit,
+    };
+  }
+
   async findById(organizationId: string, id: string) {
     return this.formRepository.findOne({
       where: { id, organization_id: organizationId },
@@ -251,6 +327,25 @@ export class FormService {
     }
 
     return found;
+  }
+
+  private mapContactAccessibleForm(form: Form) {
+    return {
+      id: form.id,
+      title: form.title,
+      category: form.category,
+      description: form.description,
+      note: form.note,
+      slug: form.slug,
+      payment_type: form.payment_type,
+      amount: form.amount,
+      allow_partial: form.allow_partial,
+      access_mode: form.access_mode ?? 'OPEN',
+      identity_validation_mode: form.identity_validation_mode ?? 'NONE',
+      identity_field_label: form.identity_field_label ?? null,
+      is_targeted: !!form.targets?.length,
+      created_at: form.created_at,
+    };
   }
 
   async update(organizationId: string, id: string, dto: UpdateFormDto) {

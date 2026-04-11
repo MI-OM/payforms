@@ -6,9 +6,10 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { Contact } from '../contact/entities/contact.entity';
 import { User } from '../auth/entities/user.entity';
 import { InternalNotification } from './entities/internal-notification.entity';
+import { ContactNotification } from './entities/contact-notification.entity';
 
 @Module({
-  imports: [ConfigModule, TypeOrmModule.forFeature([Contact, User, InternalNotification])],
+  imports: [ConfigModule, TypeOrmModule.forFeature([Contact, User, InternalNotification, ContactNotification])],
   providers: [NotificationService],
   controllers: [NotificationController],
   exports: [NotificationService],

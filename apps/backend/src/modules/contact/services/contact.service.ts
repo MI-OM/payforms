@@ -200,10 +200,22 @@ export class ContactService {
   }
 
   async update(organizationId: string, id: string, dto: UpdateContactDto) {
+    const existing = await this.contactRepository.findOne({
+      where: { id, organization_id: organizationId },
+      select: ['id', 'is_active'],
+    });
+    if (!existing) {
+      return null;
+    }
+
     const updatePayload = {
       ...dto,
       email: dto.email ? this.normalizeEmail(dto.email) : dto.email,
-    };
+      token_invalidated_at:
+        dto.is_active === false && existing.is_active
+          ? new Date()
+          : undefined,
+    } as Partial<Contact>;
 
     await this.contactRepository.update({ id, organization_id: organizationId }, updatePayload);
     return this.findById(organizationId, id);
