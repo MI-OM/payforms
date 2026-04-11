@@ -145,7 +145,6 @@ export class PaymentService {
     const qb = this.buildTransactionsQuery(organizationId, filters, schema)
       .leftJoin(Form, 'form', 'form.id = submission.form_id')
       .leftJoin(Contact, 'contact', 'contact.id = submission.contact_id')
-      .addSelect('payment.id', 'payment_id')
       .addSelect('form.title', 'form_title')
       .addSelect('contact.first_name', 'contact_first_name')
       .addSelect('contact.middle_name', 'contact_middle_name')
