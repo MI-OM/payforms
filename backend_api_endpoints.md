@@ -517,16 +517,32 @@ Every endpoint below includes:
 - How to use: Fetch widget bootstrap config for embed flows.
 
 ### `GET /public/forms/:slug/embed.js`
-- Parameters: Path `slug`. Supported script attributes: `data-callback-url?`, `data-api-base?`, `data-contact-token?`, `data-contact-email?`, `data-contact-name?`, `data-width?`, `data-height?`, `data-min-height?`, `data-auto-redirect?`, `data-container?`
-- How to use: Include as external script to render embeddable widget.
+- Status: Legacy (use `/public/forms/:slug/embed/v1.js` for new embeds)
+- Parameters: Path `slug`. Supported script attributes: `data-callback-url?`, `data-api-base?`, `data-contact-token?`, `data-contact-email?`, `data-contact-name?`, `data-width?`, `data-height?`, `data-min-height?`, `data-auto-redirect?`, `data-container?`, `data-instance-id?`
+- How to use: Include as external script to render embeddable widget. The loader now sends contact metadata and callback URL via `postMessage` init instead of query parameters.
+
+### `GET /public/forms/:slug/embed/v1.js`
+- Status: New
+- Parameters: Path `slug`. Supported script attributes: `data-callback-url?`, `data-api-base?`, `data-contact-token?`, `data-contact-email?`, `data-contact-name?`, `data-width?`, `data-height?`, `data-min-height?`, `data-auto-redirect?`, `data-container?`, `data-instance-id?`
+- How to use: Preferred embeddable loader. Uses secure `postMessage` init payload (no contact data in iframe URL).
 
 ### `GET /public/forms/:slug/widget`
-- Parameters: Path `slug`. Query `{ callback_url?, contact_token?, contact_email?, contact_name?, auto_redirect? }`
+- Status: Legacy (kept for backward compatibility)
+- Parameters: Path `slug`. Query `{ callback_url?, contact_token?, contact_email?, contact_name?, auto_redirect?, parent_origin?, instance_id? }`
 - How to use: Load iframe-ready widget HTML.
+
+### `GET /public/forms/:slug/widget/v1`
+- Status: New
+- Parameters: Path `slug`. Query `{ callback_url?, contact_token?, contact_email?, contact_name?, auto_redirect?, parent_origin?, instance_id? }`
+- How to use: Preferred iframe target for embeds. If `EMBED_ALLOWED_ORIGINS` is configured, `parent_origin` is required and must be allowlisted.
 
 ### `POST /public/forms/:slug/submit`
 - Parameters: Path `slug`. Query `callback_url?`. Optional contact auth header. Body `{ data, contact_email?, contact_name?, partial_amount?, payment_method? }`
 - How to use: Submit public form. FE should handle three outcomes: direct success for free forms, Paystack authorization response for `payment_method=ONLINE`, or `offline_payment=true` response for offline methods (`CASH`, `BANK_TRANSFER`, `POS`, `CHEQUE`) that remain pending until admin confirmation.
+
+#### Embed security configuration
+- `EMBED_ALLOWED_ORIGINS` (comma-delimited): Allowlist for widget parent origins. Supports exact origins (`https://payforms.com`), host-only rules (`payforms.com`), and wildcards (`*.payforms.com`, `https://*.payforms.com`).
+- `EMBED_CALLBACK_ALLOWED_ORIGINS` (comma-delimited): Allowlist for `callback_url` origins accepted by public submissions. Same rule format as above.
 
 ### `GET /public/payments/callback`
 - Parameters: Query `reference?`, `trxref?`

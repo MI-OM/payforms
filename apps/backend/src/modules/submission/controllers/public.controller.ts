@@ -12,6 +12,7 @@ import { PaymentMethod } from '../../payment/entities/payment.entity';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { Request } from 'express';
+import { parseOriginAllowList, resolveCallbackUrl, resolveParentOrigin } from '../utils/embed-security.util';
 
 @ApiTags('Public')
 @Controller('public')
@@ -72,6 +73,8 @@ export class PublicController {
     const submitEndpoint = `${baseUrl}/public/forms/${encodedSlug}/submit`;
     const widgetEndpoint = `${baseUrl}/public/forms/${encodedSlug}/widget`;
     const scriptEndpoint = `${baseUrl}/public/forms/${encodedSlug}/embed.js`;
+    const widgetV1Endpoint = `${baseUrl}/public/forms/${encodedSlug}/widget/v1`;
+    const scriptV1Endpoint = `${baseUrl}/public/forms/${encodedSlug}/embed/v1.js`;
 
     return {
       form: {
@@ -95,8 +98,10 @@ export class PublicController {
         submit: submitEndpoint,
         widget: widgetEndpoint,
         embed_script: scriptEndpoint,
+        widget_v1: widgetV1Endpoint,
+        embed_script_v1: scriptV1Endpoint,
       },
-      embed_code: `<script src="${scriptEndpoint}" data-payforms-widget data-callback-url="https://your-site.com/payment-callback"></script>`,
+      embed_code: `<script src="${scriptV1Endpoint}" data-payforms-widget data-callback-url="https://your-site.com/payment-callback"></script>`,
       events: ['ready', 'submitted', 'payment_initialized', 'error', 'resize'],
     };
   }
@@ -110,7 +115,19 @@ export class PublicController {
     }
 
     const baseUrl = this.resolvePublicBaseUrl(req);
-    return this.buildEmbedScript(form.slug, baseUrl);
+    return this.buildEmbedScript(form.slug, baseUrl, false);
+  }
+
+  @Get('forms/:slug/embed/v1.js')
+  @Header('Content-Type', 'application/javascript; charset=utf-8')
+  async getEmbedScriptV1(@Param('slug') slug: string, @Req() req: Request) {
+    const form = await this.formService.findBySlug(slug);
+    if (!form) {
+      throw new NotFoundException('Form not found');
+    }
+
+    const baseUrl = this.resolvePublicBaseUrl(req);
+    return this.buildEmbedScript(form.slug, baseUrl, true);
   }
 
   @Get('forms/:slug/widget')
@@ -123,6 +140,8 @@ export class PublicController {
     @Query('contact_email') contactEmail?: string,
     @Query('contact_name') contactName?: string,
     @Query('auto_redirect') autoRedirect?: string,
+    @Query('parent_origin') parentOrigin?: string,
+    @Query('instance_id') instanceId?: string,
   ) {
     const form = await this.formService.findBySlug(slug);
     if (!form) {
@@ -132,6 +151,10 @@ export class PublicController {
     await this.ensurePublicFormAccess(form, contactToken ? `Bearer ${contactToken}` : undefined);
 
     const baseUrl = this.resolvePublicBaseUrl(req);
+    const resolvedParentOrigin = resolveParentOrigin(
+      parentOrigin,
+      this.getEmbedAllowedOrigins(),
+    );
     return this.buildWidgetHtml({
       slug: form.slug,
       baseUrl,
@@ -140,6 +163,46 @@ export class PublicController {
       contactEmail,
       contactName,
       autoRedirect: autoRedirect === undefined ? true : autoRedirect !== 'false',
+      parentOrigin: resolvedParentOrigin,
+      instanceId,
+    });
+  }
+
+  @Get('forms/:slug/widget/v1')
+  @Header('Content-Type', 'text/html; charset=utf-8')
+  async getWidgetHtmlV1(
+    @Param('slug') slug: string,
+    @Req() req: Request,
+    @Query('callback_url') callbackUrl?: string,
+    @Query('contact_token') contactToken?: string,
+    @Query('contact_email') contactEmail?: string,
+    @Query('contact_name') contactName?: string,
+    @Query('auto_redirect') autoRedirect?: string,
+    @Query('parent_origin') parentOrigin?: string,
+    @Query('instance_id') instanceId?: string,
+  ) {
+    const form = await this.formService.findBySlug(slug);
+    if (!form) {
+      throw new NotFoundException('Form not found');
+    }
+
+    await this.ensurePublicFormAccess(form, contactToken ? `Bearer ${contactToken}` : undefined);
+
+    const baseUrl = this.resolvePublicBaseUrl(req);
+    const resolvedParentOrigin = resolveParentOrigin(
+      parentOrigin,
+      this.getEmbedAllowedOrigins(),
+    );
+    return this.buildWidgetHtml({
+      slug: form.slug,
+      baseUrl,
+      callbackUrl,
+      contactToken,
+      contactEmail,
+      contactName,
+      autoRedirect: autoRedirect === undefined ? true : autoRedirect !== 'false',
+      parentOrigin: resolvedParentOrigin,
+      instanceId,
     });
   }
 
@@ -293,10 +356,11 @@ export class PublicController {
 
     // Payment required - create payment and initialize Paystack
     const baseUrl = this.resolvePublicBaseUrl(req);
-    const callback = callbackUrl || `${baseUrl}/public/payments/callback`;
-    if (!callback) {
-      throw new BadRequestException('Callback URL is required');
-    }
+    const callback = resolveCallbackUrl(
+      callbackUrl,
+      `${baseUrl}/public/payments/callback`,
+      this.getEmbedAllowedCallbackOrigins(),
+    );
 
     const payment = await this.paymentService.create(form.organization_id, {
       submission_id: submission.id,
@@ -530,10 +594,11 @@ export class PublicController {
     return normalized || null;
   }
 
-  private buildEmbedScript(slug: string, baseUrl: string): string {
+  private buildEmbedScript(slug: string, baseUrl: string, isV1: boolean): string {
     const bootstrap = JSON.stringify({
       slug,
       baseUrl,
+      embedVersion: isV1 ? 'v1' : 'legacy',
     });
 
     return `(() => {
@@ -553,6 +618,7 @@ export class PublicController {
   const contactToken = script.getAttribute('data-contact-token');
   const contactEmail = script.getAttribute('data-contact-email');
   const contactName = script.getAttribute('data-contact-name');
+  const instanceId = script.getAttribute('data-instance-id') || (window.crypto && window.crypto.randomUUID ? window.crypto.randomUUID() : 'pf-' + Math.random().toString(36).slice(2));
 
   let container = null;
   if (containerSelector) {
@@ -565,19 +631,12 @@ export class PublicController {
   }
 
   const frame = document.createElement('iframe');
-  const widgetUrl = new URL(\`\${apiBase}/public/forms/\${encodeURIComponent(bootstrap.slug)}/widget\`);
-  if (callbackUrl) {
-    widgetUrl.searchParams.set('callback_url', callbackUrl);
-  }
-  if (contactToken) {
-    widgetUrl.searchParams.set('contact_token', contactToken);
-  }
-  if (contactEmail) {
-    widgetUrl.searchParams.set('contact_email', contactEmail);
-  }
-  if (contactName) {
-    widgetUrl.searchParams.set('contact_name', contactName);
-  }
+  const widgetPath = bootstrap.embedVersion === 'v1'
+    ? '/public/forms/' + encodeURIComponent(bootstrap.slug) + '/widget/v1'
+    : '/public/forms/' + encodeURIComponent(bootstrap.slug) + '/widget';
+  const widgetUrl = new URL(apiBase + widgetPath);
+  widgetUrl.searchParams.set('parent_origin', window.location.origin);
+  widgetUrl.searchParams.set('instance_id', instanceId);
   if (autoRedirect) {
     widgetUrl.searchParams.set('auto_redirect', autoRedirect);
   }
@@ -597,6 +656,31 @@ export class PublicController {
   container.appendChild(frame);
 
   const trustedOrigin = new URL(apiBase).origin;
+  const initPayload = {
+    source: 'payforms-widget',
+    event: 'init',
+    slug: bootstrap.slug,
+    instance_id: instanceId,
+    payload: {
+      callback_url: callbackUrl || '',
+      contact_token: contactToken || '',
+      contact_email: contactEmail || '',
+      contact_name: contactName || '',
+      auto_redirect: autoRedirect || '',
+    },
+  };
+
+  const sendInit = () => {
+    try {
+      frame.contentWindow && frame.contentWindow.postMessage(initPayload, trustedOrigin);
+    } catch {}
+  };
+
+  frame.addEventListener('load', () => {
+    sendInit();
+    setTimeout(sendInit, 500);
+  });
+
   window.addEventListener('message', event => {
     if (event.origin !== trustedOrigin) {
       return;
@@ -604,6 +688,9 @@ export class PublicController {
 
     const data = event.data || {};
     if (data.source !== 'payforms-widget' || data.slug !== bootstrap.slug) {
+      return;
+    }
+    if (data.instance_id && data.instance_id !== instanceId) {
       return;
     }
 
@@ -625,6 +712,8 @@ export class PublicController {
     contactEmail?: string;
     contactName?: string;
     autoRedirect: boolean;
+    parentOrigin?: string;
+    instanceId?: string;
   }): string {
     const bootstrap = JSON.stringify({
       slug: params.slug,
@@ -634,6 +723,8 @@ export class PublicController {
       contactEmail: params.contactEmail || '',
       contactName: params.contactName || '',
       autoRedirect: params.autoRedirect,
+      parentOrigin: params.parentOrigin || '',
+      instanceId: params.instanceId || '',
     });
 
     return `<!doctype html>
@@ -767,16 +858,18 @@ export class PublicController {
         const metaEl = document.getElementById('meta');
         const statusEl = document.getElementById('status');
         const rootEl = document.getElementById('form-root');
-        const state = { form: null };
+        const state = { form: null, initialized: false };
 
         const emit = (event, payload = {}) => {
           if (window.parent && window.parent !== window) {
+            const targetOrigin = config.parentOrigin || '*';
             window.parent.postMessage({
               source: 'payforms-widget',
               slug: config.slug,
+              instance_id: config.instanceId || undefined,
               event,
               payload,
-            }, '*');
+            }, targetOrigin);
           }
         };
 
@@ -1052,7 +1145,48 @@ export class PublicController {
           emitResize();
         };
 
+        const applyInitPayload = (incoming) => {
+          if (!incoming || typeof incoming !== 'object') {
+            return;
+          }
+          const next = incoming.payload || {};
+          if (typeof next.callback_url === 'string') {
+            config.callbackUrl = next.callback_url;
+          }
+          if (typeof next.contact_token === 'string') {
+            config.contactToken = next.contact_token;
+          }
+          if (typeof next.contact_email === 'string') {
+            config.contactEmail = next.contact_email;
+          }
+          if (typeof next.contact_name === 'string') {
+            config.contactName = next.contact_name;
+          }
+          if (typeof next.auto_redirect === 'string') {
+            config.autoRedirect = next.auto_redirect !== 'false';
+          }
+        };
+
+        const acceptInitFromEvent = (event) => {
+          if (config.parentOrigin && event.origin !== config.parentOrigin) {
+            return false;
+          }
+          const data = event.data || {};
+          if (data.source !== 'payforms-widget' || data.event !== 'init' || data.slug !== config.slug) {
+            return false;
+          }
+          if (config.instanceId && data.instance_id && data.instance_id !== config.instanceId) {
+            return false;
+          }
+          applyInitPayload(data);
+          return true;
+        };
+
         const initialize = async () => {
+          if (state.initialized) {
+            return;
+          }
+          state.initialized = true;
           const formUrl = config.apiBaseUrl + '/public/forms/' + encodeURIComponent(config.slug);
           try {
             const response = await fetch(formUrl, {
@@ -1087,10 +1221,24 @@ export class PublicController {
           observer.observe(document.body);
         }
         window.addEventListener('load', emitResize);
-        initialize().finally(() => setTimeout(emitResize, 100));
+        const initTimeout = setTimeout(() => initialize().finally(() => setTimeout(emitResize, 100)), 600);
+        window.addEventListener('message', event => {
+          if (acceptInitFromEvent(event)) {
+            clearTimeout(initTimeout);
+            initialize().finally(() => setTimeout(emitResize, 100));
+          }
+        });
       })();
     </script>
   </body>
 </html>`;
+  }
+
+  private getEmbedAllowedOrigins(): string[] {
+    return parseOriginAllowList(this.configService.get<string>('EMBED_ALLOWED_ORIGINS'));
+  }
+
+  private getEmbedAllowedCallbackOrigins(): string[] {
+    return parseOriginAllowList(this.configService.get<string>('EMBED_CALLBACK_ALLOWED_ORIGINS'));
   }
 }

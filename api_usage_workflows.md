@@ -357,16 +357,71 @@ For each workflow below, FE gets:
 - Endpoints:
   - `GET /public/forms/:slug`
   - `GET /public/forms/:slug/widget-config`
-  - `GET /public/forms/:slug/embed.js`
-  - `GET /public/forms/:slug/widget`
+  - `GET /public/forms/:slug/embed/v1.js` `New`
+  - `GET /public/forms/:slug/widget/v1` `New`
+  - `GET /public/forms/:slug/embed.js` `Legacy`
+  - `GET /public/forms/:slug/widget` `Legacy`
 - Parameters:
   - `:slug`
-  - Widget query `{ callback_url?, contact_token?, contact_email?, contact_name?, auto_redirect? }`
+  - Widget query `{ callback_url?, contact_token?, contact_email?, contact_name?, auto_redirect?, parent_origin?, instance_id? }`
   - Optional contact bearer token for targeted forms
 - How to use:
   1. FE can load a normal public page from `/public/forms/:slug`.
   2. Embedded flows should bootstrap from `/widget-config` or `/embed.js`.
-  3. Targeted forms can pass contact auth.
+  3. Preferred embed flow uses `/embed/v1.js` + `/widget/v1` with a postMessage init handshake; no contact data is passed via query parameters.
+  4. Targeted forms can pass contact auth (via embed script attributes or a contact auth header if using `/public/forms/:slug`).
+  5. Widget events (`ready`, `submitted`, `payment_initialized`, `error`, `resize`) now include an `instance_id` so multiple widgets can coexist without collisions.
+
+### 9.1.1 FE embed implementation guide (step-by-step)
+
+1. Generate the embed snippet in your FE (or copy from `/public/forms/:slug/widget-config`):
+```html
+<script
+  src="https://api.payforms.com.ng/public/forms/{slug}/embed/v1.js"
+  data-payforms-widget
+  data-callback-url="https://your-frontend.com/payments/callback"
+  data-contact-token="pf_contact_jwt_optional"
+  data-contact-email="optional@example.com"
+  data-contact-name="Optional Name"
+  data-auto-redirect="true"
+  data-width="100%"
+  data-height="640"
+  data-min-height="420"
+  data-container="#payforms-widget-root"
+  data-instance-id="your-stable-instance-id"
+></script>
+<div id="payforms-widget-root"></div>
+```
+
+2. Ensure backend allowlists (if configured) contain the embedding site origin and callback origin:
+- `EMBED_ALLOWED_ORIGINS` includes `https://your-frontend.com`
+- `EMBED_CALLBACK_ALLOWED_ORIGINS` includes `https://your-frontend.com`
+
+3. Load the page; the loader creates an iframe to `/public/forms/:slug/widget/v1` and sends a `postMessage` init payload with contact and callback details.
+
+4. Listen for widget events on the host page:
+```js
+window.addEventListener('payforms-widget-event', event => {
+  const data = event.detail || {};
+  if (data.instance_id !== 'your-stable-instance-id') return;
+  if (data.event === 'ready') {
+    // widget is ready
+  }
+  if (data.event === 'submitted') {
+    // submission saved
+  }
+  if (data.event === 'payment_initialized') {
+    // auth URL available (if auto-redirect disabled)
+  }
+  if (data.event === 'error') {
+    // show error message
+  }
+});
+```
+
+5. For targeted or login-required forms, pass a contact token (recommended via `data-contact-token`), or the widget will return a 401 error and emit `error`.
+
+6. If `data-auto-redirect="false"` is set, the widget will emit `payment_initialized` and show a pay link instead of auto-redirecting. Your FE can use the `authorization_url` to redirect manually.
 
 ### 9.2 Submit public form
 
@@ -382,6 +437,7 @@ For each workflow below, FE gets:
   3. If payment is required and `payment_method` is `ONLINE` (or omitted), backend returns Paystack authorization flow.
   4. If payment method is offline (`CASH`, `BANK_TRANSFER`, `POS`, `CHEQUE`), backend returns `offline_payment=true` and keeps the payment pending for admin confirmation.
   5. If partial payment is allowed, FE may pass `partial_amount`.
+  6. When `EMBED_CALLBACK_ALLOWED_ORIGINS` is configured, `callback_url` must match the allowed origins list.
 
 ### 9.3 Handle payment verification after Paystack
 
