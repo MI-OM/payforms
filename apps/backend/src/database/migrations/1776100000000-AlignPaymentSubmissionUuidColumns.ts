@@ -5,6 +5,22 @@ export class AlignPaymentSubmissionUuidColumns1776100000000 implements Migration
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(`
+      DELETE FROM "payments"
+      WHERE "organization_id" = '' OR "submission_id" = ''
+    `);
+
+    await queryRunner.query(`
+      UPDATE "submissions"
+      SET "contact_id" = NULL
+      WHERE "contact_id" = ''
+    `);
+
+    await queryRunner.query(`
+      DELETE FROM "submissions"
+      WHERE "organization_id" = '' OR "form_id" = ''
+    `);
+
+    await queryRunner.query(`
       ALTER TABLE "payments"
         ALTER COLUMN "organization_id" TYPE uuid USING NULLIF("organization_id", '')::uuid,
         ALTER COLUMN "submission_id" TYPE uuid USING NULLIF("submission_id", '')::uuid
