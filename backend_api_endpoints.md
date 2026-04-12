@@ -36,6 +36,7 @@ Every endpoint below includes:
 - `GET /payments/:id/receipt`
 - `GET /payments/reference/:reference/receipt`
 - `GET /payments/offline/pending`
+- `POST /payments/offline`
 - `POST /payments/:id/offline-review`
 - `PATCH /payments/:id/offline-review`
 - `GET /notifications/scheduled`
@@ -461,6 +462,11 @@ Every endpoint below includes:
 ### `POST /payments`
 - Parameters: Auth required. Body `{ submission_id, amount, total_amount?, reference?, payment_method? }`
 - How to use: Create a payment record manually or internally.
+
+### `POST /payments/offline`
+- Status: New
+- Parameters: Admin auth required. Body `{ form_id, contact_id, amount, payment_method, external_reference?, confirmation_note?, paid_at? }`
+- How to use: Record an offline payment without requiring FE to manually provide `submission_id`. Backend creates a linked submission automatically, validates form/contact ownership, enforces organization-enabled payment methods, and sets status to `PAID` or `PARTIAL` based on amount vs fixed-form total.
 
 ### `POST /payments/:id/status`
 ### `PATCH /payments/:id/status`

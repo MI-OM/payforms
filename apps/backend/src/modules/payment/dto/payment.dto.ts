@@ -122,6 +122,39 @@ export class UpdatePaymentStatusDto {
   external_reference?: string;
 }
 
+export class CreateOfflinePaymentDto {
+  @ApiProperty({ example: 'form-uuid' })
+  @IsString()
+  form_id: string;
+
+  @ApiProperty({ example: 'contact-uuid' })
+  @IsString()
+  contact_id: string;
+
+  @ApiProperty({ example: 25000 })
+  @IsNumber()
+  amount: number;
+
+  @ApiProperty({ enum: ['CASH', 'BANK_TRANSFER', 'POS', 'CHEQUE'], example: 'CASH' })
+  @Transform(({ value }) => typeof value === 'string' ? value.trim().toUpperCase() : value)
+  @IsIn(['CASH', 'BANK_TRANSFER', 'POS', 'CHEQUE'])
+  payment_method: PaymentMethod;
+
+  @ApiPropertyOptional({ example: 'TELLER-447120' })
+  @IsOptional()
+  @IsString()
+  external_reference?: string;
+
+  @ApiPropertyOptional({ example: 'Paid at school bursary desk' })
+  @IsOptional()
+  @IsString()
+  confirmation_note?: string;
+
+  @ApiPropertyOptional({ example: '2026-04-12T10:30:00.000Z' })
+  @IsOptional()
+  paid_at?: Date;
+}
+
 export class PaystackWebhookDto {
   @ApiProperty({ example: 'charge.success' })
   event: string;

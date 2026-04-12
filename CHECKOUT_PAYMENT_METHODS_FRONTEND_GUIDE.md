@@ -112,6 +112,33 @@ If FE sends a disabled method, backend returns a `400` with a message like:
 }
 ```
 
+## Admin Offline Capture Flow
+
+For the admin/staff offline payment screen, use the new endpoint:
+
+### `POST /payments/offline`
+
+Request body:
+
+```json
+{
+  "form_id": "...",
+  "contact_id": "...",
+  "amount": 25000,
+  "payment_method": "CASH",
+  "external_reference": "TELLER-447120",
+  "confirmation_note": "Paid at school bursary desk"
+}
+```
+
+What backend does automatically:
+
+- creates a linked submission record
+- creates the payment record
+- marks payment as `PAID` or `PARTIAL` (for fixed forms where amount is below total and partial is allowed)
+
+So FE should not ask admins for `submission_id` anymore.
+
 ## UX Recommendation
 
 For the admin settings page, use a multi-select or checkbox group for payment methods.

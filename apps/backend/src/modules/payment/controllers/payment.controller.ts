@@ -1,7 +1,7 @@
 import { Controller, Get, Post, Patch, Body, UseGuards, Request, Param, Query, Res, NotFoundException } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { PaymentService } from '../services/payment.service';
-import { CreatePaymentDto, UpdatePaymentStatusDto } from '../dto/payment.dto';
+import { CreatePaymentDto, CreateOfflinePaymentDto, UpdatePaymentStatusDto } from '../dto/payment.dto';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../auth/guards/roles.guard';
 import { Roles } from '../../auth/decorators/roles.decorator';
@@ -98,6 +98,17 @@ export class PaymentController {
   @ApiBearerAuth()
   async createPayment(@Request() req, @Body() dto: CreatePaymentDto) {
     return this.paymentService.create(req.user.organization_id, dto);
+  }
+
+  @Post('offline')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN')
+  @ApiBearerAuth()
+  async createOfflinePayment(
+    @Request() req,
+    @Body() dto: CreateOfflinePaymentDto,
+  ) {
+    return this.paymentService.createOfflinePayment(req.user.organization_id, dto, req.user.id);
   }
 
   @Post(':id/status')

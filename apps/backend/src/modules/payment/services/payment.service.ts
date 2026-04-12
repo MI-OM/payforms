@@ -11,7 +11,7 @@ import { Submission } from '../../submission/entities/submission.entity';
 import { Contact } from '../../contact/entities/contact.entity';
 import { Form } from '../../form/entities/form.entity';
 import { NotificationService } from '../../notification/notification.service';
-import { CreatePaymentDto, UpdatePaymentStatusDto } from '../dto/payment.dto';
+import { CreateOfflinePaymentDto, CreatePaymentDto, UpdatePaymentStatusDto } from '../dto/payment.dto';
 import { User } from '../../auth/entities/user.entity';
 
 const DEFAULT_ENABLED_PAYMENT_METHODS: PaymentMethod[] = ['ONLINE'];
@@ -94,6 +94,100 @@ export class PaymentService {
     const payment = this.paymentRepository.create(paymentPayload);
     const savedPayment = await this.paymentRepository.save(payment);
     return this.hydratePayment(savedPayment, schema);
+  }
+
+  async createOfflinePayment(
+    organizationId: string,
+    dto: CreateOfflinePaymentDto,
+    actorUserId?: string,
+  ) {
+    const schema = await this.getPaymentSchemaAvailability();
+    if (!schema.payment_method) {
+      throw new BadRequestException('Offline payment methods are unavailable until the payment_method migration is applied');
+    }
+
+    const requestedPaymentMethod = dto.payment_method;
+    if (requestedPaymentMethod === 'ONLINE') {
+      throw new BadRequestException('Use offline methods only for this endpoint');
+    }
+
+    const [org, form, contact] = await Promise.all([
+      this.organizationRepository.findOne({ where: { id: organizationId } }),
+      this.formRepository.findOne({ where: { id: dto.form_id, organization_id: organizationId } }),
+      this.contactRepository.findOne({ where: { id: dto.contact_id, organization_id: organizationId } }),
+    ]);
+
+    if (!form) {
+      throw new NotFoundException('Form not found');
+    }
+
+    if (!contact) {
+      throw new NotFoundException('Contact not found');
+    }
+
+    this.assertPaymentMethodEnabled(org, requestedPaymentMethod);
+
+    const numericAmount = Number(dto.amount);
+    if (!Number.isFinite(numericAmount) || numericAmount <= 0) {
+      throw new BadRequestException('Amount must be greater than 0');
+    }
+
+    let totalAmount: number | null = null;
+    if (form.payment_type === 'FIXED') {
+      if (form.amount === null || form.amount === undefined) {
+        throw new BadRequestException('Form amount is not configured');
+      }
+
+      totalAmount = Number(form.amount);
+      if (numericAmount > totalAmount) {
+        throw new BadRequestException('Amount cannot exceed form total amount');
+      }
+
+      if (!form.allow_partial && numericAmount !== totalAmount) {
+        throw new BadRequestException('This form does not allow partial payments');
+      }
+    }
+
+    const submission = this.submissionRepository.create({
+      organization_id: organizationId,
+      form_id: form.id,
+      contact_id: contact.id,
+      data: {
+        source: 'ADMIN_OFFLINE_PAYMENT',
+        external_reference: dto.external_reference ?? null,
+        confirmation_note: dto.confirmation_note ?? null,
+      },
+    });
+
+    const savedSubmission = await this.submissionRepository.save(submission);
+
+    const payment = await this.create(organizationId, {
+      submission_id: savedSubmission.id,
+      amount: numericAmount,
+      total_amount: totalAmount ?? undefined,
+      payment_method: requestedPaymentMethod,
+    });
+
+    const nextStatus: 'PAID' | 'PARTIAL' = totalAmount !== null && numericAmount < totalAmount
+      ? 'PARTIAL'
+      : 'PAID';
+
+    return this.updateStatus(
+      organizationId,
+      payment.id,
+      {
+        status: nextStatus,
+        amount_paid: numericAmount,
+        paid_at: dto.paid_at,
+        payment_method: requestedPaymentMethod,
+        external_reference: dto.external_reference,
+        confirmation_note: dto.confirmation_note,
+      },
+      {
+        actorUserId,
+        source: 'admin_update',
+      },
+    );
   }
 
   async findByOrganization(organizationId: string, page: number = 1, limit: number = 20) {
