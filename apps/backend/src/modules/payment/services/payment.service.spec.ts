@@ -5,6 +5,7 @@ describe('PaymentService', () => {
 
   const paymentRepository = {
     findOne: jest.fn(),
+    update: jest.fn(),
   };
   const organizationRepository = {
     findOne: jest.fn(),
@@ -172,6 +173,89 @@ describe('PaymentService', () => {
         form_title: 'School Fees',
         customer_name: 'Ada Lovelace',
         customer_email: 'ada@example.com',
+      }),
+    );
+  });
+
+  it('coerces requested PAID status to PARTIAL when balance remains', async () => {
+    const payment = {
+      id: 'payment-1',
+      organization_id: 'org-1',
+      submission_id: 'submission-1',
+      amount: 400,
+      total_amount: 1000,
+      amount_paid: 0,
+      balance_due: 1000,
+      status: 'PENDING',
+      payment_method: 'CASH',
+      confirmed_at: null,
+      confirmed_by_user_id: null,
+      confirmation_note: null,
+      external_reference: null,
+      paid_at: null,
+    };
+
+    jest.spyOn(service as any, 'getPaymentSchemaAvailability').mockResolvedValue({
+      payment_method: true,
+      confirmed_at: true,
+      confirmed_by_user_id: true,
+      confirmation_note: true,
+      external_reference: true,
+    });
+    jest.spyOn(service, 'findById')
+      .mockResolvedValueOnce(payment as any)
+      .mockResolvedValueOnce({
+        ...payment,
+        status: 'PARTIAL',
+        amount_paid: 400,
+        balance_due: 600,
+      } as any);
+    paymentRepository.findOne.mockResolvedValue(payment);
+    paymentRepository.update.mockResolvedValue({ affected: 1 });
+    organizationRepository.findOne.mockResolvedValue({
+      id: 'org-1',
+      partial_payment_limit: null,
+      enabled_payment_methods: ['ONLINE', 'CASH'],
+    });
+    paymentLogRepository.create.mockImplementation((payload: any) => payload);
+    paymentLogRepository.save.mockResolvedValue({});
+
+    const result = await service.updateStatus(
+      'org-1',
+      'payment-1',
+      {
+        status: 'PAID',
+        amount_paid: 400,
+        payment_method: 'CASH',
+      },
+      {
+        actorUserId: 'user-1',
+        source: 'admin_update',
+      },
+    );
+
+    expect(paymentRepository.update).toHaveBeenCalledWith(
+      { id: 'payment-1', organization_id: 'org-1' },
+      expect.objectContaining({
+        status: 'PARTIAL',
+        amount_paid: 400,
+        balance_due: 600,
+      }),
+    );
+    expect(paymentLogRepository.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event: 'payment.offline.confirmed',
+        payload: expect.objectContaining({
+          previous_status: 'PENDING',
+          next_status: 'PARTIAL',
+        }),
+      }),
+    );
+    expect(result).toEqual(
+      expect.objectContaining({
+        status: 'PARTIAL',
+        amount_paid: 400,
+        balance_due: 600,
       }),
     );
   });

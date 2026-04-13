@@ -141,6 +141,17 @@ export class AuditService {
     const name = [firstName, middleName, lastName].filter(Boolean).join(' ').trim();
 
     if (!relatedUser && !relatedContact && !actorMetadata && !log.user_id && !log.contact_id) {
+      const hasRequestContext = Boolean(log.metadata?.raw_path || log.ip_address || log.user_agent);
+      if (hasRequestContext) {
+        return {
+          id: null,
+          name: 'Unknown Actor',
+          role: null,
+          email: null,
+          label: 'Unknown Actor',
+        };
+      }
+
       return {
         id: null,
         name: 'System',

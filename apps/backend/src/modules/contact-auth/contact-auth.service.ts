@@ -69,6 +69,14 @@ export class ContactAuthService {
       throw new UnauthorizedException('Invalid contact organization');
     }
 
+    const organizationBranding = {
+      id: org.id,
+      name: org.name,
+      logo_url: org.logo_url || null,
+      subdomain: org.subdomain || null,
+      custom_domain: org.custom_domain || null,
+    };
+
     const accessToken = this.jwtService.sign({
       sub: contact.id,
       email: contact.email,
@@ -80,6 +88,7 @@ export class ContactAuthService {
 
     return {
       access_token: accessToken,
+      organization: organizationBranding,
       contact: {
         id: contact.id,
         email: contact.email,
@@ -88,6 +97,7 @@ export class ContactAuthService {
         phone: contact.phone,
         student_id: contact.student_id,
         organization_id: contact.organization_id,
+        organization: organizationBranding,
         is_active: contact.is_active,
         must_reset_password: contact.must_reset_password,
         role: 'CONTACT',

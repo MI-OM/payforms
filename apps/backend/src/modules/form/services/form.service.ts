@@ -78,7 +78,11 @@ export class FormService {
 
     for (const form of forms) {
       if (!form.targets?.length) {
-        accessibleForms.push(form);
+        // TARGETED_ONLY forms with no assigned targets are visible to nobody;
+        // OPEN and LOGIN_REQUIRED forms with no targets are visible to all contacts.
+        if (form.access_mode !== 'TARGETED_ONLY') {
+          accessibleForms.push(form);
+        }
         continue;
       }
 
@@ -265,7 +269,8 @@ export class FormService {
 
   async isContactEligible(form: Form, contactId: string): Promise<boolean> {
     if (!form.targets?.length) {
-      return true;
+      // TARGETED_ONLY forms with no targets are not accessible to anyone
+      return form.access_mode !== 'TARGETED_ONLY';
     }
 
     if (!contactId) {

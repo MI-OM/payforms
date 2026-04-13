@@ -71,7 +71,7 @@ Every endpoint below includes:
 - `POST /auth/login`
   Updated to return a two-factor challenge when staff 2FA is enabled.
 - `POST /contact-auth/login`
-  Updated to support contact auth cookie session.
+  Updated to support contact auth cookie session and return organization branding in the login payload.
 - `GET /contact-auth/me`
   Updated to include `organization` branding payload (`id`, `name`, `logo_url`, `subdomain`, `custom_domain`) for contact FE branding.
 - `POST /notifications/reminder`
@@ -85,6 +85,7 @@ Every endpoint below includes:
 - `1775865600000-AddContactActorToActivityLogs.ts`: required for first-class contact actor audit logs.
 - `1776000000000-AddContactNotifications.ts`: required for contact-facing in-app notifications and read tracking.
 - `1776200000000-AddEnabledPaymentMethodsToOrganizations.ts`: required for organization-level checkout payment method control.
+- `1776300000000-FixContactNotificationsPkDefault.ts`: required where `contact_notifications.id` was created without a DB default, otherwise contact notification inserts can fail with null `id` errors.
 
 ## Conventions
 
@@ -386,7 +387,7 @@ Every endpoint below includes:
 
 ### `POST /contact-auth/login`
 - Parameters: Body `{ email, password, organization_id?, organization_subdomain?, organization_domain? }`
-- How to use: Contact login. On tenant subdomains or custom domains, backend treats the request host as authoritative tenant context and rejects unknown or mismatched organization context. Returns auth payload and sets contact cookie.
+- How to use: Contact login. On tenant subdomains or custom domains, backend treats the request host as authoritative tenant context and rejects unknown or mismatched organization context. Returns auth payload, sets contact cookie, and includes organization branding (`id`, `name`, `logo_url`, `subdomain`, `custom_domain`) so the contact UI can render identity assets like the logo immediately after login.
 
 ### `POST /contact-auth/set-password`
 - Parameters: Body `{ token, password }`
@@ -420,7 +421,7 @@ Every endpoint below includes:
 ### `GET /contact-auth/forms`
 - Status: New
 - Parameters: Auth required. Query `{ page?, limit? }`
-- How to use: Fetch forms accessible to the authenticated contact. Response includes active forms where access is open/login-required or where the contact is explicitly targeted (directly or via group inheritance).
+- How to use: Fetch forms accessible to the authenticated contact. Response includes active forms where access is open/login-required or where the contact is explicitly targeted (directly or via group inheritance). `TARGETED_ONLY` forms with no assigned targets are not returned.
 
 ### `GET /contact-auth/notifications`
 - Status: New
@@ -466,20 +467,20 @@ Every endpoint below includes:
 ### `POST /payments/offline`
 - Status: New
 - Parameters: Admin auth required. Body `{ form_id, contact_id, amount, payment_method, external_reference?, confirmation_note?, paid_at? }`
-- How to use: Record an offline payment without requiring FE to manually provide `submission_id`. Backend creates a linked submission automatically, validates form/contact ownership, enforces organization-enabled payment methods, and sets status to `PAID` or `PARTIAL` based on amount vs fixed-form total.
+- How to use: Record an offline payment without requiring FE to manually provide `submission_id`. Backend creates a linked submission automatically, validates form/contact ownership, enforces organization-enabled payment methods, and derives status from the remaining balance. If any balance remains, status is stored as `PARTIAL`; only zero-balance payments are stored as `PAID`.
 
 ### `POST /payments/:id/status`
 ### `PATCH /payments/:id/status`
 - Parameters: Auth required. Body `{ status, paid_at?, amount_paid?, payment_method?, confirmation_note?, external_reference? }`
-- How to use: Admin-only manual payment status update. `status` is `PENDING | PAID | PARTIAL | FAILED`. Use the dedicated offline-review route when confirming offline payments with review metadata.
+- How to use: Admin-only manual payment status update. `status` is `PENDING | PAID | PARTIAL | FAILED`. Backend treats `amount_paid` as the authoritative paid-to-date amount and derives the final stored status from the resulting balance: zero balance becomes `PAID`, otherwise `PARTIAL`. Use the dedicated offline-review route when confirming offline payments with review metadata.
 
 ### `GET /payments/:id/receipt`
 - Parameters: Auth required. Path `id`
-- How to use: Download a PDF receipt for a payment record from admin/staff context. Receipt includes payment method and, for offline reviews, the confirmation timestamp, confirmer, note, and external reference.
+- How to use: Download a PDF receipt for a payment record from admin/staff context. Receipt includes total amount, amount paid, balance due, payment method, and, for offline reviews, the confirmation timestamp, confirmer, note, and external reference.
 
 ### `GET /payments/reference/:reference/receipt`
 - Parameters: Auth required. Path `reference`
-- How to use: Download a PDF receipt by payment reference from admin/staff context. Receipt includes payment method and offline confirmation metadata when present.
+- How to use: Download a PDF receipt by payment reference from admin/staff context. Receipt includes total amount, amount paid, balance due, payment method, and offline confirmation metadata when present.
 
 ### `GET /payments/offline/pending`
 - Status: New
@@ -490,7 +491,7 @@ Every endpoint below includes:
 ### `PATCH /payments/:id/offline-review`
 - Status: New
 - Parameters: Admin auth required. Path `id`. Body `{ status, paid_at?, amount_paid?, payment_method?, confirmation_note?, external_reference? }`
-- How to use: Confirm or reject an offline payment without changing the online Paystack flow. Use `status=PAID` or `PARTIAL` to confirm, or `status=FAILED` to reject. Backend stamps confirmation metadata automatically.
+- How to use: Confirm or reject an offline payment without changing the online Paystack flow. Use `status=PAID` or `PARTIAL` to confirm, or `status=FAILED` to reject. Backend stamps confirmation metadata automatically and will still persist `PARTIAL` if the confirmed paid amount leaves an outstanding balance.
 
 ## 8. Transaction APIs
 
@@ -602,7 +603,7 @@ Every endpoint below includes:
 
 ### `GET /audit/logs`
 - Parameters: Auth required. Query `{ page?, limit?, action?, entity_type?, entity_id?, user_id?, contact_id?, ip_address?, user_agent?, keyword?, from?, to? }`
-- How to use: Admin-only activity log filtering. Response actor data can now resolve admin/staff users, authenticated contacts, or system actions.
+- How to use: Admin-only activity log filtering. Response actor data can now resolve admin/staff users, authenticated contacts, system actions, or `Unknown Actor` for request-originated legacy rows where actor identity metadata was not captured.
 
 ### `GET /audit/payment-logs/:payment_id`
 - Parameters: Auth required. Path `payment_id`. Query `{ page?, limit?, event?, event_id?, keyword?, from?, to? }`

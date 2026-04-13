@@ -459,31 +459,17 @@ export class PaymentService {
       throw new BadRequestException('Offline review is available only for offline payments');
     }
 
-    let amount_paid = payment.amount_paid ?? 0;
-    const totalAmount = payment.total_amount ?? payment.amount;
-    let balance_due = totalAmount - amount_paid;
-
-    if (dto.status === 'PAID') {
-      amount_paid = payment.amount; // Amount charged in this transaction
-      balance_due = Math.max(totalAmount - (payment.amount_paid + payment.amount), 0);
-    } else if (dto.status === 'PARTIAL') {
-      if (dto.amount_paid !== undefined && dto.amount_paid !== null) {
-        amount_paid = Math.min(dto.amount_paid, totalAmount);
-      } else {
-        amount_paid = payment.amount; // Assume the charged amount was paid
-      }
-      balance_due = Math.max(totalAmount - amount_paid, 0);
-    } else if (dto.status === 'FAILED' || dto.status === 'PENDING') {
-      // keep existing payment tracking values
-      amount_paid = payment.amount_paid ?? 0;
-      balance_due = payment.balance_due ?? totalAmount;
-    }
+    const totalAmount = Number(payment.total_amount ?? payment.amount ?? 0);
+    const trackedState = this.resolveTrackedPaymentState(payment, dto, totalAmount);
+    const amount_paid = trackedState.amount_paid;
+    const balance_due = trackedState.balance_due;
+    const nextStatus = trackedState.status;
 
     const org = await this.organizationRepository.findOne({ where: { id: organizationId } });
     if (dto.payment_method && dto.payment_method !== payment.payment_method) {
       this.assertPaymentMethodEnabled(org, dto.payment_method);
     }
-    if (dto.status === 'PARTIAL' && org?.partial_payment_limit !== null && org?.partial_payment_limit !== undefined) {
+    if (nextStatus === 'PARTIAL' && org?.partial_payment_limit !== null && org?.partial_payment_limit !== undefined) {
       const partialLimit = Number(org.partial_payment_limit);
       if (amount_paid < partialLimit) {
         throw new BadRequestException(`Partial payment must be at least ${partialLimit}`);
@@ -494,15 +480,15 @@ export class PaymentService {
       actorUserId: options.actorUserId,
       isOfflinePayment,
       source: options.source,
-      nextStatus: dto.status,
+      nextStatus,
     });
 
-    const paidAt = dto.status === 'PAID' || dto.status === 'PARTIAL'
+    const paidAt = nextStatus === 'PAID' || nextStatus === 'PARTIAL'
       ? (dto.paid_at ?? payment.paid_at ?? new Date())
       : null;
 
     const updatePayload: Partial<Payment> = {
-      status: dto.status,
+      status: nextStatus,
       paid_at: paidAt,
       amount_paid,
       balance_due,
@@ -532,10 +518,10 @@ export class PaymentService {
           organization_id: organizationId,
           payment_id: payment.id,
           event_id: `payment.admin_update:${payment.id}:${crypto.randomUUID()}`,
-          event: this.resolveAdminUpdateEvent(dto.status, isOfflinePayment),
+          event: this.resolveAdminUpdateEvent(nextStatus, isOfflinePayment),
           payload: {
             previous_status: payment.status,
-            next_status: dto.status,
+            next_status: nextStatus,
             payment_method: nextPaymentMethod,
             actor_user_id: options.actorUserId || null,
             confirmation_note: confirmationMetadata.confirmation_note,
@@ -1091,10 +1077,13 @@ export class PaymentService {
 
       const { organization, recipientName, recipientEmail, payment, formName, confirmedByName } = payload;
       const amount = Number(payment.amount || 0);
+      const totalAmount = Number(payment.total_amount ?? payment.amount ?? 0);
+      const amountPaid = Number(payment.amount_paid ?? 0);
+      const balanceDue = Math.max(Number(payment.balance_due ?? Math.max(totalAmount - amountPaid, 0)), 0);
       const paidAt = payment.paid_at ? payment.paid_at.toISOString().replace('T', ' ').replace('Z', '') : 'N/A';
       const createdAt = payment.created_at ? payment.created_at.toISOString().replace('T', ' ').replace('Z', '') : 'N/A';
       const confirmedAt = payment.confirmed_at ? payment.confirmed_at.toISOString().replace('T', ' ').replace('Z', '') : 'N/A';
-      const paymentType = payment.total_amount && Number(payment.amount) < Number(payment.total_amount) ? 'Partial' : 'Full';
+      const paymentType = balanceDue > 0 ? 'Partial' : 'Full';
       const paymentMethod = this.formatPaymentMethod(payment.payment_method);
       const gateway = payment.payment_method === 'ONLINE' ? 'Paystack' : 'Manual / Offline';
       const accentColor = '#0f766e';
@@ -1162,12 +1151,15 @@ export class PaymentService {
       drawLabelValue('Payment Type', paymentType, 350, 180, 110);
       drawLabelValue('Method', paymentMethod, 462, 180, 70);
       drawLabelValue('Paid At', paidAt, 60, 214, 220);
-      drawLabelValue('Gateway', gateway, 350, 214, 182);
+      drawLabelValue('Balance Due', `NGN ${balanceDue.toFixed(2)}`, 350, 214, 182);
 
       const leftCardHeight = drawDetailCard(44, 262, 252, 'Receipt Details', [
         ['Form', formName],
         ['Payer', recipientName],
         ['Payer Email', recipientEmail],
+        ['Total Amount', `NGN ${totalAmount.toFixed(2)}`],
+        ['Amount Paid', `NGN ${amountPaid.toFixed(2)}`],
+        ['Balance Due', `NGN ${balanceDue.toFixed(2)}`],
         ['Reference', payment.reference],
       ]);
       const rightCardHeight = drawDetailCard(315, 262, 252, 'Organization', [
@@ -1175,6 +1167,7 @@ export class PaymentService {
         ['Contact', organization.email || 'N/A'],
         ['Status', payment.status],
         ['Method', paymentMethod],
+        ['Gateway', gateway],
         ['Confirmed At', payment.confirmed_at ? confirmedAt : 'N/A'],
         ['Confirmed By', confirmedByName || 'N/A'],
         ['External Ref', payment.external_reference || 'N/A'],
@@ -1352,6 +1345,38 @@ export class PaymentService {
       confirmation_note: schema.confirmation_note ? (payment.confirmation_note ?? null) : null,
       external_reference: schema.external_reference ? (payment.external_reference ?? null) : null,
     });
+  }
+
+  private resolveTrackedPaymentState(
+    payment: Payment,
+    dto: UpdatePaymentStatusDto,
+    totalAmount: number,
+  ): { status: UpdatePaymentStatusDto['status']; amount_paid: number; balance_due: number } {
+    const existingAmountPaid = Number(payment.amount_paid ?? 0);
+    const existingBalanceDue = Math.max(Number(payment.balance_due ?? totalAmount), 0);
+
+    if (dto.status === 'FAILED' || dto.status === 'PENDING') {
+      return {
+        status: dto.status,
+        amount_paid: existingAmountPaid,
+        balance_due: existingBalanceDue,
+      };
+    }
+
+    const requestedAmountPaid = dto.amount_paid !== undefined && dto.amount_paid !== null
+      ? Number(dto.amount_paid)
+      : dto.status === 'PAID'
+        ? totalAmount
+        : Number(payment.amount ?? 0);
+
+    const normalizedAmountPaid = Math.max(Math.min(requestedAmountPaid, totalAmount), 0);
+    const balance_due = Math.max(totalAmount - normalizedAmountPaid, 0);
+
+    return {
+      status: balance_due === 0 ? 'PAID' : 'PARTIAL',
+      amount_paid: normalizedAmountPaid,
+      balance_due,
+    };
   }
 
   private resolveConfirmationMetadata(

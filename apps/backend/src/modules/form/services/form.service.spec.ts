@@ -91,6 +91,18 @@ describe('FormService', () => {
           created_at: new Date('2026-01-04T00:00:00.000Z'),
         },
         {
+          id: 'form-empty-targeted',
+          title: 'Empty Targeted Form',
+          slug: 'empty-targeted-form',
+          payment_type: 'FIXED',
+          allow_partial: false,
+          amount: 4500,
+          access_mode: 'TARGETED_ONLY',
+          identity_validation_mode: 'NONE',
+          targets: [],
+          created_at: new Date('2026-01-04T12:00:00.000Z'),
+        },
+        {
           id: 'form-denied',
           title: 'Denied Form',
           slug: 'denied-form',
@@ -128,6 +140,7 @@ describe('FormService', () => {
       expect(pageTwo.total).toBe(4);
       expect(pageTwo.data.map(form => form.id)).toEqual(['form-direct', 'form-group']);
       expect(pageTwo.data.every(form => form.is_targeted === true)).toBe(true);
+      expect(pageTwo.data.map(form => form.id)).not.toContain('form-empty-targeted');
     });
 
     it('throws when contact does not exist', async () => {
