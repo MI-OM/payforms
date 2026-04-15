@@ -1,12 +1,17 @@
 import * as express from 'express';
 import helmet from 'helmet';
 import { NestFactory } from '@nestjs/core';
+import { VERSION_NEUTRAL, VersioningType } from '@nestjs/common';
 import { ValidationPipe } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
+  app.enableVersioning({
+    type: VersioningType.URI,
+    defaultVersion: VERSION_NEUTRAL,
+  });
   const tenantBaseDomain = (process.env.TENANT_BASE_DOMAIN || '').trim().toLowerCase();
   const isProduction = process.env.NODE_ENV === 'production';
   const swaggerEnabled = process.env.ENABLE_SWAGGER === 'true' || !isProduction;

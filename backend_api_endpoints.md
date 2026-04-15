@@ -45,6 +45,41 @@ Every endpoint below includes:
 - `PATCH /notifications/internal/:id/read`
 - `GET /reports/forms/performance`
 - `GET /reports/groups/contributions`
+- `GET /v1/market/features`
+- `PATCH /v1/market/features`
+- `POST /v1/market/checkout/sessions`
+- `PATCH /v1/market/checkout/sessions/:id`
+- `GET /v1/market/checkout/sessions/metrics`
+- `GET /v1/market/payments/recovery/candidates`
+- `POST /v1/market/payments/recovery/:id/notify`
+- `POST /v1/market/payments/recovery/run`
+- `POST /v1/market/installments/plans`
+- `GET /v1/market/installments/plans`
+- `PATCH /v1/market/installments/plans/:id`
+- `POST /v1/market/installments/plans/:id/contacts`
+- `GET /v1/market/installments/accounts`
+- `POST /v1/market/reconciliation/runs`
+- `GET /v1/market/reconciliation/runs`
+- `GET /v1/market/reconciliation/runs/:id/exceptions`
+- `PATCH /v1/market/reconciliation/exceptions/:id`
+- `POST /v1/market/integrations/endpoints`
+- `GET /v1/market/integrations/endpoints`
+- `PATCH /v1/market/integrations/endpoints/:id`
+- `GET /v1/market/integrations/deliveries`
+- `POST /v1/market/partners`
+- `GET /v1/market/partners`
+- `POST /v1/market/partners/:id/onboard-organization`
+- `POST /v1/market/campaigns`
+- `GET /v1/market/campaigns`
+- `GET /v1/market/campaigns/:id`
+- `PATCH /v1/market/campaigns/:id`
+- `POST /v1/market/campaigns/:id/run`
+- `GET /v1/market/campaigns/:id/runs`
+- `GET /v1/market/runs/:runId/snapshots`
+- `POST /v1/market/compliance/export-pack`
+- `GET /v1/market/compliance/export-pack/jobs`
+- `GET /v1/market/compliance/export-pack/jobs/:id`
+- `POST /v1/market/compliance/export-pack/jobs/:id/process`
 
 ### Updated Endpoints
 
@@ -86,6 +121,14 @@ Every endpoint below includes:
 - `1776000000000-AddContactNotifications.ts`: required for contact-facing in-app notifications and read tracking.
 - `1776200000000-AddEnabledPaymentMethodsToOrganizations.ts`: required for organization-level checkout payment method control.
 - `1776300000000-FixContactNotificationsPkDefault.ts`: required where `contact_notifications.id` was created without a DB default, otherwise contact notification inserts can fail with null `id` errors.
+- `1776400000000-AddMarketReadinessFlagsToOrganizations.ts`: required for organization-scoped market-readiness feature flags used by versioned `v1/market/*` endpoints.
+- `1776500000000-AddMarketReadinessOperationalTables.ts`: required for persisted checkout session telemetry and payment recovery workflow records.
+- `1776600000000-AddInstallmentPlanTables.ts`: required for installment plan definitions, plan items, and contact installment account assignments.
+- `1776700000000-AddReconciliationWorkspaceTables.ts`: required for reconciliation run tracking and exception workflow state.
+- `1776800000000-AddIntegrationsTables.ts`: required for integration endpoints and outbound delivery tracking records.
+- `1776900000000-AddPartnerToolkitTables.ts`: required for partner records and partner-tenant onboarding mappings.
+- `1777000000000-AddArrearsDunningTables.ts`: required for dunning campaign, run, and arrears snapshot tables.
+- `1777100000000-AddComplianceExportPackTables.ts`: required for compliance export job and artifact tables.
 
 ## Conventions
 
@@ -653,6 +696,148 @@ Every endpoint below includes:
 ### `GET /health/ready`
 - Parameters: None
 - How to use: Readiness probe for deploy/load balancer checks.
+
+## 18. Market Readiness v1 APIs
+
+### `GET /v1/market/features`
+- Parameters: Auth required
+- How to use: Read current organization-level market readiness feature flags.
+
+### `PATCH /v1/market/features`
+- Parameters: Admin auth required. Body `{ flags: Record<string, boolean> }`
+- How to use: Enable/disable market-readiness capabilities per organization without affecting existing default flows.
+
+### `POST /v1/market/checkout/sessions`
+- Parameters: Auth required. Body `{ form_id?, contact_id?, reference? }`
+- How to use: Create a versioned checkout session record surface for conversion instrumentation (flag-gated).
+
+### `PATCH /v1/market/checkout/sessions/:id`
+- Parameters: Auth required. Body `{ status? }`
+- How to use: Update checkout session lifecycle state (`STARTED | FAILED | COMPLETED | ABANDONED`) for v1 checkout telemetry (flag-gated).
+
+### `GET /v1/market/checkout/sessions/metrics`
+- Parameters: Auth required
+- How to use: Fetch aggregated checkout telemetry metrics for v1 conversion monitoring (flag-gated).
+
+### `GET /v1/market/payments/recovery/candidates`
+- Parameters: Auth required. Query `{ page?, limit? }`
+- How to use: Fetch candidate records for abandoned payment recovery workflow (flag-gated).
+
+### `POST /v1/market/payments/recovery/:id/notify`
+- Parameters: Admin auth required. Path `id`
+- How to use: Queue reminder notification action for one recovery candidate (flag-gated).
+
+### `POST /v1/market/payments/recovery/run`
+- Parameters: Admin auth required. Body `{ dry_run? }`
+- How to use: Trigger recovery workflow run for the organization (flag-gated).
+
+### `POST /v1/market/installments/plans`
+- Parameters: Admin auth required. Body `{ name, frequency, grace_days?, items? }`
+- How to use: Create an installment plan template with optional line items (flag-gated).
+
+### `GET /v1/market/installments/plans`
+- Parameters: Auth required
+- How to use: List active installment plans and associated items for management screens (flag-gated).
+
+### `PATCH /v1/market/installments/plans/:id`
+- Parameters: Admin auth required. Path `id`. Body `{ name?, frequency?, grace_days?, status?, items? }`
+- How to use: Update plan configuration and item schedule without recreating the plan (flag-gated).
+
+### `POST /v1/market/installments/plans/:id/contacts`
+- Parameters: Admin auth required. Path `id`. Body `{ contact_ids: string[] }`
+- How to use: Assign one plan to many contacts and create installment account records (flag-gated).
+
+### `GET /v1/market/installments/accounts`
+- Parameters: Auth required. Query `{ plan_id? }`
+- How to use: List contact installment accounts globally or filtered by plan for operational tracking (flag-gated).
+
+### `POST /v1/market/reconciliation/runs`
+- Parameters: Admin auth required. Body `{ period_start?, period_end? }`
+- How to use: Start a reconciliation run for a date window. Backend scans payment records and creates exceptions automatically (flag-gated).
+
+### `GET /v1/market/reconciliation/runs`
+- Parameters: Auth required. Query `{ page?, limit? }`
+- How to use: List past reconciliation runs with run summaries for monitoring (flag-gated).
+
+### `GET /v1/market/reconciliation/runs/:id/exceptions`
+- Parameters: Auth required. Path `id`. Query `{ page?, limit? }`
+- How to use: Fetch detected exceptions for one run to power triage workflows (flag-gated).
+
+### `PATCH /v1/market/reconciliation/exceptions/:id`
+- Parameters: Admin auth required. Path `id`. Body `{ status, resolution_note? }`
+- How to use: Move exception workflow state (`OPEN | RESOLVED | IGNORED`) and store optional resolution note (flag-gated).
+
+### `POST /v1/market/integrations/endpoints`
+- Parameters: Admin auth required. Body `{ type, target, secret?, active?, config? }`
+- How to use: Register an outbound integration endpoint (`WEBHOOK` or `SHEETS`) for market events (flag-gated).
+
+### `GET /v1/market/integrations/endpoints`
+- Parameters: Auth required
+- How to use: List integration endpoints configured for the organization. Response includes `secret_preview` only (flag-gated).
+
+### `PATCH /v1/market/integrations/endpoints/:id`
+- Parameters: Admin auth required. Path `id`. Body `{ target?, secret?, active?, config? }`
+- How to use: Update endpoint settings or rotate secret without recreating endpoint (flag-gated).
+
+### `GET /v1/market/integrations/deliveries`
+- Parameters: Auth required. Query `{ page?, limit?, endpoint_id? }`
+- How to use: Fetch outbound integration delivery records for monitoring and troubleshooting (flag-gated).
+
+### `POST /v1/market/partners`
+- Parameters: Admin auth required. Body `{ name, status?, config? }`
+- How to use: Create a partner profile for reseller or implementation workflows (flag-gated).
+
+### `GET /v1/market/partners`
+- Parameters: Auth required
+- How to use: List partner profiles for the organization with onboarded tenant counts (flag-gated).
+
+### `POST /v1/market/partners/:id/onboard-organization`
+- Parameters: Admin auth required. Path `id`. Body `{ tenant_organization_id, onboarding_status?, metadata? }`
+- How to use: Onboard or update a target organization under a partner profile (flag-gated).
+
+### POST /v1/market/campaigns
+- Parameters: Admin auth required. Body `{ name, description?, status?, min_days_overdue?, max_days_overdue?, min_outstanding_amount?, escalation_rules?, filter_criteria?, execution_frequency? }`
+- How to use: Create a dunning campaign with payment arrears targeting rules and escalation workflow (flag-gated).
+
+### GET /v1/market/campaigns
+- Parameters: Auth required
+- How to use: List all dunning campaigns for the organization with current metrics and execution status (flag-gated).
+
+### GET /v1/market/campaigns/:id
+- Parameters: Auth required. Path `id`
+- How to use: Fetch a single dunning campaign with full configuration and runtime state (flag-gated).
+
+### PATCH /v1/market/campaigns/:id
+- Parameters: Admin auth required. Path `id`. Body `{ name?, description?, status?, ... }`
+- How to use: Update dunning campaign configuration such as escalation rules, filter criteria, or timing thresholds (flag-gated).
+
+### POST /v1/market/campaigns/:id/run
+- Parameters: Admin auth required. Path `id`. Body `{ dry_run?, scheduled_for? }`
+- How to use: Execute or schedule a dunning run for the campaign; evaluates eligible contacts and generates arrears snapshots (flag-gated).
+
+### GET /v1/market/campaigns/:id/runs
+- Parameters: Auth required. Path `id`
+- How to use: List all dunning runs for a campaign with execution status and metrics (flag-gated).
+
+### GET /v1/market/runs/:runId/snapshots
+- Parameters: Auth required. Path `runId`
+- How to use: Fetch arrears snapshots captured during a dunning run for trend analysis and outreach (flag-gated).
+
+### `POST /v1/market/compliance/export-pack`
+- Parameters: Admin auth required. Body `{ scope?, request_reason? }`
+- How to use: Queue a compliance export pack job for the organization with optional scoped filters (flag-gated).
+
+### `GET /v1/market/compliance/export-pack/jobs`
+- Parameters: Auth required. Query `{ page?, limit?, status? }`
+- How to use: List compliance export jobs with status tracking (`QUEUED | PROCESSING | READY | FAILED`) (flag-gated).
+
+### `GET /v1/market/compliance/export-pack/jobs/:id`
+- Parameters: Auth required. Path `id`
+- How to use: Fetch one compliance export job with associated generated artifacts metadata (flag-gated).
+
+### `POST /v1/market/compliance/export-pack/jobs/:id/process`
+- Parameters: Admin auth required. Path `id`
+- How to use: Trigger immediate processing of a queued export job (synchronous fallback until async worker is connected), transitioning job status to `PROCESSING` then `READY`/`FAILED` (flag-gated).
 
 ## 16. Billing APIs
 

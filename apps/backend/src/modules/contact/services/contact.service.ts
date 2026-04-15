@@ -124,6 +124,32 @@ export class ContactService {
       qb.andWhere('contact.external_id ILIKE :external_id', { external_id: `%${filters.external_id}%` });
     }
 
+    if (filters.status === 'active') {
+      qb.andWhere('contact.is_active = true');
+    } else if (filters.status === 'inactive') {
+      qb.andWhere('contact.is_active = false');
+    }
+
+    if (filters.balance === 'has_balance') {
+      qb.andWhere(`EXISTS (
+        SELECT 1
+        FROM payments p
+        INNER JOIN submissions s ON s.id = p.submission_id
+        WHERE s.contact_id = contact.id
+          AND p.organization_id = CAST(:organizationId AS uuid)
+          AND p.balance_due > 0
+      )`);
+    } else if (filters.balance === 'no_balance') {
+      qb.andWhere(`NOT EXISTS (
+        SELECT 1
+        FROM payments p
+        INNER JOIN submissions s ON s.id = p.submission_id
+        WHERE s.contact_id = contact.id
+          AND p.organization_id = CAST(:organizationId AS uuid)
+          AND p.balance_due > 0
+      )`);
+    }
+
     const [data, total] = await qb
       .distinct(true)
       .orderBy('contact.created_at', 'DESC')

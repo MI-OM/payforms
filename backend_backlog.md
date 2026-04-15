@@ -38,8 +38,97 @@
 - **Phase 3 - Operational tooling**: admin printable receipts, pending confirmation queue, bulk posting tools, and school-oriented dashboards.
 - **Guardrail**: keep Paystack online checkout as the default path and make all offline payment capabilities opt-in so current organizations and public payment flows do not regress.
 
+## Market Gap Analysis (Backlog Additions)
+
+### Competitive Baseline (What similar tools do well)
+- **Form + payment leaders** (Typeform/Jotform/Tally + Stripe): conversion-optimized checkout UX, clean hosted payment pages, strong templates.
+- **Africa-focused collections tools** (Paystack/Flutterwave ecosystems, school ERPs): local rails support, reconciliation, and offline-aware operations.
+- **School fee platforms** (regional school billing tools): installment plans, arrears visibility, parent communication loops, and bulk operations.
+
+### Gaps in Payforms vs market expectations
+1. **Checkout conversion optimization gap**
+	- Missing A/B-tested checkout patterns, trust indicators, and abandoned-payment recovery loops.
+2. **Collections operations gap**
+	- Limited dunning/reminder automation, limited arrears campaign tooling, and no smart retries by segment.
+3. **Distribution/integration gap**
+	- Lightweight API exists, but there are no no-code connectors (Sheets/Zapier), embeddable admin widgets, or partner onboarding tooling.
+4. **Procurement/readiness gap for institutions**
+	- Need stronger compliance artifacts (audit export packs, policy templates, data retention controls surfaced for non-technical buyers).
+5. **Go-to-market proof gap**
+	- Need benchmark metrics and packaged “first 30 days” implementation playbook for schools and associations.
+
+## New Backlog Items: Market Readiness
+
+### Product and Platform
+1. **Checkout Conversion Kit**
+	- Add trust blocks, fee transparency card, progress indicators, and simplified payment-step UX for hosted/public forms.
+2. **Abandoned Payment Recovery**
+	- Add reminder workflows for initiated-but-unpaid references (email/WhatsApp-ready payload hooks).
+3. **Installment Plan Profiles**
+	- Add configurable installment plans per form/session with due-date and penalty metadata.
+4. **Arrears and Dunning Engine**
+	- Add aging buckets (`0-30`, `31-60`, `60+`) and campaign triggers by segment/group.
+5. **Reconciliation Workspace**
+	- Add daily reconciliation board (gateway events vs ledger state) with exception queues.
+
+### Ecosystem and Integrations
+6. **Google Sheets + CSV Sync Connector**
+	- Push transaction and contact updates to Sheets; pull controlled contact updates with validation logs.
+7. **Webhook Templates + Zapier/Make Starter**
+	- Provide template payload docs and one-click recipes for schools/SMEs.
+8. **Partner/Reseller Tenant Toolkit**
+	- Add multi-tenant onboarding presets, branded implementation checklist, and account bootstrap scripts.
+
+### Trust and Enterprise Readiness
+9. **Compliance Export Pack**
+	- One-click package: audit logs, payment logs, data-access reports, retention policy snapshot.
+10. **SLA/Status and Incident Communication Hooks**
+	- Add status endpoints + incident notice broadcast path for institutional customers.
+
+## Easy Market Entry Strategy (Execution Plan)
+
+### ICP (Initial target)
+- **Primary**: private K-12 schools, tutorial colleges, exam prep centers, and associations with frequent fee collections.
+- **Secondary**: training academies and church/community organizations collecting recurring contributions.
+
+### Positioning
+- "Fastest way to launch branded school/association collections with online + offline reconciliation in one workflow."
+
+### Phase 0 (Weeks 1-2): Launch Readiness
+1. Package one opinionated vertical template: "School Fees Collection Starter".
+2. Publish implementation guide: setup keys, forms, contact import, offline queue, receipts, reports.
+3. Define success metrics dashboard:
+	- form-to-payment conversion
+	- partial-to-complete settlement rate
+	- days-to-first-value (organization signup to first successful collection)
+
+### Phase 1 (Weeks 3-6): Beachhead Acquisition
+1. Recruit 5-10 pilot institutions in one city/region.
+2. Offer concierge onboarding (data import + first form setup within 48 hours).
+3. Weekly pilot review cadence with product telemetry and friction log.
+4. Publish 2 short case studies with measurable outcomes.
+
+### Phase 2 (Weeks 7-12): Repeatable Growth Loop
+1. Launch referral motion: discounts for school-to-school introductions.
+2. Partner with implementation consultants/IT admins already serving schools.
+3. Add "migration assist" offer from spreadsheets/manual bank tracking.
+4. Standardize a 30-minute demo script and ROI calculator.
+
+### Pricing and Packaging (Entry simplicity)
+1. **Starter**: low platform fee + capped transactions, ideal for first term/session.
+2. **Growth**: adds arrears automation, reconciliation workspace, and export packs.
+3. **Institutional**: audit/compliance package, advanced support, onboarding SLA.
+
+### Market Entry Risks and Mitigations
+1. **Risk**: slow onboarding due to data quality.
+	- **Mitigation**: import validator + assisted cleanup templates.
+2. **Risk**: fear of payment disruption.
+	- **Mitigation**: phased rollout with parallel run and offline fallback queue.
+3. **Risk**: feature parity pressure from incumbents.
+	- **Mitigation**: win on speed-of-setup, local operations workflow, and transparent support.
+
 ## Next Priority
-The next item to work on is **Form Targeting System** - aligning backend behavior with the updated PRD form targeting requirements.
+The next item to work on is **Checkout Conversion Kit + Abandoned Payment Recovery** to strengthen early market entry outcomes while preserving current school-focused payment operations work.
 
 "Leave this part out:
 

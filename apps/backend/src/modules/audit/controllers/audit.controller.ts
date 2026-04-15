@@ -44,12 +44,19 @@ export class AuditController {
 
     return {
       ...result,
-      data: result.data.map(item => ({
-        ...item,
-        timestamp: item.created_at,
-        entity: item.entity_type,
-        user: this.auditService.formatActor(item),
-      })),
+      data: result.data.map(item => {
+        const actor = this.auditService.formatActor(item);
+        const entity = this.auditService.formatEntity(item);
+        return {
+          ...item,
+          timestamp: item.created_at,
+          actor,
+          user: actor,
+          entity: item.entity_type,
+          entity_details: entity,
+          entity_label: entity.label,
+        };
+      }),
     };
   }
 

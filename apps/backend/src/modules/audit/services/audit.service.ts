@@ -173,6 +173,25 @@ export class AuditService {
     };
   }
 
+  formatEntity(log: ActivityLog) {
+    const entityMetadata = log.metadata?.entity || {};
+    const entityType = entityMetadata.type || log.entity_type || 'Entity';
+    const entityId = entityMetadata.id || log.entity_id || null;
+    const label = entityMetadata.label
+      || entityMetadata.name
+      || entityMetadata.reference
+      || (entityId ? `${entityType} ${entityId}` : entityType);
+
+    return {
+      type: entityType,
+      id: entityId,
+      label,
+      reference: entityMetadata.reference ?? null,
+      email: entityMetadata.email ?? null,
+      subject: entityMetadata.subject ?? null,
+    };
+  }
+
   async listPaymentLogs(
     organizationId: string,
     paymentId: string,

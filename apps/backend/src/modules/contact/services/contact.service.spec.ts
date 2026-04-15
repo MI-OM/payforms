@@ -5,6 +5,7 @@ describe('ContactService', () => {
   const contactRepository = {
     findOne: jest.fn(),
     update: jest.fn(),
+    createQueryBuilder: jest.fn(),
   };
   const paymentRepository = {};
   const submissionRepository = {};
@@ -65,6 +66,56 @@ describe('ContactService', () => {
 
       expect(result).toBeNull();
       expect(contactRepository.update).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('findByOrganization', () => {
+    it('applies active and has_balance filters to the query', async () => {
+      const qb: any = {
+        leftJoinAndSelect: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        distinct: jest.fn().mockReturnThis(),
+        orderBy: jest.fn().mockReturnThis(),
+        skip: jest.fn().mockReturnThis(),
+        take: jest.fn().mockReturnThis(),
+        getManyAndCount: jest.fn().mockResolvedValue([[], 0]),
+      };
+      contactRepository.createQueryBuilder.mockReturnValue(qb);
+
+      await service.findByOrganization('org-1', 1, 20, undefined, {
+        status: 'active',
+        balance: 'has_balance',
+      });
+
+      expect(qb.andWhere).toHaveBeenCalledWith('contact.is_active = true');
+      expect(qb.andWhere).toHaveBeenCalledWith(
+        expect.stringContaining('EXISTS ('),
+      );
+    });
+
+    it('applies inactive and no_balance filters to the query', async () => {
+      const qb: any = {
+        leftJoinAndSelect: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        distinct: jest.fn().mockReturnThis(),
+        orderBy: jest.fn().mockReturnThis(),
+        skip: jest.fn().mockReturnThis(),
+        take: jest.fn().mockReturnThis(),
+        getManyAndCount: jest.fn().mockResolvedValue([[], 0]),
+      };
+      contactRepository.createQueryBuilder.mockReturnValue(qb);
+
+      await service.findByOrganization('org-1', 1, 20, undefined, {
+        status: 'inactive',
+        balance: 'no_balance',
+      });
+
+      expect(qb.andWhere).toHaveBeenCalledWith('contact.is_active = false');
+      expect(qb.andWhere).toHaveBeenCalledWith(
+        expect.stringContaining('NOT EXISTS ('),
+      );
     });
   });
 });

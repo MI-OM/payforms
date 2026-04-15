@@ -26,12 +26,13 @@ export class AuditInterceptor implements NestInterceptor {
     const action = this.buildAuditAction(req.method, routePath);
     const entityType = this.buildEntityType(routePath);
     const entityId = req.params?.id || req.params?.payment_id || req.params?.user_id || '';
-    const metadata = {
+    const baseMetadata = {
       raw_path: req.originalUrl || req.url,
       params: req.params,
       query: req.query,
       ip_address: ipAddress,
       user_agent: userAgent,
+      entity: this.buildEntityMetadata(routePath, req.params, req.query),
       actor: user
         ? {
             id: actor.userId ?? actor.contactId,
@@ -45,7 +46,8 @@ export class AuditInterceptor implements NestInterceptor {
     };
 
     return next.handle().pipe(
-      tap(() => {
+      tap(responseBody => {
+        const metadata = this.enrichEntityMetadata(baseMetadata, routePath, responseBody);
         this.auditService.createActivityLog(
           organizationId,
           actor.userId,
@@ -80,6 +82,10 @@ export class AuditInterceptor implements NestInterceptor {
       'POST /public/forms/:slug/submit': 'SUBMIT PUBLIC FORM',
       'GET /public/payments/callback': 'VIEW PAYMENT CALLBACK',
       'GET /public/forms/:slug': 'VIEW PUBLIC FORM',
+      'GET /contacts/:id/details': 'VIEW CONTACT DETAILS',
+      'GET /transactions': 'VIEW TRANSACTIONS',
+      'GET /transactions/:id': 'VIEW TRANSACTION DETAILS',
+      'GET /transactions/:id/history': 'VIEW TRANSACTION HISTORY',
       'GET /health': 'CHECK SYSTEM HEALTH',
     };
 
@@ -194,6 +200,84 @@ export class AuditInterceptor implements NestInterceptor {
     return {
       userId: user.id ?? user.sub ?? null,
       contactId: null,
+    };
+  }
+
+  private buildEntityMetadata(path: string, params: Record<string, any> = {}, query: Record<string, any> = {}) {
+    const cleaned = this.cleanRoutePath(path);
+
+    if (cleaned === '/contacts/:param/details' || cleaned === '/contacts/:param') {
+      return {
+        type: 'Contact',
+        id: params.id || null,
+        label: params.id ? `Contact ${params.id}` : 'Contact',
+      };
+    }
+
+    if (cleaned === '/transactions') {
+      const parts = [
+        query.reference ? `reference=${query.reference}` : null,
+        query.contact_id ? `contact=${query.contact_id}` : null,
+        query.form_id ? `form=${query.form_id}` : null,
+        query.status ? `status=${query.status}` : null,
+      ].filter(Boolean);
+
+      return {
+        type: 'Transaction',
+        id: null,
+        label: parts.length ? `Transactions (${parts.join(', ')})` : 'Transactions',
+      };
+    }
+
+    if (cleaned === '/transactions/:param' || cleaned === '/transactions/:param/history') {
+      const transactionId = params.id || params.payment_id || null;
+      return {
+        type: 'Transaction',
+        id: transactionId,
+        label: transactionId ? `Transaction ${transactionId}` : 'Transaction',
+      };
+    }
+
+    return {
+      type: this.buildEntityType(path),
+      id: params.id || params.payment_id || params.user_id || null,
+      label: null,
+    };
+  }
+
+  private enrichEntityMetadata(baseMetadata: Record<string, any>, path: string, responseBody: any) {
+    const entity = { ...(baseMetadata.entity || {}) };
+    const cleaned = this.cleanRoutePath(path);
+
+    if ((cleaned === '/contacts/:param/details' || cleaned === '/contacts/:param') && responseBody) {
+      const firstName = responseBody.first_name ?? null;
+      const middleName = responseBody.middle_name ?? null;
+      const lastName = responseBody.last_name ?? null;
+      const email = responseBody.email ?? null;
+      const name = [firstName, middleName, lastName].filter(Boolean).join(' ').trim() || email || entity.id || 'Contact';
+      entity.id = responseBody.id ?? entity.id ?? null;
+      entity.label = name;
+      entity.name = name;
+      entity.email = email;
+    }
+
+    if ((cleaned === '/transactions/:param' || cleaned === '/transactions/:param/history') && responseBody) {
+      const source = responseBody.payment ?? responseBody;
+      const reference = source?.reference ?? source?.payment_reference ?? null;
+      const customerName = source?.customer_name ?? null;
+      entity.id = source?.id ?? entity.id ?? null;
+      entity.label = reference ? `Payment ${reference}` : entity.label || entity.id || 'Transaction';
+      if (customerName) {
+        entity.subject = customerName;
+      }
+      if (reference) {
+        entity.reference = reference;
+      }
+    }
+
+    return {
+      ...baseMetadata,
+      entity,
     };
   }
 }

@@ -20,6 +20,7 @@ import { TenantResolverModule } from './modules/tenant/tenant-resolver.module';
 import { BillingModule } from './modules/billing/billing.module';
 import { ComplianceModule } from './modules/compliance/compliance.module';
 import { CacheModule } from './common/cache/cache.module';
+import { MarketReadinessModule } from './modules/market-readiness/market-readiness.module';
 
 @Module({
   imports: [
@@ -74,6 +75,7 @@ import { CacheModule } from './common/cache/cache.module';
     TenantResolverModule,
     BillingModule,
     ComplianceModule,
+    MarketReadinessModule,
   ],
   controllers: [],
   providers: [

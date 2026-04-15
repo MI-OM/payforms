@@ -66,6 +66,9 @@ export class Organization {
   @Column({ type: 'varchar', array: true, default: () => "ARRAY['ONLINE']::varchar[]" })
   enabled_payment_methods: PaymentMethod[];
 
+  @Column({ type: 'jsonb', default: () => "'{}'::jsonb" })
+  market_readiness_flags: Record<string, boolean>;
+
   @Column({ type: 'varchar', default: 'free' })
   billing_plan_tier: string;
 

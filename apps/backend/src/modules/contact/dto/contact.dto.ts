@@ -354,6 +354,26 @@ export class ContactQueryDto {
   @IsString()
   external_id?: string;
 
+  @ApiPropertyOptional({
+    example: 'active',
+    enum: ['all', 'active', 'inactive'],
+    description: 'Contact status filter',
+  })
+  @IsOptional()
+  @Transform(({ value }) => (typeof value === 'string' ? value.trim().toLowerCase() : value))
+  @IsIn(['all', 'active', 'inactive'])
+  status?: 'all' | 'active' | 'inactive';
+
+  @ApiPropertyOptional({
+    example: 'has_balance',
+    enum: ['all', 'has_balance', 'no_balance'],
+    description: 'Outstanding balance filter for dues tracking',
+  })
+  @IsOptional()
+  @Transform(({ value }) => (typeof value === 'string' ? value.trim().toLowerCase() : value))
+  @IsIn(['all', 'has_balance', 'no_balance'])
+  balance?: 'all' | 'has_balance' | 'no_balance';
+
   @ApiPropertyOptional({ example: 1, minimum: 1 })
   @IsOptional()
   @Type(() => Number)
