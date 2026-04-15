@@ -4,6 +4,7 @@ import { AuditService } from '../services/audit.service';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../auth/guards/roles.guard';
 import { Roles } from '../../auth/decorators/roles.decorator';
+import { ActivityLogQueryDto, PaymentLogQueryDto } from '../dto/audit.dto';
 
 @ApiTags('Audit')
 @Controller('audit')
@@ -16,30 +17,19 @@ export class AuditController {
   @Get('logs')
   async getActivityLogs(
     @Request() req,
-    @Query('page') page: number = 1,
-    @Query('limit') limit: number = 20,
-    @Query('action') action?: string,
-    @Query('entity_type') entity_type?: string,
-    @Query('entity_id') entity_id?: string,
-    @Query('user_id') user_id?: string,
-    @Query('contact_id') contact_id?: string,
-    @Query('ip_address') ip_address?: string,
-    @Query('user_agent') user_agent?: string,
-    @Query('keyword') keyword?: string,
-    @Query('from') from?: string,
-    @Query('to') to?: string,
+    @Query() query: ActivityLogQueryDto,
   ) {
-    const result = await this.auditService.listActivityLogs(req.user.organization_id, page, limit, {
-      action,
-      entity_type,
-      entity_id,
-      user_id,
-      contact_id,
-      ip_address,
-      user_agent,
-      keyword,
-      from,
-      to,
+    const result = await this.auditService.listActivityLogs(req.user.organization_id, query.page ?? 1, query.limit ?? 20, {
+      action: query.action,
+      entity_type: query.entity_type,
+      entity_id: query.entity_id,
+      user_id: query.user_id,
+      contact_id: query.contact_id,
+      ip_address: query.ip_address,
+      user_agent: query.user_agent,
+      keyword: query.keyword,
+      from: query.from,
+      to: query.to,
     });
 
     return {
@@ -64,20 +54,14 @@ export class AuditController {
   async getPaymentLogs(
     @Request() req,
     @Param('payment_id') paymentId: string,
-    @Query('page') page: number = 1,
-    @Query('limit') limit: number = 20,
-    @Query('event') event?: string,
-    @Query('event_id') event_id?: string,
-    @Query('keyword') keyword?: string,
-    @Query('from') from?: string,
-    @Query('to') to?: string,
+    @Query() query: PaymentLogQueryDto,
   ) {
-    return this.auditService.listPaymentLogs(req.user.organization_id, paymentId, page, limit, {
-      event,
-      event_id,
-      keyword,
-      from,
-      to,
+    return this.auditService.listPaymentLogs(req.user.organization_id, paymentId, query.page ?? 1, query.limit ?? 20, {
+      event: query.event,
+      event_id: query.event_id,
+      keyword: query.keyword,
+      from: query.from,
+      to: query.to,
     });
   }
 }
