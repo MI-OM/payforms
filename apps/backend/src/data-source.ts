@@ -14,7 +14,7 @@ const AppDataSource = new DataSource({
   entities: [__dirname + '/modules/**/entities/*.entity{.ts,.js}'],
   migrations: [__dirname + '/database/migrations/*{.ts,.js}'],
   migrationsRun: false,
-  synchronize: false,
+  synchronize: process.env.NODE_ENV !== 'production',
   extra: {
     max: Number(process.env.DB_POOL_MAX ?? 50),
     min: Number(process.env.DB_POOL_MIN ?? 5),

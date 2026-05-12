@@ -129,6 +129,7 @@ export class AddArrearsDunningTables1777000000000 implements MigrationInterface 
           }),
         ],
       }),
+      true,
     );
 
     // Create dunning_runs table
@@ -242,6 +243,7 @@ export class AddArrearsDunningTables1777000000000 implements MigrationInterface 
           }),
         ],
       }),
+      true,
     );
 
     // Create arrears_snapshots table
@@ -341,6 +343,7 @@ export class AddArrearsDunningTables1777000000000 implements MigrationInterface 
           }),
         ],
       }),
+      true,
     );
   }
 
