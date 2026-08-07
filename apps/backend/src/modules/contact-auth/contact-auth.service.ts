@@ -40,12 +40,20 @@ export class ContactAuthService {
   ) {}
 
   async login(dto: ContactLoginDto, requestHost?: string | null) {
-    const organizationId = await this.resolveOrganizationId({
+    let organizationId = await this.resolveOrganizationId({
       organization_id: dto.organization_id,
       organization_subdomain: dto.organization_subdomain,
       organization_domain: dto.organization_domain,
       request_host: requestHost,
     });
+
+    if (!organizationId) {
+      organizationId = await this.resolveOrganizationByEmail(dto.email);
+    }
+
+    if (!organizationId) {
+      throw new UnauthorizedException('Invalid credentials');
+    }
 
     const contact = await this.contactRepository.findOne({
       where: {
@@ -133,12 +141,23 @@ export class ContactAuthService {
   }
 
   async requestPasswordReset(dto: ContactPasswordResetRequestDto, requestHost?: string | null) {
-    const organizationId = await this.resolveOrganizationId({
+    let organizationId = await this.resolveOrganizationId({
       organization_id: dto.organization_id,
       organization_subdomain: dto.organization_subdomain,
       organization_domain: dto.organization_domain,
       request_host: requestHost,
     });
+
+    if (!organizationId) {
+      organizationId = await this.resolveOrganizationByEmail(dto.email);
+    }
+
+    if (!organizationId) {
+      return {
+        success: true,
+        message: 'If the contact account exists, a password reset link has been sent.',
+      };
+    }
 
     const contact = await this.contactRepository.findOne({
       where: {
@@ -301,7 +320,26 @@ export class ContactAuthService {
     return reserved.includes(subdomain.toLowerCase());
   }
 
-  private async resolveOrganizationId(input: OrganizationContextInput) {
+  private async resolveOrganizationByEmail(email: string): Promise<string | null> {
+    const matches = await this.contactRepository.find({
+      where: { email: this.normalizeEmail(email) },
+      select: ['id', 'organization_id'],
+    });
+
+    if (matches.length === 1) {
+      return matches[0].organization_id;
+    }
+
+    if (matches.length > 1) {
+      throw new BadRequestException(
+        'Organization context is required. This email belongs to multiple organizations.',
+      );
+    }
+
+    return null;
+  }
+
+  private async resolveOrganizationId(input: OrganizationContextInput): Promise<string | null> {
     const requestHost = this.extractHost(input.request_host);
     const resolvedHostOrganization = requestHost
       ? await this.tenantResolverService.resolveOrganizationFromHost(requestHost)
@@ -320,10 +358,9 @@ export class ContactAuthService {
         where: { subdomain: explicitSubdomain },
         select: ['id'],
       });
-      if (!org) {
-        throw new BadRequestException('Invalid organization context');
+      if (org) {
+        resolvedExplicitOrganizationId = org.id;
       }
-      resolvedExplicitOrganizationId = org.id;
     }
 
     const explicitDomain = this.normalizeDomain(input.organization_domain);
@@ -332,10 +369,9 @@ export class ContactAuthService {
         where: { custom_domain: explicitDomain },
         select: ['id'],
       });
-      if (!org) {
-        throw new BadRequestException('Invalid organization context');
+      if (org) {
+        resolvedExplicitOrganizationId = org.id;
       }
-      resolvedExplicitOrganizationId = org.id;
     }
 
     if (
@@ -350,12 +386,6 @@ export class ContactAuthService {
       return resolvedHostOrganization.organization_id;
     }
 
-    if (resolvedExplicitOrganizationId) {
-      return resolvedExplicitOrganizationId;
-    }
-
-    throw new BadRequestException(
-      'Organization context is required. Provide organization_id, organization_subdomain, or organization_domain.',
-    );
+    return resolvedExplicitOrganizationId;
   }
 }
