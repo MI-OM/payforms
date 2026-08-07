@@ -1,4 +1,4 @@
-import { Injectable, UnauthorizedException, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, UnauthorizedException, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -55,10 +55,12 @@ export class AuthService {
   async register(dto: RegisterDto) {
     validatePasswordStrength(dto.password);
 
+    const normalizedEmail = this.normalizeEmail(dto.email);
+
     // Create organization
     const organization = this.organizationRepository.create({
       name: dto.organization_name,
-      email: dto.email,
+      email: normalizedEmail,
     });
     const savedOrg = await this.organizationRepository.save(organization);
 
@@ -68,7 +70,7 @@ export class AuthService {
     // Create admin user
     const user = this.userRepository.create({
       organization_id: savedOrg.id,
-      email: dto.email,
+      email: normalizedEmail,
       first_name: null,
       middle_name: null,
       last_name: null,
@@ -243,6 +245,10 @@ export class AuthService {
         throw new UnauthorizedException('Invalid credentials');
       }
 
+      if (!user.is_active) {
+        throw new UnauthorizedException('Account has been deactivated');
+      }
+
       const isPasswordValid = await bcrypt.compare(dto.password, user.password_hash);
       if (!isPasswordValid) {
         throw new UnauthorizedException('Invalid credentials');
@@ -267,6 +273,11 @@ export class AuthService {
     }
 
     const user = users[0];
+
+    if (!user.is_active) {
+      throw new UnauthorizedException('Account has been deactivated');
+    }
+
     const isPasswordValid = await bcrypt.compare(dto.password, user.password_hash);
     if (!isPasswordValid) {
       throw new UnauthorizedException('Invalid credentials');
@@ -340,6 +351,32 @@ export class AuthService {
 
   async logout(userId: string) {
     await this.userRepository.update(userId, { refresh_token_hash: null });
+    return { success: true };
+  }
+
+  async deleteUser(userId: string, requestingUser: User): Promise<{ success: boolean }> {
+    if (requestingUser.role !== 'ADMIN') {
+      throw new ForbiddenException('Only admins can delete users');
+    }
+
+    const targetUser = await this.userRepository.findOne({
+      where: { id: userId, organization_id: requestingUser.organization_id },
+    });
+
+    if (!targetUser) {
+      throw new NotFoundException('User not found');
+    }
+
+    if (targetUser.id === requestingUser.id) {
+      throw new BadRequestException('Cannot delete your own account');
+    }
+
+    await this.userRepository.update(userId, {
+      is_active: false,
+      deactivated_at: new Date(),
+      refresh_token_hash: null,
+    });
+
     return { success: true };
   }
 
@@ -419,6 +456,43 @@ export class AuthService {
 
     await this.sendOrganizationEmailVerification(organization);
     return { success: true, email_verified: false };
+  }
+
+  async resendOrganizationEmailVerification(dto: { email: string; organization_id?: string; organization_subdomain?: string; organization_domain?: string }) {
+    const normalizedEmail = this.normalizeEmail(dto.email);
+
+    let organization: Organization | null = null;
+
+    if (dto.organization_id) {
+      organization = await this.organizationRepository.findOne({
+        where: { id: dto.organization_id, email: normalizedEmail },
+      });
+    } else if (dto.organization_subdomain) {
+      const subdomain = this.normalizeSubdomain(dto.organization_subdomain);
+      if (subdomain) {
+        organization = await this.organizationRepository.findOne({
+          where: { subdomain, email: normalizedEmail },
+        });
+      }
+    } else if (dto.organization_domain) {
+      const domain = this.normalizeDomain(dto.organization_domain);
+      if (domain) {
+        organization = await this.organizationRepository.findOne({
+          where: { custom_domain: domain, email: normalizedEmail },
+        });
+      }
+    }
+
+    if (!organization) {
+      return { success: true, message: 'If an organization exists with this email, a verification link has been sent.' };
+    }
+
+    if (organization.email_verified) {
+      return { success: true, email_verified: true };
+    }
+
+    await this.sendOrganizationEmailVerification(organization);
+    return { success: true, message: 'Verification email sent.' };
   }
 
   async verifyOrganizationEmail(dto: VerifyOrganizationEmailDto) {
@@ -651,8 +725,14 @@ export class AuthService {
     await this.organizationRepository.save(organization);
 
     const frontendUrl = this.configService.get('FRONTEND_URL');
+    const encodedEmail = encodeURIComponent(organization.email);
+    const params = new URLSearchParams({
+      token,
+      email: encodedEmail,
+      org_id: organization.id,
+    });
     const verificationLink = frontendUrl
-      ? `${frontendUrl.replace(/\/$/, '')}/verify-organization-email?token=${token}`
+      ? `${frontendUrl.replace(/\/$/, '')}/verify-organization-email?${params.toString()}`
       : '';
 
     if (!verificationLink) {

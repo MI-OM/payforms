@@ -179,39 +179,39 @@ export class FormService {
       throw new NotFoundException('Form not found');
     }
 
-    if (dto.target_type === 'group') {
-      const groups = await this.groupRepository.find({
-        where: { organization_id: organizationId, id: In(dto.target_ids) },
-      });
-      if (groups.length !== dto.target_ids.length) {
-        throw new NotFoundException('One or more groups not found');
-      }
-    } else {
-      const contacts = await this.contactRepository.find({
-        where: { organization_id: organizationId, id: In(dto.target_ids) },
-      });
-      if (contacts.length !== dto.target_ids.length) {
-        throw new NotFoundException('One or more contacts not found');
+    if (dto.target_ids.length > 0) {
+      if (dto.target_type === 'group') {
+        const groups = await this.groupRepository.find({
+          where: { organization_id: organizationId, id: In(dto.target_ids) },
+        });
+        if (groups.length !== dto.target_ids.length) {
+          throw new NotFoundException('One or more groups not found');
+        }
+      } else {
+        const contacts = await this.contactRepository.find({
+          where: { organization_id: organizationId, id: In(dto.target_ids) },
+        });
+        if (contacts.length !== dto.target_ids.length) {
+          throw new NotFoundException('One or more contacts not found');
+        }
       }
     }
 
-    const existing = await this.targetRepository.find({
-      where: { form_id: formId, target_type: dto.target_type, target_id: In(dto.target_ids) },
+    await this.targetRepository.delete({
+      form_id: formId,
+      target_type: dto.target_type,
     });
 
-    const existingIds = existing.map(target => target.target_id);
-    const newTargets = dto.target_ids
-      .filter(id => !existingIds.includes(id))
-      .map(target_id =>
-        this.targetRepository.create({
-          form_id: formId,
-          target_type: dto.target_type,
-          target_id,
-        }),
-      );
+    const targets = dto.target_ids.map(target_id =>
+      this.targetRepository.create({
+        form_id: formId,
+        target_type: dto.target_type,
+        target_id,
+      }),
+    );
 
-    if (newTargets.length) {
-      await this.targetRepository.save(newTargets);
+    if (targets.length) {
+      await this.targetRepository.save(targets);
     }
 
     await this.invalidatePublicFormCaches([form.slug]);

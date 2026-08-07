@@ -1,4 +1,4 @@
-import { Controller, Get, Patch, Post, Body, UseGuards, Request, Param } from '@nestjs/common';
+import { Controller, Get, Patch, Post, Delete, Body, UseGuards, Request, Param } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { OrganizationService } from '../services/organization.service';
 import { UpdateOrganizationDto, UpdateOrganizationKeysDto, UploadLogoDto } from '../dto/organization.dto';
@@ -47,5 +47,11 @@ export class OrganizationController {
   @Roles('ADMIN')
   async uploadLogo(@Request() req, @Body() body: UploadLogoDto) {
     return this.organizationService.uploadLogo(req.user.organization_id, body.logo_url);
+  }
+
+  @Delete()
+  @Roles('ADMIN')
+  async deleteOrganization(@Request() req) {
+    return this.organizationService.delete(req.user.organization_id, req.user);
   }
 }

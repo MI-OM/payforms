@@ -1,4 +1,4 @@
-import { Controller, Post, Body, Get, Patch, UseGuards, Request, Res, UnauthorizedException } from '@nestjs/common';
+import { Controller, Post, Body, Get, Patch, Delete, UseGuards, Request, Res, UnauthorizedException, Param } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import {
   RegisterDto,
@@ -110,6 +110,12 @@ export class AuthController {
     return this.authService.requestOrganizationEmailVerification(req.user);
   }
 
+  @Post('organization-email/resend-verification')
+  @Throttle({ default: { limit: 3, ttl: 60000 } })
+  async resendOrganizationEmailVerification(@Body() dto: { email: string; organization_id?: string; organization_subdomain?: string; organization_domain?: string }) {
+    return this.authService.resendOrganizationEmailVerification(dto);
+  }
+
   @Get('organization-email/status')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
@@ -123,6 +129,14 @@ export class AuthController {
   async logout(@Request() req, @Res({ passthrough: true }) res: Response) {
     this.clearAuthCookies(res);
     return this.authService.logout(req.user.id);
+  }
+
+  @Delete(':id')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN')
+  @ApiBearerAuth()
+  async deleteUser(@Request() req, @Param('id') id: string) {
+    return this.authService.deleteUser(id, req.user);
   }
 
   @Get('profile')

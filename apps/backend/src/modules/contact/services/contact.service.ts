@@ -46,22 +46,35 @@ export class ContactService {
   ) {}
 
   async create(organizationId: string, dto: CreateContactDto) {
-    const { require_login, must_reset_password, ...contactFields } = dto;
+    const { require_login, must_reset_password, group_ids, ...contactFields } = dto;
     const requireLogin = require_login ?? true;
     const mustResetPassword = must_reset_password ?? requireLogin;
-    const passwordResetToken = mustResetPassword ? this.generateOpaqueToken() : null;
-    const passwordResetExpiresAt = mustResetPassword
+    const needsPasswordSetup = requireLogin || mustResetPassword;
+    const passwordResetToken = needsPasswordSetup ? this.generateOpaqueToken() : null;
+    const passwordResetExpiresAt = needsPasswordSetup
       ? new Date(Date.now() + 1000 * 60 * 60 * 24 * 7)
       : null;
+
+    let groups: Group[] | undefined;
+    if (group_ids?.length) {
+      const uniqueGroupIds = Array.from(new Set(group_ids));
+      groups = await this.groupRepository.find({
+        where: { organization_id: organizationId, id: In(uniqueGroupIds) },
+      });
+      if (groups.length !== uniqueGroupIds.length) {
+        throw new NotFoundException('One or more groups not found');
+      }
+    }
 
     const contact = this.contactRepository.create({
       organization_id: organizationId,
       ...contactFields,
       email: this.normalizeEmail(contactFields.email),
       is_active: true,
-      must_reset_password: mustResetPassword,
+      must_reset_password: needsPasswordSetup,
       password_reset_token: passwordResetToken ? this.hashOpaqueToken(passwordResetToken) : null,
       password_reset_expires_at: passwordResetExpiresAt,
+      groups,
     });
     let savedContact: Contact;
 
@@ -254,17 +267,45 @@ export class ContactService {
       return null;
     }
 
+    const { must_reset_password, ...contactFields } = dto;
+
+    let passwordSetupToken: string | null = null;
+    let passwordResetExpiresAt: Date | null = null;
+    let pendingPasswordSetup: boolean | undefined;
+
+    if (must_reset_password === true) {
+      passwordSetupToken = this.generateOpaqueToken();
+      passwordResetExpiresAt = new Date(Date.now() + 1000 * 60 * 60 * 24 * 7);
+      pendingPasswordSetup = true;
+    } else if (must_reset_password === false) {
+      pendingPasswordSetup = false;
+    }
+
     const updatePayload = {
-      ...dto,
-      email: dto.email ? this.normalizeEmail(dto.email) : dto.email,
+      ...contactFields,
+      email: contactFields.email ? this.normalizeEmail(contactFields.email) : contactFields.email,
       token_invalidated_at:
-        dto.is_active === false && existing.is_active
+        contactFields.is_active === false && existing.is_active
           ? new Date()
           : undefined,
     } as Partial<Contact>;
 
+    if (pendingPasswordSetup !== undefined) {
+      updatePayload.must_reset_password = pendingPasswordSetup;
+    }
+    if (passwordSetupToken) {
+      updatePayload.password_reset_token = this.hashOpaqueToken(passwordSetupToken);
+      updatePayload.password_reset_expires_at = passwordResetExpiresAt;
+    }
+
     await this.contactRepository.update({ id, organization_id: organizationId }, updatePayload);
-    return this.findById(organizationId, id);
+    const updated = await this.findById(organizationId, id);
+    if (!updated) {
+      return null;
+    }
+    return Object.assign(updated, {
+      password_setup_token: passwordSetupToken,
+    }) as ContactWithPasswordSetupToken;
   }
 
   async delete(organizationId: string, id: string) {
@@ -394,8 +435,9 @@ export class ContactService {
       const groups = await this.resolveImportGroups(organizationId, row, groupById, groupByKey);
       const requireLogin = row.require_login ?? true;
       const mustResetPassword = row.must_reset_password ?? requireLogin;
-      const passwordResetToken = mustResetPassword ? this.generateOpaqueToken() : null;
-      const passwordResetExpiresAt = mustResetPassword
+      const needsPasswordSetup = requireLogin || mustResetPassword;
+      const passwordResetToken = needsPasswordSetup ? this.generateOpaqueToken() : null;
+      const passwordResetExpiresAt = needsPasswordSetup
         ? new Date(Date.now() + 1000 * 60 * 60 * 24 * 7)
         : null;
 
@@ -415,7 +457,7 @@ export class ContactService {
           guardian_email: row.guardian_email,
           guardian_phone: row.guardian_phone,
           is_active: row.is_active ?? true,
-          must_reset_password: mustResetPassword,
+          must_reset_password: needsPasswordSetup,
           password_reset_token: passwordResetToken ? this.hashOpaqueToken(passwordResetToken) : null,
           password_reset_expires_at: passwordResetExpiresAt,
           groups,

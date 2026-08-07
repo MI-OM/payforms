@@ -21,10 +21,12 @@ import { BillingModule } from './modules/billing/billing.module';
 import { ComplianceModule } from './modules/compliance/compliance.module';
 import { CacheModule } from './common/cache/cache.module';
 import { MarketReadinessModule } from './modules/market-readiness/market-readiness.module';
+import { OrganizationContextModule } from './common/auth/organization-context.module';
 
 @Module({
   imports: [
     CacheModule,
+    OrganizationContextModule,
     ConfigModule.forRoot({
       isGlobal: true,
       envFilePath: '.env',

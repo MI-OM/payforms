@@ -1,10 +1,14 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Organization } from '../entities/organization.entity';
 import { CreateOrganizationDto, UpdateOrganizationDto, UpdateOrganizationKeysDto } from '../dto/organization.dto';
 import { StorageService } from '../../../modules/storage/storage.service';
 import { PAYMENT_METHODS, PaymentMethod } from '../../payment/entities/payment.entity';
+import { User } from '../../auth/entities/user.entity';
+import { Contact } from '../../contact/entities/contact.entity';
+import { Form } from '../../form/entities/form.entity';
+import { Payment } from '../../payment/entities/payment.entity';
 
 const SUBDOMAIN_PATTERN = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
 const DOMAIN_PATTERN = /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/;
@@ -15,6 +19,14 @@ export class OrganizationService {
   constructor(
     @InjectRepository(Organization)
     private organizationRepository: Repository<Organization>,
+    @InjectRepository(User)
+    private userRepository: Repository<User>,
+    @InjectRepository(Contact)
+    private contactRepository: Repository<Contact>,
+    @InjectRepository(Form)
+    private formRepository: Repository<Form>,
+    @InjectRepository(Payment)
+    private paymentRepository: Repository<Payment>,
     private storageService: StorageService,
   ) {}
 
@@ -233,5 +245,40 @@ export class OrganizationService {
         throw new BadRequestException('Custom domain is already in use');
       }
     }
+  }
+
+  async delete(organizationId: string, requestingUser: User): Promise<{ success: boolean }> {
+    if (requestingUser.organization_id !== organizationId || requestingUser.role !== 'ADMIN') {
+      throw new ForbiddenException('Only organization admin can delete organization');
+    }
+
+    const [
+      contactCount,
+      formCount,
+      paymentCount,
+      userCount,
+    ] = await Promise.all([
+      this.contactRepository.count({ where: { organization_id: organizationId } }),
+      this.formRepository.count({ where: { organization_id: organizationId } }),
+      this.paymentRepository.count({ where: { organization_id: organizationId } }),
+      this.userRepository.count({ where: { organization_id: organizationId } }),
+    ]);
+
+    const blockers: string[] = [];
+    if (contactCount > 0) blockers.push(`${contactCount} contact(s)`);
+    if (formCount > 0) blockers.push(`${formCount} form(s)`);
+    if (paymentCount > 0) blockers.push(`${paymentCount} payment(s)`);
+    if (userCount > 1) blockers.push(`${userCount - 1} other user(s)`);
+
+    if (blockers.length > 0) {
+      throw new BadRequestException(
+        `Cannot delete organization with active resources: ${blockers.join(', ')}. Remove these first.`,
+      );
+    }
+
+    await this.userRepository.delete({ organization_id: organizationId });
+    await this.organizationRepository.delete(organizationId);
+
+    return { success: true };
   }
 }

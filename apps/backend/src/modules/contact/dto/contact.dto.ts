@@ -121,6 +121,17 @@ export class CreateContactDto {
   @IsOptional()
   @IsBoolean()
   must_reset_password?: boolean;
+
+  @ApiPropertyOptional({
+    type: [String],
+    example: ['a7d25fe8-0285-4f78-b58f-4f2be91eaadf'],
+    description: 'Group IDs to assign the contact to on creation',
+  })
+  @Transform(toStringArray)
+  @IsOptional()
+  @IsArray()
+  @IsUUID('4', { each: true })
+  group_ids?: string[];
 }
 
 export class UpdateContactDto {
@@ -183,6 +194,15 @@ export class UpdateContactDto {
   @IsOptional()
   @IsBoolean()
   is_active?: boolean;
+
+  @ApiPropertyOptional({
+    example: true,
+    description: 'If true, issues a fresh password setup invitation to the contact and marks the account as requiring password setup.',
+  })
+  @Transform(toOptionalBoolean)
+  @IsOptional()
+  @IsBoolean()
+  must_reset_password?: boolean;
 }
 
 export class BulkImportContactsDto {

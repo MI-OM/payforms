@@ -4,6 +4,7 @@ import { Organization } from '../../organization/entities/organization.entity';
 @Entity('users')
 @Index(['organization_id', 'email'], { unique: true })
 @Index('IDX_users_password_reset_token', ['password_reset_token'])
+@Index('IDX_users_org_active', ['organization_id', 'is_active'])
 export class User {
   @PrimaryGeneratedColumn('uuid')
   id: string;
@@ -37,6 +38,12 @@ export class User {
 
   @Column({ type: 'varchar', nullable: true })
   refresh_token_hash: string | null;
+
+  @Column({ type: 'boolean', default: true })
+  is_active: boolean;
+
+  @Column({ type: 'timestamp', nullable: true })
+  deactivated_at: Date | null;
 
   @Column({ type: 'varchar', nullable: true })
   password_reset_token: string | null;

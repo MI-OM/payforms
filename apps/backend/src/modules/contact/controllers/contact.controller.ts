@@ -63,7 +63,11 @@ export class ContactController {
 
   @Patch(':id')
   async updateContact(@Request() req, @Param('id') id: string, @Body() dto: UpdateContactDto) {
-    return this.contactService.update(req.user.organization_id, id, dto);
+    const contact = await this.contactService.update(req.user.organization_id, id, dto);
+    if (contact) {
+      await this.contactImportService.sendPasswordSetupEmails(req.user.organization_id, [contact]);
+    }
+    return contact;
   }
 
   @Delete(':id')

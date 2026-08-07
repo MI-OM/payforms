@@ -1,3 +1,4 @@
+import { NotFoundException } from '@nestjs/common';
 import { ContactService } from './contact.service';
 
 describe('ContactService', () => {
@@ -6,10 +7,14 @@ describe('ContactService', () => {
     findOne: jest.fn(),
     update: jest.fn(),
     createQueryBuilder: jest.fn(),
+    create: jest.fn(),
+    save: jest.fn(),
   };
   const paymentRepository = {};
   const submissionRepository = {};
-  const groupRepository = {};
+  const groupRepository = {
+    find: jest.fn(),
+  };
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -66,6 +71,88 @@ describe('ContactService', () => {
 
       expect(result).toBeNull();
       expect(contactRepository.update).not.toHaveBeenCalled();
+    });
+
+    it('issues a password setup token when must_reset_password is true', async () => {
+      const updatedContact = {
+        id: 'contact-1',
+        organization_id: 'org-1',
+        is_active: true,
+      };
+
+      contactRepository.findOne
+        .mockResolvedValueOnce({ id: 'contact-1', is_active: true })
+        .mockResolvedValueOnce(updatedContact);
+
+      const result = await service.update('org-1', 'contact-1', { must_reset_password: true });
+
+      const [, payload] = contactRepository.update.mock.calls[0];
+      expect(payload.must_reset_password).toBe(true);
+      expect(payload.password_reset_token).toBeDefined();
+      expect(payload.password_reset_expires_at).toBeInstanceOf(Date);
+      expect(result).toMatchObject({ password_setup_token: expect.any(String) });
+    });
+
+    it('clears password setup flag without issuing a token when must_reset_password is false', async () => {
+      const updatedContact = {
+        id: 'contact-1',
+        organization_id: 'org-1',
+        is_active: true,
+      };
+
+      contactRepository.findOne
+        .mockResolvedValueOnce({ id: 'contact-1', is_active: true })
+        .mockResolvedValueOnce(updatedContact);
+
+      const result = await service.update('org-1', 'contact-1', { must_reset_password: false });
+
+      const [, payload] = contactRepository.update.mock.calls[0];
+      expect(payload.must_reset_password).toBe(false);
+      expect(payload.password_reset_token).toBeUndefined();
+      expect(result).toMatchObject({ password_setup_token: null });
+    });
+  });
+
+  describe('create', () => {
+    it('assigns the contact to the provided groups on creation', async () => {
+      const groupOne = { id: 'group-1', name: 'Returning Students' };
+      const groupTwo = { id: 'group-2', name: 'Priority' };
+      groupRepository.find = jest.fn().mockResolvedValue([groupOne, groupTwo]);
+
+      let createdPayload: any;
+      contactRepository.create = jest.fn(payload => ({ ...payload }));
+      contactRepository.save = jest.fn(contact => {
+        createdPayload = contact;
+        return Promise.resolve({ id: 'contact-new', ...contact });
+      });
+
+      const result = await service.create('org-1', {
+        first_name: 'Jane',
+        last_name: 'Doe',
+        email: 'jane@example.com',
+        group_ids: ['group-1', 'group-2'],
+      });
+
+      expect(groupRepository.find).toHaveBeenCalledWith({
+        where: { organization_id: 'org-1', id: expect.anything() },
+      });
+      expect(createdPayload.groups).toEqual([groupOne, groupTwo]);
+      expect(result.password_setup_token).toBeDefined();
+    });
+
+    it('throws NotFoundException when a provided group does not exist', async () => {
+      groupRepository.find = jest.fn().mockResolvedValue([{ id: 'group-1', name: 'Returning Students' }]);
+      contactRepository.create = jest.fn(payload => ({ ...payload }));
+      contactRepository.save = jest.fn();
+
+      await expect(
+        service.create('org-1', {
+          first_name: 'Jane',
+          last_name: 'Doe',
+          email: 'jane@example.com',
+          group_ids: ['group-1', 'missing-group'],
+        }),
+      ).rejects.toThrow(NotFoundException);
     });
   });
 
