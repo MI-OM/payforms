@@ -21,6 +21,7 @@ import { BillingModule } from './modules/billing/billing.module';
 import { ComplianceModule } from './modules/compliance/compliance.module';
 import { CacheModule } from './common/cache/cache.module';
 import { MarketReadinessModule } from './modules/market-readiness/market-readiness.module';
+import { PlatformAuthModule } from './modules/platform-auth/platform-auth.module';
 import { OrganizationContextModule } from './common/auth/organization-context.module';
 
 @Module({
@@ -80,6 +81,7 @@ import { OrganizationContextModule } from './common/auth/organization-context.mo
     BillingModule,
     ComplianceModule,
     MarketReadinessModule,
+    PlatformAuthModule,
   ],
   controllers: [],
   providers: [
