@@ -160,4 +160,36 @@ describe('NotificationService', () => {
       expect(result.is_read).toBe(true);
     });
   });
+
+  describe('getContactEmailsInOrganization', () => {
+    it('resolves recipients to organization contacts, case-insensitively and deduped', async () => {
+      const qb: any = {
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        select: jest.fn().mockReturnThis(),
+        getMany: jest.fn().mockResolvedValue([{ email: 'Member@Example.com' }]),
+      };
+      contactRepository.createQueryBuilder.mockReturnValue(qb);
+
+      const result = await service.getContactEmailsInOrganization('org-1', [
+        'member@example.com',
+        'MEMBER@example.com',
+      ]);
+
+      expect(qb.where).toHaveBeenCalledWith('contact.organization_id = :organizationId', {
+        organizationId: 'org-1',
+      });
+      expect(qb.andWhere).toHaveBeenCalledWith('LOWER(contact.email) IN (:...emails)', {
+        emails: ['member@example.com'],
+      });
+      expect(result).toEqual(['member@example.com']);
+    });
+
+    it('does not query the database when no recipient emails are supplied', async () => {
+      const result = await service.getContactEmailsInOrganization('org-1', []);
+
+      expect(contactRepository.createQueryBuilder).not.toHaveBeenCalled();
+      expect(result).toEqual([]);
+    });
+  });
 });

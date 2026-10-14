@@ -1,3 +1,4 @@
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { PaymentService } from './payment.service';
 
 describe('PaymentService', () => {
@@ -5,12 +6,16 @@ describe('PaymentService', () => {
 
   const paymentRepository = {
     findOne: jest.fn(),
+    create: jest.fn(),
+    save: jest.fn(),
     update: jest.fn(),
   };
   const organizationRepository = {
     findOne: jest.fn(),
   };
-  const submissionRepository = {};
+  const submissionRepository = {
+    findOne: jest.fn(),
+  };
   const contactRepository = {
     findOne: jest.fn(),
   };
@@ -258,5 +263,86 @@ describe('PaymentService', () => {
         balance_due: 600,
       }),
     );
+  });
+
+  describe('create', () => {
+    beforeEach(() => {
+      jest.spyOn(service as any, 'getPaymentSchemaAvailability').mockResolvedValue({
+        payment_method: true,
+        confirmed_at: true,
+        confirmed_by_user_id: true,
+        confirmation_note: true,
+        external_reference: true,
+      });
+      submissionRepository.findOne.mockResolvedValue({ id: 'submission-1' });
+      organizationRepository.findOne.mockResolvedValue({
+        id: 'org-1',
+        enabled_payment_methods: ['ONLINE'],
+        partial_payment_limit: null,
+      });
+      paymentRepository.create.mockImplementation((payload: any) => payload);
+      paymentRepository.save.mockImplementation(async (payload: any) => ({
+        id: 'payment-1',
+        ...payload,
+      }));
+    });
+
+    it('rejects non-positive amounts', async () => {
+      await expect(
+        service.create('org-1', {
+          submission_id: 'submission-1',
+          amount: 0,
+          payment_method: 'ONLINE',
+        } as any),
+      ).rejects.toBeInstanceOf(BadRequestException);
+
+      expect(paymentRepository.save).not.toHaveBeenCalled();
+    });
+
+    it('rejects a submission that does not belong to the organization', async () => {
+      submissionRepository.findOne.mockResolvedValue(null);
+
+      await expect(
+        service.create('org-1', {
+          submission_id: 'other-org-submission',
+          amount: 100,
+          payment_method: 'ONLINE',
+        } as any),
+      ).rejects.toBeInstanceOf(NotFoundException);
+
+      expect(submissionRepository.findOne).toHaveBeenCalledWith({
+        where: { id: 'other-org-submission', organization_id: 'org-1' },
+        select: ['id'],
+      });
+    });
+
+    it('rejects an amount greater than the total amount', async () => {
+      await expect(
+        service.create('org-1', {
+          submission_id: 'submission-1',
+          amount: 200,
+          total_amount: 100,
+          payment_method: 'ONLINE',
+        } as any),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('creates a payment for an owned submission', async () => {
+      const result = await service.create('org-1', {
+        submission_id: 'submission-1',
+        amount: 2500,
+        payment_method: 'ONLINE',
+      } as any);
+
+      expect(paymentRepository.save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          organization_id: 'org-1',
+          submission_id: 'submission-1',
+          amount: 2500,
+          status: 'PENDING',
+        }),
+      );
+      expect(result.id).toBe('payment-1');
+    });
   });
 });

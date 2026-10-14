@@ -59,6 +59,31 @@ export class PaymentService {
   ) {}
 
   async create(organizationId: string, dto: CreatePaymentDto) {
+    const numericAmount = Number(dto.amount);
+    if (!Number.isFinite(numericAmount) || numericAmount <= 0) {
+      throw new BadRequestException('Payment amount must be greater than zero');
+    }
+
+    if (dto.total_amount !== undefined && dto.total_amount !== null) {
+      const numericTotal = Number(dto.total_amount);
+      if (!Number.isFinite(numericTotal) || numericTotal <= 0) {
+        throw new BadRequestException('Total amount must be greater than zero');
+      }
+      if (numericAmount > numericTotal) {
+        throw new BadRequestException('Amount cannot exceed total amount');
+      }
+    }
+
+    // Guard against cross-tenant submission ids: the submission must belong to
+    // the organization the payment is being created for.
+    const submission = await this.submissionRepository.findOne({
+      where: { id: dto.submission_id, organization_id: organizationId },
+      select: ['id'],
+    });
+    if (!submission) {
+      throw new NotFoundException('Submission not found');
+    }
+
     const schema = await this.getPaymentSchemaAvailability();
     const reference = dto.reference || `REF-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
     const requestedPaymentMethod = dto.payment_method || 'ONLINE';
@@ -69,18 +94,17 @@ export class PaymentService {
 
     const org = await this.organizationRepository.findOne({ where: { id: organizationId } });
     this.assertPaymentMethodEnabled(org, requestedPaymentMethod);
-    if (org?.partial_payment_limit && Number(dto.amount) < Number(org.partial_payment_limit)) {
+    if (org?.partial_payment_limit && numericAmount < Number(org.partial_payment_limit)) {
       throw new BadRequestException(`Payment total must be at least ${org.partial_payment_limit}`);
     }
 
-    const totalAmount = dto.total_amount || dto.amount;
-    const balanceDue = dto.total_amount ? dto.total_amount : dto.amount; // For partial payments, balance_due starts as total_amount, for full payments as amount
+    const balanceDue = dto.total_amount ?? numericAmount; // For partial payments, balance_due starts as total_amount, for full payments as amount
 
     const paymentPayload: Partial<Payment> = {
       organization_id: organizationId,
       submission_id: dto.submission_id,
-      amount: dto.amount,
-      total_amount: dto.total_amount || null,
+      amount: numericAmount,
+      total_amount: dto.total_amount ?? null,
       amount_paid: 0,
       balance_due: balanceDue,
       reference,

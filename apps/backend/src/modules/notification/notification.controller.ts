@@ -168,9 +168,20 @@ export class NotificationController {
   }
 
   @Post('schedule')
-  async schedule(@Body() dto: ScheduleNotificationDto) {
-    // For MVP, schedule immediately.
-    return this.notificationService.sendEmail(dto.recipients, dto.subject, dto.body);
+  async schedule(@Body() dto: ScheduleNotificationDto, @Request() req) {
+    // Scheduling is immediate for MVP. Recipients are always resolved against
+    // the caller's organization so this cannot be used to email arbitrary
+    // addresses outside the tenant.
+    const recipients = await this.notificationService.getContactEmailsInOrganization(
+      req.user.organization_id,
+      dto.recipients,
+    );
+
+    if (!recipients.length) {
+      throw new BadRequestException('No recipients found in your organization');
+    }
+
+    return this.notificationService.sendEmail(recipients, dto.subject, dto.body);
   }
 
   @Post('schedule/groups')

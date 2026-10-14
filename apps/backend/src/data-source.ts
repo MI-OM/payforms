@@ -20,6 +20,11 @@ const AppDataSource = new DataSource({
     min: Number(process.env.DB_POOL_MIN ?? 5),
     idleTimeoutMillis: Number(process.env.DB_POOL_IDLE_TIMEOUT_MS ?? 30000),
     connectionTimeoutMillis: Number(process.env.DB_POOL_CONNECTION_TIMEOUT_MS ?? 5000),
+    // Migrations run as the table owner and are trusted system code, so they
+    // opt out of the tenant RLS policies explicitly. Without this, any future
+    // data migration that touches a tenant table would be silently filtered out
+    // (or rejected) once Row Level Security is enforced.
+    options: '-c app.rls_bypass=on',
   },
   logging: process.env.NODE_ENV === 'development',
 });

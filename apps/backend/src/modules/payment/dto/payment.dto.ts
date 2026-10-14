@@ -1,4 +1,4 @@
-import { IsString, IsNumber, IsOptional, IsEnum, IsIn } from 'class-validator';
+import { IsString, IsNumber, IsOptional, IsEnum, IsIn, IsPositive } from 'class-validator';
 import { Transform, Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { PAYMENT_METHODS, PaymentMethod } from '../entities/payment.entity';
@@ -10,11 +10,13 @@ export class CreatePaymentDto {
 
   @ApiProperty({ example: 25000 })
   @IsNumber()
+  @IsPositive()
   amount: number;
 
   @ApiPropertyOptional({ example: 100000, description: 'Total amount owed (for partial payments)' })
   @IsOptional()
   @IsNumber()
+  @IsPositive()
   total_amount?: number;
 
   @ApiPropertyOptional({ example: 'PAY_2026_0001' })

@@ -3,6 +3,7 @@ import { APP_INTERCEPTOR } from '@nestjs/core';
 import { OrganizationContextService } from './organization-context.service';
 import { SetOrganizationContextInterceptor } from './set-organization-context.interceptor';
 import { RlsHelper } from './rls.helper';
+import { RlsQueryRunnerPatcher } from './rls-query-runner.patcher';
 
 @Global()
 @Module({
@@ -13,6 +14,7 @@ import { RlsHelper } from './rls.helper';
       useClass: SetOrganizationContextInterceptor,
     },
     RlsHelper,
+    RlsQueryRunnerPatcher,
   ],
   exports: [OrganizationContextService, RlsHelper],
 })

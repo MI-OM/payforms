@@ -22,6 +22,10 @@ export class SetOrganizationContextInterceptor implements NestInterceptor {
         user.organization_id,
         user.id,
       );
+    } else {
+      // Public / unauthenticated / system request: mark it explicitly so any
+      // context inherited from a parent async resource cannot leak into it.
+      this.organizationContextService.setSystemContext();
     }
 
     return next.handle();

@@ -120,6 +120,39 @@ export class NotificationService {
     return Array.from(new Set(contacts.map(contact => contact.email)));
   }
 
+  /**
+   * Resolves the subset of the requested email addresses that belong to the
+   * given organization. Used to prevent authenticated users from using the
+   * notification endpoints as an open relay to arbitrary recipients.
+   */
+  async getContactEmailsInOrganization(
+    organizationId: string,
+    emails: string[],
+  ): Promise<string[]> {
+    const normalizedEmails = Array.from(new Set(
+      (emails || [])
+        .map(email => this.trimOptionalValue(email)?.toLowerCase())
+        .filter((email): email is string => !!email),
+    ));
+
+    if (!normalizedEmails.length) {
+      return [];
+    }
+
+    const contacts = await this.contactRepository
+      .createQueryBuilder('contact')
+      .where('contact.organization_id = :organizationId', { organizationId })
+      .andWhere('LOWER(contact.email) IN (:...emails)', { emails: normalizedEmails })
+      .select(['contact.email'])
+      .getMany();
+
+    return Array.from(new Set(
+      contacts
+        .map(contact => contact.email?.trim().toLowerCase() || '')
+        .filter(Boolean),
+    ));
+  }
+
   private getEmailProvider(): EmailProvider {
     const configuredProvider = this.trimOptionalValue(this.configService.get<string>('EMAIL_PROVIDER'));
     if (configuredProvider) {

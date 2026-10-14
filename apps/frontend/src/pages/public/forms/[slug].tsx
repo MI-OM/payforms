@@ -75,7 +75,7 @@ export default function PublicForm() {
       }
 
       if (value && field.type === 'EMAIL') {
-        const emailRegex = /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/;
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
         if (!emailRegex.test(value)) {
           newErrors[field.label] = 'Please enter a valid email address';
         }
