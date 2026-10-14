@@ -11,6 +11,10 @@ const AppDataSource = new DataSource({
   username: process.env.DB_USER ?? 'postgres',
   password: process.env.DB_PASSWORD ?? 'postgres',
   database: process.env.DB_NAME ?? 'payforms',
+  // Supabase (and most managed Postgres) require TLS. Set DB_SSL=true in the
+  // environment; rejectUnauthorized is disabled because the pooler presents a
+  // certificate chain node does not have in its default trust store.
+  ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false,
   entities: [__dirname + '/modules/**/entities/*.entity{.ts,.js}'],
   migrations: [__dirname + '/database/migrations/*{.ts,.js}'],
   migrationsRun: false,

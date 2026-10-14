@@ -48,6 +48,8 @@ import { OrganizationContextModule } from './common/auth/organization-context.mo
         username: configService.get('DB_USER', 'postgres'),
         password: configService.get('DB_PASSWORD', 'postgres'),
         database: configService.get('DB_NAME', 'payforms'),
+        // Supabase (and most managed Postgres) require TLS. Set DB_SSL=true.
+        ssl: configService.get('DB_SSL') === 'true' ? { rejectUnauthorized: false } : false,
         entities: [__dirname + '/modules/**/entities/*.entity{.ts,.js}'],
         migrations: [__dirname + '/database/migrations/*{.ts,.js}'],
         migrationsRun: false,
