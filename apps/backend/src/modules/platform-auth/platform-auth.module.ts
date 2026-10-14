@@ -10,6 +10,7 @@ import { PlatformJwtStrategy } from './strategies/platform-jwt.strategy';
 import { PlatformJwtAuthGuard } from './guards/platform-jwt-auth.guard';
 import { PlatformRolesGuard } from './guards/platform-roles.guard';
 import { resolvePlatformJwtSecret } from './platform-jwt.config';
+import { PlatformAuditModule } from '../platform-audit/platform-audit.module';
 
 /**
  * Platform admin identity module (Part 3, Wave A, Module 1).
@@ -28,6 +29,9 @@ import { resolvePlatformJwtSecret } from './platform-jwt.config';
         secret: resolvePlatformJwtSecret(configService),
       }),
     }),
+    // Brings in PlatformAuditInterceptor (used by @UseInterceptors on the
+    // controller) so platform auth events land in the platform audit trail.
+    PlatformAuditModule,
   ],
   controllers: [PlatformAuthController],
   providers: [

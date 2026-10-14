@@ -7,6 +7,7 @@ import {
   Request,
   Res,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
@@ -18,6 +19,8 @@ import {
   PlatformRefreshTokenDto,
 } from './dto/platform-auth.dto';
 import { PlatformJwtAuthGuard } from './guards/platform-jwt-auth.guard';
+import { PlatformAuditInterceptor } from '../platform-audit/platform-audit.interceptor';
+import { PlatformAuditAction } from '../platform-audit/decorators/platform-audit.decorator';
 
 const PLATFORM_ACCESS_COOKIE = 'pf_platform_access_token';
 const PLATFORM_REFRESH_COOKIE = 'pf_platform_refresh_token';
@@ -30,6 +33,7 @@ const PLATFORM_REFRESH_COOKIE = 'pf_platform_refresh_token';
 @ApiTags('Platform Admin')
 @Controller('platform/auth')
 @Throttle({ default: { limit: 30, ttl: 60000 } })
+@UseInterceptors(PlatformAuditInterceptor)
 export class PlatformAuthController {
   constructor(
     private readonly platformAuthService: PlatformAuthService,
@@ -38,6 +42,7 @@ export class PlatformAuthController {
 
   @Post('login')
   @Throttle({ default: { limit: 5, ttl: 60000 } })
+  @PlatformAuditAction('PLATFORM ADMIN LOGIN', 'PlatformUser')
   async login(
     @Body() dto: PlatformLoginDto,
     @Res({ passthrough: true }) res: Response,
@@ -49,6 +54,7 @@ export class PlatformAuthController {
 
   @Post('refresh')
   @Throttle({ default: { limit: 20, ttl: 60000 } })
+  @PlatformAuditAction('PLATFORM ADMIN TOKEN REFRESH', 'PlatformUser')
   async refresh(
     @Body() dto: PlatformRefreshTokenDto,
     @Req() req: any,
@@ -63,6 +69,7 @@ export class PlatformAuthController {
   @Post('logout')
   @UseGuards(PlatformJwtAuthGuard)
   @ApiBearerAuth()
+  @PlatformAuditAction('PLATFORM ADMIN LOGOUT', 'PlatformUser')
   async logout(@Request() req: any, @Res({ passthrough: true }) res: Response) {
     this.clearPlatformCookies(res);
     return this.platformAuthService.logout(req.user.id);
