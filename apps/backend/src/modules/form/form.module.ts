@@ -7,9 +7,13 @@ import { Contact } from '../contact/entities/contact.entity';
 import { Group } from '../group/entities/group.entity';
 import { FormService } from './services/form.service';
 import { FormController } from './controllers/form.controller';
+import { OrganizationStatusModule } from '../organization/organization-status.module';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Form, FormField, FormTarget, Group, Contact])],
+  imports: [
+    TypeOrmModule.forFeature([Form, FormField, FormTarget, Group, Contact]),
+    OrganizationStatusModule,
+  ],
   controllers: [FormController],
   providers: [FormService],
   exports: [FormService],

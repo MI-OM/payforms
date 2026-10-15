@@ -8,6 +8,9 @@ import { Group } from '../../group/entities/group.entity';
 import { Contact } from '../../contact/entities/contact.entity';
 import { CreateFormDto, UpdateFormDto, CreateFormFieldDto, UpdateFormFieldDto, ReorderFieldsDto, AssignFormTargetsDto } from '../dto/form.dto';
 import { RedisCacheService } from '../../../common/cache/redis-cache.service';
+import { OrganizationStatusService } from '../../organization/services/organization-status.service';
+
+const PUBLIC_FORM_UNAVAILABLE_MESSAGE = 'This form is currently unavailable';
 
 @Injectable()
 export class FormService {
@@ -25,6 +28,7 @@ export class FormService {
     @InjectRepository(Contact)
     private contactRepository: Repository<Contact>,
     private cacheService: RedisCacheService,
+    private organizationStatusService: OrganizationStatusService,
   ) {}
 
   async create(organizationId: string, dto: CreateFormDto) {
@@ -139,6 +143,10 @@ export class FormService {
     const cacheKey = this.getPublicFormCacheKey(slug);
     const cached = await this.cacheService.get<Form>(cacheKey);
     if (cached) {
+      await this.organizationStatusService.assertActive(
+        cached.organization_id,
+        PUBLIC_FORM_UNAVAILABLE_MESSAGE,
+      );
       return cached;
     }
 
@@ -150,11 +158,15 @@ export class FormService {
           id: true,
           require_contact_login: true,
           enabled_payment_methods: true,
-        }
-      }
+        },
+      },
     });
 
     if (form) {
+      await this.organizationStatusService.assertActive(
+        form.organization_id,
+        PUBLIC_FORM_UNAVAILABLE_MESSAGE,
+      );
       await this.cacheService.set(cacheKey, form, FormService.PUBLIC_FORM_CACHE_TTL_SECONDS);
     }
 

@@ -6,11 +6,13 @@ import { Form } from '../../form/entities/form.entity';
 import { ActivityLog } from '../../audit/entities/activity-log.entity';
 import { PaymentLog } from '../../audit/entities/payment-log.entity';
 import { PaymentMethod } from '../../payment/entities/payment.entity';
+import { OrganizationStatus } from '../organization-status.constants';
 
 @Entity('organizations')
 @Index('IDX_org_email_verification_token', ['email_verification_token'])
 @Index('IDX_organizations_subdomain_unique', ['subdomain'], { unique: true, where: '"subdomain" IS NOT NULL' })
 @Index('IDX_organizations_custom_domain_unique', ['custom_domain'], { unique: true, where: '"custom_domain" IS NOT NULL' })
+@Index('IDX_organizations_status', ['status'])
 export class Organization {
   @PrimaryGeneratedColumn('uuid')
   id: string;
@@ -71,6 +73,27 @@ export class Organization {
 
   @Column({ type: 'varchar', default: 'free' })
   billing_plan_tier: string;
+
+  // --- Lifecycle status (Part 3, Module 3) -----------------------------------
+  // Drives the platform "hard stop": suspended/disabled blocks tenant login and
+  // public payment forms. Denormalised onto the org for fast enforcement; the
+  // full transition history lives in `org_status_events`.
+  @Column({ type: 'varchar', default: 'active' })
+  status: OrganizationStatus;
+
+  @Column({ type: 'text', nullable: true })
+  status_reason: string | null;
+
+  @Column({ type: 'timestamp', nullable: true })
+  status_changed_at: Date | null;
+
+  /** Platform admin (`platform_users.id`) who last changed the status. */
+  @Column({ type: 'uuid', nullable: true })
+  status_changed_by: string | null;
+
+  /** When set on a `suspended` org, the hard stop lifts automatically after this. */
+  @Column({ type: 'timestamp', nullable: true })
+  suspended_until: Date | null;
 
   @Column({ type: 'integer', nullable: true, default: 1095 })
   data_retention_contact_days: number;

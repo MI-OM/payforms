@@ -10,6 +10,7 @@ import { ContactModule } from '../contact/contact.module';
 import { ContactAuthModule } from '../contact-auth/contact-auth.module';
 import { NotificationModule } from '../notification/notification.module';
 import { Contact } from '../contact/entities/contact.entity';
+import { OrganizationStatusModule } from '../organization/organization-status.module';
 
 @Module({
   imports: [
@@ -19,6 +20,7 @@ import { Contact } from '../contact/entities/contact.entity';
     ContactModule,
     ContactAuthModule,
     NotificationModule,
+    OrganizationStatusModule,
   ],
   controllers: [PublicController, SubmissionController],
   providers: [SubmissionService],

@@ -25,6 +25,10 @@ import {
 import { NotificationService } from '../notification/notification.service';
 import { validatePasswordStrength } from '../../common/security/password-policy';
 import { TenantResolverService } from '../tenant/tenant-resolver.service';
+import { OrganizationStatusService } from '../organization/services/organization-status.service';
+
+const ORGANIZATION_HARD_STOP_MESSAGE =
+  'This organization has been suspended. Please contact support.';
 
 const SUBDOMAIN_PATTERN = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
 const STAFF_INVITE_EXPIRY_DAYS = 7;
@@ -50,6 +54,7 @@ export class AuthService {
     private configService: ConfigService,
     private notificationService: NotificationService,
     private tenantResolverService: TenantResolverService,
+    private organizationStatusService: OrganizationStatusService,
   ) {}
 
   async register(dto: RegisterDto) {
@@ -249,6 +254,11 @@ export class AuthService {
         throw new UnauthorizedException('Account has been deactivated');
       }
 
+      await this.organizationStatusService.assertActive(
+        organizationId,
+        ORGANIZATION_HARD_STOP_MESSAGE,
+      );
+
       const isPasswordValid = await bcrypt.compare(dto.password, user.password_hash);
       if (!isPasswordValid) {
         throw new UnauthorizedException('Invalid credentials');
@@ -277,6 +287,11 @@ export class AuthService {
     if (!user.is_active) {
       throw new UnauthorizedException('Account has been deactivated');
     }
+
+    await this.organizationStatusService.assertActive(
+      user.organization_id,
+      ORGANIZATION_HARD_STOP_MESSAGE,
+    );
 
     const isPasswordValid = await bcrypt.compare(dto.password, user.password_hash);
     if (!isPasswordValid) {
@@ -340,6 +355,12 @@ export class AuthService {
     if (!user || !user.refresh_token_hash) {
       throw new UnauthorizedException('Invalid refresh token');
     }
+
+    await this.organizationStatusService.assertActive(
+      user.organization_id,
+      ORGANIZATION_HARD_STOP_MESSAGE,
+    );
+
     const refreshTokenMatches = await bcrypt.compare(refreshToken, user.refresh_token_hash);
     if (!refreshTokenMatches) {
       await this.userRepository.update(user.id, { refresh_token_hash: null });
@@ -674,6 +695,11 @@ export class AuthService {
       throw new BadRequestException('Two-factor authentication is not enabled for this account');
     }
 
+    await this.organizationStatusService.assertActive(
+      user.organization_id,
+      ORGANIZATION_HARD_STOP_MESSAGE,
+    );
+
     await this.assertValidTwoFactorAction(user, dto, true);
 
     const tokens = await this.createTokens(user);
@@ -747,7 +773,17 @@ export class AuthService {
   }
 
   async validateUser(id: string): Promise<User | null> {
-    return this.userRepository.findOne({ where: { id } });
+    const user = await this.userRepository.findOne({ where: { id } });
+    if (user?.organization_id) {
+      // Enforce the platform hard stop on every authenticated request so a
+      // suspended/disabled organization's existing sessions stop working
+      // immediately, not just at next login.
+      await this.organizationStatusService.assertActive(
+        user.organization_id,
+        ORGANIZATION_HARD_STOP_MESSAGE,
+      );
+    }
+    return user;
   }
 
   private async buildLoginSuccessResponse(user: User) {

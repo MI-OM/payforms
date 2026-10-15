@@ -13,6 +13,9 @@ import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { Request } from 'express';
 import { parseOriginAllowList, resolveCallbackUrl, resolveParentOrigin } from '../utils/embed-security.util';
+import { OrganizationStatusService } from '../../organization/services/organization-status.service';
+
+const PUBLIC_FORM_UNAVAILABLE_MESSAGE = 'This form is currently unavailable';
 
 @ApiTags('Public')
 @Controller('public')
@@ -26,6 +29,7 @@ export class PublicController {
     private notificationService: NotificationService,
     private configService: ConfigService,
     private jwtService: JwtService,
+    private organizationStatusService: OrganizationStatusService,
   ) {}
 
   @Get('forms/:slug')
@@ -459,7 +463,17 @@ export class PublicController {
     return contactId;
   }
 
+  private async assertOrgActive(form: any): Promise<void> {
+    await this.organizationStatusService.assertActive(
+      form.organization_id,
+      PUBLIC_FORM_UNAVAILABLE_MESSAGE,
+    );
+  }
+
   private async ensurePublicFormAccess(form: any, authorization?: string): Promise<string | null> {
+    // Platform hard stop: a suspended/disabled organization's public forms are
+    // unavailable to everyone, regardless of access mode.
+    await this.assertOrgActive(form);
     const tokenContactId = await this.getContactIdFromAuthHeader(authorization);
     if (form.targets?.length) {
       if (!tokenContactId) {
