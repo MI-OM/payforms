@@ -25,6 +25,7 @@ import { PlatformAuthModule } from './modules/platform-auth/platform-auth.module
 import { PlatformAuditModule } from './modules/platform-audit/platform-audit.module';
 import { PlatformOrganizationsModule } from './modules/platform-organizations/platform-organizations.module';
 import { PlatformNotificationsModule } from './modules/platform-notifications/platform-notifications.module';
+import { PlatformSettingsModule } from './modules/platform-settings/platform-settings.module';
 import { OrganizationContextModule } from './common/auth/organization-context.module';
 
 @Module({
@@ -88,6 +89,7 @@ import { OrganizationContextModule } from './common/auth/organization-context.mo
     PlatformAuditModule,
     PlatformOrganizationsModule,
     PlatformNotificationsModule,
+    PlatformSettingsModule,
   ],
   controllers: [],
   providers: [
