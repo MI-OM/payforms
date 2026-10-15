@@ -24,6 +24,7 @@ import { MarketReadinessModule } from './modules/market-readiness/market-readine
 import { PlatformAuthModule } from './modules/platform-auth/platform-auth.module';
 import { PlatformAuditModule } from './modules/platform-audit/platform-audit.module';
 import { PlatformOrganizationsModule } from './modules/platform-organizations/platform-organizations.module';
+import { PlatformNotificationsModule } from './modules/platform-notifications/platform-notifications.module';
 import { OrganizationContextModule } from './common/auth/organization-context.module';
 
 @Module({
@@ -86,6 +87,7 @@ import { OrganizationContextModule } from './common/auth/organization-context.mo
     PlatformAuthModule,
     PlatformAuditModule,
     PlatformOrganizationsModule,
+    PlatformNotificationsModule,
   ],
   controllers: [],
   providers: [
