@@ -363,6 +363,10 @@ export class AuthService {
       throw new UnauthorizedException('Invalid refresh token');
     }
 
+    if (!user.is_active) {
+      throw new UnauthorizedException('Account has been deactivated');
+    }
+
     await this.organizationStatusService.assertActive(
       user.organization_id,
       ORGANIZATION_HARD_STOP_MESSAGE,
@@ -792,6 +796,14 @@ export class AuthService {
     if (impersonationSessionId) {
       await this.assertActiveImpersonationSession(impersonationSessionId, user);
       return user;
+    }
+
+    // A deactivated user must not keep using an already-issued access token.
+    // Login and refresh already refuse inactive accounts; enforcing it here too
+    // makes a platform-admin disable take effect on the very next request
+    // instead of waiting for the token to expire.
+    if (user && !user.is_active) {
+      throw new UnauthorizedException('Account has been deactivated');
     }
 
     if (user?.organization_id) {

@@ -27,6 +27,7 @@ import { PlatformOrganizationsModule } from './modules/platform-organizations/pl
 import { PlatformNotificationsModule } from './modules/platform-notifications/platform-notifications.module';
 import { PlatformSettingsModule } from './modules/platform-settings/platform-settings.module';
 import { PlatformImpersonationModule } from './modules/platform-impersonation/platform-impersonation.module';
+import { PlatformUsersModule } from './modules/platform-users/platform-users.module';
 import { OrganizationContextModule } from './common/auth/organization-context.module';
 
 @Module({
@@ -92,6 +93,7 @@ import { OrganizationContextModule } from './common/auth/organization-context.mo
     PlatformNotificationsModule,
     PlatformSettingsModule,
     PlatformImpersonationModule,
+    PlatformUsersModule,
   ],
   controllers: [],
   providers: [
