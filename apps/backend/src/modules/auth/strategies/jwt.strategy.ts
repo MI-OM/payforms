@@ -21,7 +21,9 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
   }
 
   async validate(payload: any) {
-    const user = await this.authService.validateUser(payload.sub);
+    // The full payload is forwarded so `validateUser` can detect (and verify) a
+    // platform impersonation token via its `impersonation.session_id` claim.
+    const user = await this.authService.validateUser(payload.sub, payload);
     if (!user) {
       throw new UnauthorizedException('Invalid credentials');
     }

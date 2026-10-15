@@ -6,6 +6,7 @@ import { ConfigService } from '@nestjs/config';
 import { User } from './entities/user.entity';
 import { Invitation } from './entities/invitation.entity';
 import { Organization } from '../organization/entities/organization.entity';
+import { ImpersonationSession } from '../platform-impersonation/entities/impersonation-session.entity';
 import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
 import { JwtStrategy } from './strategies/jwt.strategy';
@@ -16,7 +17,7 @@ import { OrganizationStatusModule } from '../organization/organization-status.mo
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([User, Invitation, Organization]),
+    TypeOrmModule.forFeature([User, Invitation, Organization, ImpersonationSession]),
     PassportModule,
     JwtModule.registerAsync({
       inject: [ConfigService],

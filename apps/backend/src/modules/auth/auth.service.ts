@@ -26,6 +26,11 @@ import { NotificationService } from '../notification/notification.service';
 import { validatePasswordStrength } from '../../common/security/password-policy';
 import { TenantResolverService } from '../tenant/tenant-resolver.service';
 import { OrganizationStatusService } from '../organization/services/organization-status.service';
+import { ImpersonationSession } from '../platform-impersonation/entities/impersonation-session.entity';
+import {
+  IMPERSONATION_ENDED_MESSAGE,
+  IMPERSONATION_EXPIRED_MESSAGE,
+} from '../platform-impersonation/platform-impersonation.constants';
 
 const ORGANIZATION_HARD_STOP_MESSAGE =
   'This organization has been suspended. Please contact support.';
@@ -50,6 +55,8 @@ export class AuthService {
     private invitationRepository: Repository<Invitation>,
     @InjectRepository(Organization)
     private organizationRepository: Repository<Organization>,
+    @InjectRepository(ImpersonationSession)
+    private impersonationSessionRepository: Repository<ImpersonationSession>,
     private jwtService: JwtService,
     private configService: ConfigService,
     private notificationService: NotificationService,
@@ -772,8 +779,21 @@ export class AuthService {
     );
   }
 
-  async validateUser(id: string): Promise<User | null> {
+  async validateUser(id: string, payload?: any): Promise<User | null> {
     const user = await this.userRepository.findOne({ where: { id } });
+
+    // Platform impersonation tokens carry an `impersonation.session_id` claim.
+    // When present the session must still be active and unexpired; a valid
+    // session deliberately bypasses the organization hard stop (and the target
+    // user's `is_active` flag) because a platform SUPER operator explicitly
+    // opened it to provide support. Sessions are time-boxed, reason-required and
+    // audited, and ending one revokes the token immediately.
+    const impersonationSessionId = payload?.impersonation?.session_id;
+    if (impersonationSessionId) {
+      await this.assertActiveImpersonationSession(impersonationSessionId, user);
+      return user;
+    }
+
     if (user?.organization_id) {
       // Enforce the platform hard stop on every authenticated request so a
       // suspended/disabled organization's existing sessions stop working
@@ -784,6 +804,39 @@ export class AuthService {
       );
     }
     return user;
+  }
+
+  /**
+   * Verifies the impersonation session behind a tenant token. Called on every
+   * request that uses an impersonation token, which is what makes early `end`
+   * an immediate revocation.
+   */
+  private async assertActiveImpersonationSession(
+    sessionId: string,
+    user: User | null,
+  ): Promise<void> {
+    const session = await this.impersonationSessionRepository.findOne({
+      where: { id: sessionId },
+    });
+    if (!session) {
+      throw new UnauthorizedException('Impersonation session not found');
+    }
+    if (session.status !== 'active') {
+      throw new UnauthorizedException(IMPERSONATION_ENDED_MESSAGE);
+    }
+    if (session.expires_at && session.expires_at.getTime() <= Date.now()) {
+      // Best effort: reflect the expiry so the console stops showing it active.
+      await this.impersonationSessionRepository
+        .update(session.id, { status: 'expired' })
+        .catch(() => undefined);
+      throw new UnauthorizedException(IMPERSONATION_EXPIRED_MESSAGE);
+    }
+    if (!user || session.target_user_id !== user.id) {
+      throw new UnauthorizedException('Invalid impersonation session');
+    }
+    if (String(session.organization_id) !== String(user.organization_id)) {
+      throw new UnauthorizedException('Invalid impersonation session');
+    }
   }
 
   private async buildLoginSuccessResponse(user: User) {
