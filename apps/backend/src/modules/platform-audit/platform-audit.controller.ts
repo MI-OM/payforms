@@ -31,6 +31,15 @@ export class PlatformAuditController {
     return this.platformAuditService.list(query);
   }
 
+  /**
+   * Declared before `:id` so Nest routes `GET /platform/audit-logs/actions`
+   * here instead of treating "actions" as an audit-log id.
+   */
+  @Get('actions')
+  async actions() {
+    return { actions: await this.platformAuditService.distinctActions() };
+  }
+
   @Get(':id')
   async getById(@Param('id') id: string) {
     const log = await this.platformAuditService.getById(id);

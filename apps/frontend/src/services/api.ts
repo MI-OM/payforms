@@ -161,6 +161,11 @@ class ApiClient {
     return response.data;
   }
 
+  async get(url: string, params?: any) {
+    const response = await this.client.get(url, { params });
+    return response.data;
+  }
+
   async updatePaystackKeys(publicKey: string, secretKey: string) {
     const response = await this.client.patch('/organization/keys', {
       paystack_public_key: publicKey,

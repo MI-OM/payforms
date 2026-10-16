@@ -11,6 +11,7 @@ import { ContactAuthModule } from '../contact-auth/contact-auth.module';
 import { NotificationModule } from '../notification/notification.module';
 import { Contact } from '../contact/entities/contact.entity';
 import { OrganizationStatusModule } from '../organization/organization-status.module';
+import { BillingModule } from '../billing/billing.module';
 
 @Module({
   imports: [
@@ -21,6 +22,8 @@ import { OrganizationStatusModule } from '../organization/organization-status.mo
     ContactAuthModule,
     NotificationModule,
     OrganizationStatusModule,
+    // Enforces the plan's `monthly_submissions` hard limit.
+    BillingModule,
   ],
   controllers: [PublicController, SubmissionController],
   providers: [SubmissionService],

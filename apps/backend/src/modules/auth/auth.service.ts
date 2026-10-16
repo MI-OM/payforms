@@ -27,6 +27,7 @@ import { validatePasswordStrength } from '../../common/security/password-policy'
 import { TenantResolverService } from '../tenant/tenant-resolver.service';
 import { OrganizationStatusService } from '../organization/services/organization-status.service';
 import { ImpersonationSession } from '../platform-impersonation/entities/impersonation-session.entity';
+import { BillingService } from '../billing/billing.service';
 import {
   IMPERSONATION_ENDED_MESSAGE,
   IMPERSONATION_EXPIRED_MESSAGE,
@@ -62,6 +63,7 @@ export class AuthService {
     private notificationService: NotificationService,
     private tenantResolverService: TenantResolverService,
     private organizationStatusService: OrganizationStatusService,
+    private billingService: BillingService,
   ) {}
 
   async register(dto: RegisterDto) {
@@ -127,6 +129,12 @@ export class AuthService {
       await this.invitationRepository.delete({ id: existingInvite.id });
     }
 
+    // Guard the seat before writing the invitation so an admin gets immediate
+    // feedback instead of the invite silently failing days later at accept
+    // time. `acceptInvite` checks again, because that is where the seat is
+    // actually created and where pending invitations can have been consumed.
+    await this.billingService.assertWithinHardLimit(organizationId, 'staff_users');
+
     const token = crypto.randomBytes(32).toString('hex');
     const invitation = this.invitationRepository.create({
       organization_id: organizationId,
@@ -162,7 +170,12 @@ export class AuthService {
         <p>This invitation link expires in ${STAFF_INVITE_EXPIRY_DAYS} days.</p>
       `;
 
-      await this.notificationService.sendEmail([savedInvite.email], subject, html);
+      // Invitation email is metered but not quota-blocked: the seat itself is
+      // already gated above, and a billing cap must not strand an invited user.
+      await this.notificationService.sendEmail([savedInvite.email], subject, html, undefined, {
+        organizationId,
+        enforceQuota: false,
+      });
       inviteEmailSent = true;
     } catch (error) {
       console.warn('Failed to send invitation email:', error);
@@ -200,6 +213,8 @@ export class AuthService {
     if (existingUser) {
       throw new BadRequestException(DUPLICATE_USER_EMAIL_MESSAGE);
     }
+
+    await this.billingService.assertWithinHardLimit(invitation.organization_id, 'staff_users');
 
     const passwordHash = await bcrypt.hash(dto.password, 10);
     const user = this.userRepository.create({

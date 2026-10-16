@@ -9,6 +9,7 @@ import { Contact } from '../../contact/entities/contact.entity';
 import { CreateFormDto, UpdateFormDto, CreateFormFieldDto, UpdateFormFieldDto, ReorderFieldsDto, AssignFormTargetsDto } from '../dto/form.dto';
 import { RedisCacheService } from '../../../common/cache/redis-cache.service';
 import { OrganizationStatusService } from '../../organization/services/organization-status.service';
+import { BillingService } from '../../billing/billing.service';
 
 const PUBLIC_FORM_UNAVAILABLE_MESSAGE = 'This form is currently unavailable';
 
@@ -29,9 +30,12 @@ export class FormService {
     private contactRepository: Repository<Contact>,
     private cacheService: RedisCacheService,
     private organizationStatusService: OrganizationStatusService,
+    private billingService: BillingService,
   ) {}
 
   async create(organizationId: string, dto: CreateFormDto) {
+    await this.billingService.assertWithinHardLimit(organizationId, 'forms');
+
     const form = this.formRepository.create({
       organization_id: organizationId,
       ...dto,

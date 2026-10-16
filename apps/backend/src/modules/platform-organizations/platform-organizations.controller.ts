@@ -44,6 +44,11 @@ export class PlatformOrganizationsController {
     return this.platformOrganizationsService.list(query);
   }
 
+  @Get('stats')
+  async stats() {
+    return this.platformOrganizationsService.stats();
+  }
+
   @Get(':id')
   async detail(@Param('id') id: string) {
     return this.platformOrganizationsService.detail(id);
@@ -57,6 +62,11 @@ export class PlatformOrganizationsController {
     @Request() req: any,
   ) {
     return this.platformOrganizationsService.changeStatus(id, dto, req.user);
+  }
+
+  @Get(':id/usage')
+  async usage(@Param('id') id: string) {
+    return this.platformOrganizationsService.usage(id);
   }
 
   @Get(':id/status-events')

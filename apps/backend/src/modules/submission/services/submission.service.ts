@@ -4,6 +4,7 @@ import { Repository } from 'typeorm';
 import { Submission } from '../entities/submission.entity';
 import { CreateSubmissionDto } from '../dto/submission.dto';
 import { Contact } from '../../contact/entities/contact.entity';
+import { BillingService } from '../../billing/billing.service';
 
 type SubmissionFilters = {
   form_id?: string;
@@ -19,9 +20,12 @@ export class SubmissionService {
     private submissionRepository: Repository<Submission>,
     @InjectRepository(Contact)
     private contactRepository: Repository<Contact>,
+    private billingService: BillingService,
   ) {}
 
   async create(organizationId: string, formId: string, dto: CreateSubmissionDto) {
+    await this.billingService.assertWithinHardLimit(organizationId, 'monthly_submissions');
+
     const submission = this.submissionRepository.create({
       organization_id: organizationId,
       form_id: formId,

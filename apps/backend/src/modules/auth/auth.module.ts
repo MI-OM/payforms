@@ -14,6 +14,7 @@ import { RolesGuard } from './guards/roles.guard';
 import { NotificationModule } from '../notification/notification.module';
 import { TenantResolverModule } from '../tenant/tenant-resolver.module';
 import { OrganizationStatusModule } from '../organization/organization-status.module';
+import { BillingModule } from '../billing/billing.module';
 
 @Module({
   imports: [
@@ -31,6 +32,8 @@ import { OrganizationStatusModule } from '../organization/organization-status.mo
     NotificationModule,
     TenantResolverModule,
     OrganizationStatusModule,
+    // Enforces the plan's `staff_users` hard limit on invite/accept.
+    BillingModule,
   ],
   controllers: [AuthController],
   providers: [AuthService, JwtStrategy, RolesGuard],

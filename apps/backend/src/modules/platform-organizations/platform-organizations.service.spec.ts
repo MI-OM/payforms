@@ -51,11 +51,16 @@ describe('PlatformOrganizationsService', () => {
   let paymentRepository: { count: jest.Mock };
   let organizationStatusService: OrganizationStatusService;
   let organizationContextService: { runWithContext: jest.Mock };
+  let billingService: { calculateUsage: jest.Mock };
   let queryBuilder: {
     andWhere: jest.Mock;
     orderBy: jest.Mock;
     skip: jest.Mock;
     take: jest.Mock;
+    select: jest.Mock;
+    addSelect: jest.Mock;
+    setParameter: jest.Mock;
+    getRawOne: jest.Mock;
     getManyAndCount: jest.Mock;
   };
   let service: PlatformOrganizationsService;
@@ -66,6 +71,10 @@ describe('PlatformOrganizationsService', () => {
       orderBy: jest.fn().mockReturnThis(),
       skip: jest.fn().mockReturnThis(),
       take: jest.fn().mockReturnThis(),
+      select: jest.fn().mockReturnThis(),
+      addSelect: jest.fn().mockReturnThis(),
+      setParameter: jest.fn().mockReturnThis(),
+      getRawOne: jest.fn().mockResolvedValue({ total: 4, active: 2, suspended: 1, disabled: 1 }),
       getManyAndCount: jest.fn().mockResolvedValue([[], 0]),
     };
     organizationRepository = {
@@ -88,6 +97,18 @@ describe('PlatformOrganizationsService', () => {
     organizationContextService = {
       runWithContext: jest.fn((_org, _user, callback) => callback()),
     };
+    billingService = {
+      calculateUsage: jest.fn().mockResolvedValue({
+        organization_id: 'org-1',
+        forms_created: 4,
+        contacts_total: 120,
+        staff_users_total: 3,
+        submissions_this_month: 40,
+        email_sends_this_month: 12,
+        storage_used_gb: 0.25,
+        storage_used_bytes: 268435456,
+      }),
+    };
 
     service = new PlatformOrganizationsService(
       organizationRepository as any,
@@ -99,6 +120,7 @@ describe('PlatformOrganizationsService', () => {
       paymentRepository as any,
       organizationStatusService,
       organizationContextService as any,
+      billingService as any,
     );
   });
 
@@ -156,6 +178,16 @@ describe('PlatformOrganizationsService', () => {
         ([condition]) => condition instanceof Brackets,
       );
       expect(searchCall).toBeDefined();
+    });
+  });
+
+  describe('stats', () => {
+    it('returns effective-status counts for the dashboard', async () => {
+      const result = await service.stats();
+
+      expect(queryBuilder.select).toHaveBeenCalled();
+      expect(queryBuilder.setParameter).toHaveBeenCalledWith('now', expect.any(Date));
+      expect(result).toEqual({ total: 4, active: 2, suspended: 1, disabled: 1 });
     });
   });
 

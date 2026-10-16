@@ -13,6 +13,7 @@ import { PlatformOrganizationsController } from './platform-organizations.contro
 import { PlatformJwtAuthGuard } from '../platform-auth/guards/platform-jwt-auth.guard';
 import { PlatformRolesGuard } from '../platform-auth/guards/platform-roles.guard';
 import { PlatformAuditModule } from '../platform-audit/platform-audit.module';
+import { BillingModule } from '../billing/billing.module';
 
 /**
  * Platform admin organization console (Part 3, Wave A, Module 3).
@@ -36,6 +37,7 @@ import { PlatformAuditModule } from '../platform-audit/platform-audit.module';
       Payment,
     ]),
     OrganizationStatusModule,
+    BillingModule,
     // Provides+exports PlatformAuditInterceptor for @UseInterceptors on the
     // controller, mirroring PlatformAuthModule.
     PlatformAuditModule,

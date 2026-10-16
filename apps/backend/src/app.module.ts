@@ -28,6 +28,8 @@ import { PlatformNotificationsModule } from './modules/platform-notifications/pl
 import { PlatformSettingsModule } from './modules/platform-settings/platform-settings.module';
 import { PlatformImpersonationModule } from './modules/platform-impersonation/platform-impersonation.module';
 import { PlatformUsersModule } from './modules/platform-users/platform-users.module';
+import { OrganizationEntitlementsModule } from './modules/organization/organization-entitlements.module';
+import { PlatformEntitlementsModule } from './modules/platform-entitlements/platform-entitlements.module';
 import { OrganizationContextModule } from './common/auth/organization-context.module';
 
 @Module({
@@ -94,6 +96,8 @@ import { OrganizationContextModule } from './common/auth/organization-context.mo
     PlatformSettingsModule,
     PlatformImpersonationModule,
     PlatformUsersModule,
+    OrganizationEntitlementsModule,
+    PlatformEntitlementsModule,
   ],
   controllers: [],
   providers: [

@@ -24,6 +24,10 @@ describe('FormService', () => {
   const organizationStatusService = {
     assertActive: jest.fn().mockResolvedValue(undefined),
   };
+  const billingService = {
+    assertWithinHardLimit: jest.fn().mockResolvedValue(undefined),
+    recordUsage: jest.fn().mockResolvedValue(undefined),
+  };
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -35,6 +39,7 @@ describe('FormService', () => {
       contactRepository as any,
       cacheService as any,
       organizationStatusService as any,
+      billingService as any,
     );
   });
 

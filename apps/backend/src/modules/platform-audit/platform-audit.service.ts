@@ -154,4 +154,25 @@ export class PlatformAuditService {
   async getById(id: string): Promise<PlatformAuditLog | null> {
     return this.auditRepository.findOne({ where: { id } });
   }
+
+  /**
+   * Distinct action values actually present in the trail.
+   *
+   * The console's action filter is built from this so it can only ever offer
+   * filters that match real records. Deriving it from a single page of results
+   * (or from fixtures) would silently omit actions and surface ones that no
+   * longer exist.
+   */
+  async distinctActions(): Promise<string[]> {
+    const rows = await this.auditRepository
+      .createQueryBuilder('log')
+      .select('DISTINCT log.action', 'action')
+      .where('log.action IS NOT NULL')
+      .orderBy('log.action', 'ASC')
+      .getRawMany<{ action: string | null }>();
+
+    return rows
+      .map((row) => row.action)
+      .filter((action): action is string => !!action && action.trim().length > 0);
+  }
 }

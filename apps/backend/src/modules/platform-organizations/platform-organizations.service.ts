@@ -15,6 +15,7 @@ import { Contact } from '../contact/entities/contact.entity';
 import { Form } from '../form/entities/form.entity';
 import { Submission } from '../submission/entities/submission.entity';
 import { Payment } from '../payment/entities/payment.entity';
+import { BillingService } from '../billing/billing.service';
 import {
   ChangeOrganizationStatusDto,
   ListOrganizationStatusEventsQueryDto,
@@ -64,6 +65,7 @@ export class PlatformOrganizationsService {
     private readonly paymentRepository: Repository<Payment>,
     private readonly organizationStatusService: OrganizationStatusService,
     private readonly organizationContextService: OrganizationContextService,
+    private readonly billingService: BillingService,
   ) {}
 
   async list(query: ListPlatformOrganizationsQueryDto) {
@@ -102,6 +104,35 @@ export class PlatformOrganizationsService {
       total,
       page,
       limit,
+    };
+  }
+
+  /**
+   * Platform dashboard KPIs. Effective status matches `applyStatusFilter`
+   * (expired suspensions count as active). Full analytics stays deferred.
+   */
+  async stats() {
+    const now = new Date();
+    const raw = await this.organizationRepository
+      .createQueryBuilder('org')
+      .select('COUNT(*)::int', 'total')
+      .addSelect(`COUNT(*) FILTER (WHERE org.status = 'disabled')::int`, 'disabled')
+      .addSelect(
+        `COUNT(*) FILTER (WHERE org.status = 'suspended' AND (org.suspended_until IS NULL OR org.suspended_until > :now))::int`,
+        'suspended',
+      )
+      .addSelect(
+        `COUNT(*) FILTER (WHERE org.status = 'active' OR (org.status = 'suspended' AND org.suspended_until IS NOT NULL AND org.suspended_until <= :now))::int`,
+        'active',
+      )
+      .setParameter('now', now)
+      .getRawOne<{ total: string | number; active: string | number; suspended: string | number; disabled: string | number }>();
+
+    return {
+      total: Number(raw?.total ?? 0),
+      active: Number(raw?.active ?? 0),
+      suspended: Number(raw?.suspended ?? 0),
+      disabled: Number(raw?.disabled ?? 0),
     };
   }
 
@@ -205,6 +236,24 @@ export class PlatformOrganizationsService {
       changed,
       status: this.buildStatusView(org),
     };
+  }
+
+  async usage(organizationId: string) {
+    const exists = await this.organizationRepository.findOne({
+      where: { id: organizationId },
+      select: ['id'],
+    });
+    if (!exists) {
+      throw new NotFoundException('Organization not found');
+    }
+
+    const usage = await this.organizationContextService.runWithContext(
+      organizationId,
+      '',
+      () => this.billingService.calculateUsage(organizationId),
+    );
+
+    return { usage };
   }
 
   async listStatusEvents(

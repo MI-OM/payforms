@@ -10,11 +10,14 @@ import { ContactService } from './services/contact.service';
 import { ContactImportService } from './services/contact-import.service';
 import { ContactController } from './controllers/contact.controller';
 import { NotificationModule } from '../notification/notification.module';
+import { BillingModule } from '../billing/billing.module';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([Contact, ContactImport, Group, Payment, Submission, Organization]),
     NotificationModule,
+    // Enforces the plan's `contacts` hard limit on create/import.
+    BillingModule,
   ],
   controllers: [ContactController],
   providers: [ContactService, ContactImportService],
