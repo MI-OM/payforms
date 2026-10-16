@@ -26,14 +26,20 @@ export class AlterOrganizationStatusToEnum1778000000000
       WHERE status IN ('ACTIVE', 'SUSPENDED', 'DISABLED', 'Active', 'Suspended', 'Disabled');
     `);
 
-    // 3. Alter the column to use the enum type
+    // 3. Drop the existing default before type conversion
+    await queryRunner.query(`
+      ALTER TABLE organizations
+      ALTER COLUMN status DROP DEFAULT;
+    `);
+
+    // 4. Alter the column to use the enum type
     await queryRunner.query(`
       ALTER TABLE organizations
       ALTER COLUMN status TYPE organization_status_enum
       USING status::organization_status_enum;
     `);
 
-    // 4. Set default value
+    // 5. Set new default value with enum type
     await queryRunner.query(`
       ALTER TABLE organizations
       ALTER COLUMN status SET DEFAULT 'active'::organization_status_enum;
@@ -41,19 +47,26 @@ export class AlterOrganizationStatusToEnum1778000000000
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
-    // Revert to varchar
+    // 1. Drop the enum default
+    await queryRunner.query(`
+      ALTER TABLE organizations
+      ALTER COLUMN status DROP DEFAULT;
+    `);
+
+    // 2. Revert to varchar
     await queryRunner.query(`
       ALTER TABLE organizations
       ALTER COLUMN status TYPE varchar
       USING status::varchar;
     `);
 
+    // 3. Set varchar default
     await queryRunner.query(`
       ALTER TABLE organizations
       ALTER COLUMN status SET DEFAULT 'active';
     `);
 
-    // Drop the enum type
+    // 4. Drop the enum type
     await queryRunner.query(`
       DROP TYPE IF EXISTS organization_status_enum;
     `);
