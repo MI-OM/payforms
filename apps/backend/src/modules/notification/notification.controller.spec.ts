@@ -36,6 +36,8 @@ describe('NotificationController', () => {
       ['member@example.com'],
       'Payment Reminder',
       'Please complete your payment',
+      undefined,
+      { organizationId: 'org-1' },
     );
     expect(result).toEqual({ sent: true });
   });

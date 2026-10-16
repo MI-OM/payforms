@@ -6,16 +6,19 @@ import { ConfigService } from '@nestjs/config';
 import { User } from './entities/user.entity';
 import { Invitation } from './entities/invitation.entity';
 import { Organization } from '../organization/entities/organization.entity';
+import { ImpersonationSession } from '../platform-impersonation/entities/impersonation-session.entity';
 import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { RolesGuard } from './guards/roles.guard';
 import { NotificationModule } from '../notification/notification.module';
 import { TenantResolverModule } from '../tenant/tenant-resolver.module';
+import { OrganizationStatusModule } from '../organization/organization-status.module';
+import { BillingModule } from '../billing/billing.module';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([User, Invitation, Organization]),
+    TypeOrmModule.forFeature([User, Invitation, Organization, ImpersonationSession]),
     PassportModule,
     JwtModule.registerAsync({
       inject: [ConfigService],
@@ -28,6 +31,9 @@ import { TenantResolverModule } from '../tenant/tenant-resolver.module';
     }),
     NotificationModule,
     TenantResolverModule,
+    OrganizationStatusModule,
+    // Enforces the plan's `staff_users` hard limit on invite/accept.
+    BillingModule,
   ],
   controllers: [AuthController],
   providers: [AuthService, JwtStrategy, RolesGuard],

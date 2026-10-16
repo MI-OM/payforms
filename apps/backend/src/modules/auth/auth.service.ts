@@ -25,6 +25,16 @@ import {
 import { NotificationService } from '../notification/notification.service';
 import { validatePasswordStrength } from '../../common/security/password-policy';
 import { TenantResolverService } from '../tenant/tenant-resolver.service';
+import { OrganizationStatusService } from '../organization/services/organization-status.service';
+import { ImpersonationSession } from '../platform-impersonation/entities/impersonation-session.entity';
+import { BillingService } from '../billing/billing.service';
+import {
+  IMPERSONATION_ENDED_MESSAGE,
+  IMPERSONATION_EXPIRED_MESSAGE,
+} from '../platform-impersonation/platform-impersonation.constants';
+
+const ORGANIZATION_HARD_STOP_MESSAGE =
+  'This organization has been suspended. Please contact support.';
 
 const SUBDOMAIN_PATTERN = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
 const STAFF_INVITE_EXPIRY_DAYS = 7;
@@ -46,10 +56,14 @@ export class AuthService {
     private invitationRepository: Repository<Invitation>,
     @InjectRepository(Organization)
     private organizationRepository: Repository<Organization>,
+    @InjectRepository(ImpersonationSession)
+    private impersonationSessionRepository: Repository<ImpersonationSession>,
     private jwtService: JwtService,
     private configService: ConfigService,
     private notificationService: NotificationService,
     private tenantResolverService: TenantResolverService,
+    private organizationStatusService: OrganizationStatusService,
+    private billingService: BillingService,
   ) {}
 
   async register(dto: RegisterDto) {
@@ -115,6 +129,12 @@ export class AuthService {
       await this.invitationRepository.delete({ id: existingInvite.id });
     }
 
+    // Guard the seat before writing the invitation so an admin gets immediate
+    // feedback instead of the invite silently failing days later at accept
+    // time. `acceptInvite` checks again, because that is where the seat is
+    // actually created and where pending invitations can have been consumed.
+    await this.billingService.assertWithinHardLimit(organizationId, 'staff_users');
+
     const token = crypto.randomBytes(32).toString('hex');
     const invitation = this.invitationRepository.create({
       organization_id: organizationId,
@@ -150,7 +170,12 @@ export class AuthService {
         <p>This invitation link expires in ${STAFF_INVITE_EXPIRY_DAYS} days.</p>
       `;
 
-      await this.notificationService.sendEmail([savedInvite.email], subject, html);
+      // Invitation email is metered but not quota-blocked: the seat itself is
+      // already gated above, and a billing cap must not strand an invited user.
+      await this.notificationService.sendEmail([savedInvite.email], subject, html, undefined, {
+        organizationId,
+        enforceQuota: false,
+      });
       inviteEmailSent = true;
     } catch (error) {
       console.warn('Failed to send invitation email:', error);
@@ -188,6 +213,8 @@ export class AuthService {
     if (existingUser) {
       throw new BadRequestException(DUPLICATE_USER_EMAIL_MESSAGE);
     }
+
+    await this.billingService.assertWithinHardLimit(invitation.organization_id, 'staff_users');
 
     const passwordHash = await bcrypt.hash(dto.password, 10);
     const user = this.userRepository.create({
@@ -249,6 +276,11 @@ export class AuthService {
         throw new UnauthorizedException('Account has been deactivated');
       }
 
+      await this.organizationStatusService.assertActive(
+        organizationId,
+        ORGANIZATION_HARD_STOP_MESSAGE,
+      );
+
       const isPasswordValid = await bcrypt.compare(dto.password, user.password_hash);
       if (!isPasswordValid) {
         throw new UnauthorizedException('Invalid credentials');
@@ -277,6 +309,11 @@ export class AuthService {
     if (!user.is_active) {
       throw new UnauthorizedException('Account has been deactivated');
     }
+
+    await this.organizationStatusService.assertActive(
+      user.organization_id,
+      ORGANIZATION_HARD_STOP_MESSAGE,
+    );
 
     const isPasswordValid = await bcrypt.compare(dto.password, user.password_hash);
     if (!isPasswordValid) {
@@ -340,6 +377,16 @@ export class AuthService {
     if (!user || !user.refresh_token_hash) {
       throw new UnauthorizedException('Invalid refresh token');
     }
+
+    if (!user.is_active) {
+      throw new UnauthorizedException('Account has been deactivated');
+    }
+
+    await this.organizationStatusService.assertActive(
+      user.organization_id,
+      ORGANIZATION_HARD_STOP_MESSAGE,
+    );
+
     const refreshTokenMatches = await bcrypt.compare(refreshToken, user.refresh_token_hash);
     if (!refreshTokenMatches) {
       await this.userRepository.update(user.id, { refresh_token_hash: null });
@@ -674,6 +721,11 @@ export class AuthService {
       throw new BadRequestException('Two-factor authentication is not enabled for this account');
     }
 
+    await this.organizationStatusService.assertActive(
+      user.organization_id,
+      ORGANIZATION_HARD_STOP_MESSAGE,
+    );
+
     await this.assertValidTwoFactorAction(user, dto, true);
 
     const tokens = await this.createTokens(user);
@@ -746,8 +798,72 @@ export class AuthService {
     );
   }
 
-  async validateUser(id: string): Promise<User | null> {
-    return this.userRepository.findOne({ where: { id } });
+  async validateUser(id: string, payload?: any): Promise<User | null> {
+    const user = await this.userRepository.findOne({ where: { id } });
+
+    // Platform impersonation tokens carry an `impersonation.session_id` claim.
+    // When present the session must still be active and unexpired; a valid
+    // session deliberately bypasses the organization hard stop (and the target
+    // user's `is_active` flag) because a platform SUPER operator explicitly
+    // opened it to provide support. Sessions are time-boxed, reason-required and
+    // audited, and ending one revokes the token immediately.
+    const impersonationSessionId = payload?.impersonation?.session_id;
+    if (impersonationSessionId) {
+      await this.assertActiveImpersonationSession(impersonationSessionId, user);
+      return user;
+    }
+
+    // A deactivated user must not keep using an already-issued access token.
+    // Login and refresh already refuse inactive accounts; enforcing it here too
+    // makes a platform-admin disable take effect on the very next request
+    // instead of waiting for the token to expire.
+    if (user && !user.is_active) {
+      throw new UnauthorizedException('Account has been deactivated');
+    }
+
+    if (user?.organization_id) {
+      // Enforce the platform hard stop on every authenticated request so a
+      // suspended/disabled organization's existing sessions stop working
+      // immediately, not just at next login.
+      await this.organizationStatusService.assertActive(
+        user.organization_id,
+        ORGANIZATION_HARD_STOP_MESSAGE,
+      );
+    }
+    return user;
+  }
+
+  /**
+   * Verifies the impersonation session behind a tenant token. Called on every
+   * request that uses an impersonation token, which is what makes early `end`
+   * an immediate revocation.
+   */
+  private async assertActiveImpersonationSession(
+    sessionId: string,
+    user: User | null,
+  ): Promise<void> {
+    const session = await this.impersonationSessionRepository.findOne({
+      where: { id: sessionId },
+    });
+    if (!session) {
+      throw new UnauthorizedException('Impersonation session not found');
+    }
+    if (session.status !== 'active') {
+      throw new UnauthorizedException(IMPERSONATION_ENDED_MESSAGE);
+    }
+    if (session.expires_at && session.expires_at.getTime() <= Date.now()) {
+      // Best effort: reflect the expiry so the console stops showing it active.
+      await this.impersonationSessionRepository
+        .update(session.id, { status: 'expired' })
+        .catch(() => undefined);
+      throw new UnauthorizedException(IMPERSONATION_EXPIRED_MESSAGE);
+    }
+    if (!user || session.target_user_id !== user.id) {
+      throw new UnauthorizedException('Invalid impersonation session');
+    }
+    if (String(session.organization_id) !== String(user.organization_id)) {
+      throw new UnauthorizedException('Invalid impersonation session');
+    }
   }
 
   private async buildLoginSuccessResponse(user: User) {

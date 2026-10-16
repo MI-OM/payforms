@@ -7,6 +7,7 @@ import { Payment } from '../../payment/entities/payment.entity';
 import { Submission } from '../../submission/entities/submission.entity';
 import { Group } from '../../group/entities/group.entity';
 import { CreateContactDto, UpdateContactDto, ContactQueryDto } from '../dto/contact.dto';
+import { BillingService } from '../../billing/billing.service';
 
 type ContactImportInput = {
   first_name?: string;
@@ -43,9 +44,12 @@ export class ContactService {
     private submissionRepository: Repository<Submission>,
     @InjectRepository(Group)
     private groupRepository: Repository<Group>,
+    private billingService: BillingService,
   ) {}
 
   async create(organizationId: string, dto: CreateContactDto) {
+    await this.billingService.assertWithinHardLimit(organizationId, 'contacts');
+
     const { require_login, must_reset_password, group_ids, ...contactFields } = dto;
     const requireLogin = require_login ?? true;
     const mustResetPassword = must_reset_password ?? requireLogin;
@@ -381,6 +385,8 @@ export class ContactService {
   }
 
   async createFromPublic(organizationId: string, first_name: string, last_name?: string, email?: string) {
+    await this.billingService.assertWithinHardLimit(organizationId, 'contacts');
+
     const contact = this.contactRepository.create({
       organization_id: organizationId,
       first_name: first_name?.trim(),
@@ -396,6 +402,10 @@ export class ContactService {
     if (!contacts?.length) {
       return [];
     }
+
+    // One guard for the whole batch: an import that would cross the hard limit
+    // is rejected up front rather than part-way through.
+    await this.billingService.assertWithinHardLimit(organizationId, 'contacts', contacts.length);
 
     const normalizedRows = contacts.map(contact => this.normalizeImportRow(contact));
 

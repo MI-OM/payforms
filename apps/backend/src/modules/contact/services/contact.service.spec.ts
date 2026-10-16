@@ -15,6 +15,10 @@ describe('ContactService', () => {
   const groupRepository = {
     find: jest.fn(),
   };
+  const billingService = {
+    assertWithinHardLimit: jest.fn().mockResolvedValue(undefined),
+    recordUsage: jest.fn().mockResolvedValue(undefined),
+  };
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -23,6 +27,7 @@ describe('ContactService', () => {
       paymentRepository as any,
       submissionRepository as any,
       groupRepository as any,
+      billingService as any,
     );
   });
 

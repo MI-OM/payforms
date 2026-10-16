@@ -9,6 +9,7 @@ import { User } from '../../auth/entities/user.entity';
 import { Contact } from '../../contact/entities/contact.entity';
 import { Form } from '../../form/entities/form.entity';
 import { Payment } from '../../payment/entities/payment.entity';
+import { BillingService } from '../../billing/billing.service';
 
 const SUBDOMAIN_PATTERN = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
 const DOMAIN_PATTERN = /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/;
@@ -28,6 +29,7 @@ export class OrganizationService {
     @InjectRepository(Payment)
     private paymentRepository: Repository<Payment>,
     private storageService: StorageService,
+    private billingService: BillingService,
   ) {}
 
   async create(dto: CreateOrganizationDto) {
@@ -46,6 +48,9 @@ export class OrganizationService {
         'name',
         'email',
         'email_verified',
+        // Needed by GET /organization/entitlements to resolve the plan tier;
+        // omitting it silently downgraded every tenant limit view to 'free'.
+        'billing_plan_tier',
         'logo_url',
         'subdomain',
         'custom_domain',
@@ -145,8 +150,19 @@ export class OrganizationService {
 
   async uploadLogoFromSupabase(id: string, filePath: string, base64Data: string, contentType: string = 'image/png') {
     const buffer = Buffer.from(base64Data, 'base64');
+
+    // Storage is metered in bytes: the guard is checked before the object is
+    // written so a tenant at its `storage_gb` hard limit cannot upload more.
+    // NOTE: replacing a logo records the replacement's size too — the ledger is
+    // append-only and does not subtract the previous object, so usage is
+    // conservative (never under-reported).
+    await this.billingService.assertWithinHardLimit(id, 'storage_gb', buffer.length);
+
     const publicUrl = await this.storageService.uploadFile(filePath, buffer, contentType);
     await this.organizationRepository.update(id, { logo_url: publicUrl });
+
+    await this.billingService.recordUsage(id, 'STORAGE_BYTES', buffer.length, filePath);
+
     return this.findById(id);
   }
 

@@ -21,6 +21,15 @@ import { BillingModule } from './modules/billing/billing.module';
 import { ComplianceModule } from './modules/compliance/compliance.module';
 import { CacheModule } from './common/cache/cache.module';
 import { MarketReadinessModule } from './modules/market-readiness/market-readiness.module';
+import { PlatformAuthModule } from './modules/platform-auth/platform-auth.module';
+import { PlatformAuditModule } from './modules/platform-audit/platform-audit.module';
+import { PlatformOrganizationsModule } from './modules/platform-organizations/platform-organizations.module';
+import { PlatformNotificationsModule } from './modules/platform-notifications/platform-notifications.module';
+import { PlatformSettingsModule } from './modules/platform-settings/platform-settings.module';
+import { PlatformImpersonationModule } from './modules/platform-impersonation/platform-impersonation.module';
+import { PlatformUsersModule } from './modules/platform-users/platform-users.module';
+import { OrganizationEntitlementsModule } from './modules/organization/organization-entitlements.module';
+import { PlatformEntitlementsModule } from './modules/platform-entitlements/platform-entitlements.module';
 import { OrganizationContextModule } from './common/auth/organization-context.module';
 
 @Module({
@@ -80,6 +89,15 @@ import { OrganizationContextModule } from './common/auth/organization-context.mo
     BillingModule,
     ComplianceModule,
     MarketReadinessModule,
+    PlatformAuthModule,
+    PlatformAuditModule,
+    PlatformOrganizationsModule,
+    PlatformNotificationsModule,
+    PlatformSettingsModule,
+    PlatformImpersonationModule,
+    PlatformUsersModule,
+    OrganizationEntitlementsModule,
+    PlatformEntitlementsModule,
   ],
   controllers: [],
   providers: [

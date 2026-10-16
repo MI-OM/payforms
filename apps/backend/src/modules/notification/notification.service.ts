@@ -8,8 +8,23 @@ import { Contact } from '../contact/entities/contact.entity';
 import { User } from '../auth/entities/user.entity';
 import { InternalNotification } from './entities/internal-notification.entity';
 import { ContactNotification } from './entities/contact-notification.entity';
+import { BillingService } from '../billing/billing.service';
 
 type EmailProvider = 'sendgrid' | 'mailgun' | 'brevo';
+
+/**
+ * Billing context for an email send. `organizationId` opts the send into the
+ * plan's `monthly_email_sends` meter; omit it for platform/control-plane email
+ * that is not billed to a tenant.
+ *
+ * `enforceQuota: false` records the send but never blocks it — used for
+ * account-critical email (password reset, email verification) where hitting a
+ * quota must not lock a user out of their own account.
+ */
+export type EmailBillingContext = {
+  organizationId?: string | null;
+  enforceQuota?: boolean;
+};
 
 type EmailAttachment = {
   filename: string;
@@ -34,6 +49,7 @@ export class NotificationService {
     private internalNotificationRepository: Repository<InternalNotification>,
     @InjectRepository(ContactNotification)
     private contactNotificationRepository: Repository<ContactNotification>,
+    private billingService: BillingService,
   ) {}
 
   private trimOptionalValue(value?: string | null) {
@@ -364,7 +380,13 @@ export class NotificationService {
     );
   }
 
-  async sendEmail(recipients: string[], subject: string, html: string, attachments?: EmailAttachment[]) {
+  async sendEmail(
+    recipients: string[],
+    subject: string,
+    html: string,
+    attachments?: EmailAttachment[],
+    billing?: EmailBillingContext,
+  ) {
       const normalizedRecipients = Array.from(new Set(
         recipients
           .map(recipient => this.trimOptionalValue(recipient)?.toLowerCase())
@@ -375,22 +397,39 @@ export class NotificationService {
       throw new BadRequestException('At least one email recipient is required');
     }
 
+    const billingOrganizationId = billing?.organizationId || null;
+
+    // Check the quota BEFORE sending anything, so a broadcast that would breach
+    // the plan limit fails cleanly instead of sending part of the batch.
+    if (billingOrganizationId && billing?.enforceQuota !== false) {
+      await this.billingService.assertWithinHardLimit(
+        billingOrganizationId,
+        'monthly_email_sends',
+        normalizedRecipients.length,
+      );
+    }
+
     const provider = this.getEmailProvider();
     const apiKey = this.getProviderApiKey(provider);
+
+    let sentCount = 0;
 
     try {
         for (const recipient of normalizedRecipients) {
           if (provider === 'mailgun') {
             await this.sendViaMailgun(apiKey, [recipient], subject, html, attachments);
+            sentCount += 1;
             continue;
           }
 
           if (provider === 'brevo') {
             await this.sendViaBrevo(apiKey, [recipient], subject, html, attachments);
+            sentCount += 1;
             continue;
           }
 
           await this.sendViaSendGrid(apiKey, [recipient], subject, html, attachments);
+          sentCount += 1;
         }
     } catch (error) {
       if (error instanceof BadRequestException) {
@@ -403,6 +442,17 @@ export class NotificationService {
         data: (error as any)?.response?.data,
       });
       throw new InternalServerErrorException('Failed to send email');
+    } finally {
+      // Meter what actually went out — on a partial failure only the delivered
+      // recipients are counted.
+      if (billingOrganizationId && sentCount > 0) {
+        await this.billingService.recordUsage(
+          billingOrganizationId,
+          'EMAIL_SEND',
+          sentCount,
+          subject,
+        );
+      }
     }
   }
 
@@ -460,7 +510,13 @@ export class NotificationService {
       </div>
     `;
 
-    return this.sendEmail([recipientEmail], subject, html, attachments);
+    // Receipt for money that has already been taken: recorded against the
+    // email meter but never blocked, so a quota breach cannot fail a payment
+    // that already succeeded.
+    return this.sendEmail([recipientEmail], subject, html, attachments, {
+      organizationId: organization.id,
+      enforceQuota: false,
+    });
   }
 
   async sendSubmissionConfirmation(
@@ -469,6 +525,7 @@ export class NotificationService {
     formTitle: string,
     amount: number | string,
     reference: string,
+    billing?: EmailBillingContext,
   ) {
     const subject = `${organization.name} Submission Received`;
     const html = `
@@ -495,7 +552,11 @@ export class NotificationService {
         </div>
       </div>
     `;
-    return this.sendEmail([recipientEmail], subject, html);
+    return this.sendEmail([recipientEmail], subject, html, undefined, {
+      organizationId: organization.id,
+      enforceQuota: false,
+      ...billing,
+    });
   }
 
   async sendFailedPaymentReminder(
@@ -525,15 +586,23 @@ export class NotificationService {
                 </tr>
               </tbody>
             </table>
-            <p style="margin: 16px 0 0 0; color: #4a5568;">Please retry your payment or contact the form owner for assistance.</p>
+            <p style="margin: 16px 0 0 0; color: #4a5568">Please retry your payment or contact the form owner for assistance.</p>
           </div>
         </div>
       </div>
     `;
-    return this.sendEmail([recipientEmail], subject, html);
+    return this.sendEmail([recipientEmail], subject, html, undefined, {
+      organizationId: organization.id,
+      enforceQuota: false,
+    });
   }
 
-  async sendReminder(recipients: string[], message: string, attachment?: EmailAttachment) {
+  async sendReminder(
+    recipients: string[],
+    message: string,
+    attachment?: EmailAttachment,
+    billing?: EmailBillingContext,
+  ) {
     const subject = 'Payment Reminder';
     const html = `
       <div style="font-family: Arial, sans-serif; color: #1f2937; background: #f8fafc; padding: 24px;">
@@ -547,7 +616,7 @@ export class NotificationService {
       </div>
     `;
     const attachmentList = attachment ? [attachment] : undefined;
-    return this.sendEmail(recipients, subject, html, attachmentList);
+    return this.sendEmail(recipients, subject, html, attachmentList, billing);
   }
 
   async createContactNotification(
@@ -828,7 +897,12 @@ export class NotificationService {
       ${options?.expiresInText ? `<p>This link expires in ${options.expiresInText}.</p>` : ''}
       <p>If you did not request this, you can ignore this email.</p>
     `;
-    return this.sendEmail([recipientEmail], `${organization?.name || 'Payforms'} ${heading}`, html);
+    // Account-critical email: always sent, always metered, never blocked by a
+    // quota breach — a billing problem must not lock a user out.
+    return this.sendEmail([recipientEmail], `${organization?.name || 'Payforms'} ${heading}`, html, undefined, {
+      organizationId: organization?.id ?? null,
+      enforceQuota: false,
+    });
   }
 
   async sendOrganizationEmailVerificationEmail(organization: Organization, recipientEmail: string, verificationLink: string) {
@@ -839,7 +913,10 @@ export class NotificationService {
       <p><a href="${verificationLink}">${verificationLink}</a></p>
       <p>If you did not request this, ignore this email.</p>
     `;
-    return this.sendEmail([recipientEmail], subject, html);
+    return this.sendEmail([recipientEmail], subject, html, undefined, {
+      organizationId: organization.id,
+      enforceQuota: false,
+    });
   }
 
   private mapInternalNotification(notification: InternalNotification, userId: string) {

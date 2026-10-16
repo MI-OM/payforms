@@ -24,6 +24,10 @@ describe('NotificationService', () => {
     create: jest.fn(),
     createQueryBuilder: jest.fn(),
   };
+  const billingService = {
+    assertWithinHardLimit: jest.fn().mockResolvedValue(undefined),
+    recordUsage: jest.fn().mockResolvedValue(undefined),
+  };
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -33,6 +37,7 @@ describe('NotificationService', () => {
       userRepository as any,
       internalNotificationRepository as any,
       contactNotificationRepository as any,
+      billingService as any,
     );
   });
 

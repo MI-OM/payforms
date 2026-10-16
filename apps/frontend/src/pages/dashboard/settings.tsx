@@ -1,84 +1,145 @@
-'use client';
+'use client'
 
-import { useEffect, useState } from 'react';
-import { useAuthStore } from '@/store/auth';
-import { apiClient } from '@/services/api';
+import { useEffect, useState } from 'react'
+import { useAuthStore } from '@/store/auth'
+import { apiClient } from '@/services/api'
 
 interface OrgSettings {
-  id: string;
-  name: string;
-  email: string;
-  email_verified: boolean;
-  logo_url?: string;
-  require_contact_login: boolean;
+  id: string
+  name: string
+  email: string
+  email_verified: boolean
+  logo_url?: string
+  require_contact_login: boolean
+  // Negotiated limits from Platform Admin
+  contacts_limit?: number
+  forms_limit?: number
+  staff_users_limit?: number
+  monthly_submissions_limit?: number
+  monthly_email_sends_limit?: number
+  storage_gb_limit?: number
+  plan?: string
+  notes?: string
+}
+
+// Types for entitlements from platform API
+interface Entitlements {
+  organization_id: string
+  plan: string
+  plan_name: string
+  // null when the platform has not set any negotiated overrides
+  overrides: {
+    contacts_limit: number | null
+    forms_limit: number | null
+    staff_users_limit: number | null
+    monthly_submissions_limit: number | null
+    monthly_email_sends_limit: number | null
+    storage_gb_limit: number | null
+    notes: string | null
+  } | null
+  effective: {
+    soft_limits: {
+      contacts: number
+      forms: number
+      staff_users: number
+      monthly_submissions: number
+      monthly_email_sends: number
+      storage_gb: number
+    }
+    hard_limits: {
+      contacts: number
+      forms: number
+      staff_users: number
+      monthly_submissions: number
+      monthly_email_sends: number
+      storage_gb: number
+    }
+  }
 }
 
 export default function SettingsPage() {
-  const { user } = useAuthStore();
-  const [settings, setSettings] = useState<OrgSettings | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [resendingVerification, setResendingVerification] = useState(false);
-  const [success, setSuccess] = useState(false);
-  const [statusMessage, setStatusMessage] = useState('');
-  const [statusError, setStatusError] = useState('');
+  const { user } = useAuthStore()
+  const [settings, setSettings] = useState<OrgSettings | null>(null)
+  const [entitlements, setEntitlements] = useState<Entitlements | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [resendingVerification, setResendingVerification] = useState(false)
+  const [success, setSuccess] = useState(false)
+  const [statusMessage, setStatusMessage] = useState('')
+  const [statusError, setStatusError] = useState('')
 
+  // Load organization settings
   const loadSettings = async () => {
     try {
-      const response = await apiClient.getOrganizationSettings();
-      setSettings(response);
+      const response = await apiClient.getOrganizationSettings()
+      setSettings(response)
     } catch (error) {
-      console.error('Failed to load settings:', error);
+      console.error('Failed to load settings:', error)
     } finally {
-      setLoading(false);
+      setLoading(false)
     }
-  };
+  }
+
+  // Load entitlements (negotiated limits from Platform Admin).
+  // Tenant-scoped route: resolves the organization from the JWT. The
+  // /platform/organizations/:id/entitlements equivalent is SUPER-only and 403s
+  // a tenant token.
+  const loadEntitlements = async () => {
+    if (!user?.organization_id) return
+    try {
+      const response = await apiClient.get('/organization/entitlements')
+      setEntitlements(response.data)
+    } catch (error) {
+      console.error('Failed to load entitlements:', error)
+    }
+  }
 
   useEffect(() => {
     if (user) {
-      loadSettings();
+      loadSettings()
+      loadEntitlements()
     }
-  }, [user]);
+  }, [user])
 
   const handleSave = async () => {
-    if (!settings) return;
-    setSaving(true);
-    setSuccess(false);
-    setStatusMessage('');
-    setStatusError('');
+    if (!settings) return
+    setSaving(true)
+    setSuccess(false)
+    setStatusMessage('')
+    setStatusError('')
 
     try {
       await apiClient.updateOrganization({
         name: settings.name,
         email: settings.email,
         require_contact_login: settings.require_contact_login,
-      });
-      const refreshed = await apiClient.getOrganizationSettings();
-      setSettings(refreshed);
-      setSuccess(true);
-      setTimeout(() => setSuccess(false), 3000);
+      })
+      const refreshed = await apiClient.getOrganizationSettings()
+      setSettings(refreshed)
+      setSuccess(true)
+      setTimeout(() => setSuccess(false), 3000)
     } catch (error) {
-      setStatusError('Failed to update settings');
-      console.error('Failed to update settings:', error);
+      setStatusError('Failed to update settings')
+      console.error('Failed to update settings:', error)
     } finally {
-      setSaving(false);
+      setSaving(false)
     }
-  };
+  }
 
   const handleResendVerification = async () => {
-    setResendingVerification(true);
-    setStatusMessage('');
-    setStatusError('');
+    setResendingVerification(true)
+    setStatusMessage('')
+    setStatusError('')
 
     try {
-      await apiClient.requestOrganizationEmailVerification();
-      setStatusMessage('Verification email sent. Check your inbox.');
+      await apiClient.requestOrganizationEmailVerification()
+      setStatusMessage('Verification email sent. Check your inbox.')
     } catch (error: any) {
-      setStatusError(error.response?.data?.message || 'Failed to resend verification email');
+      setStatusError(error.response?.data?.message || 'Failed to resend verification email')
     } finally {
-      setResendingVerification(false);
+      setResendingVerification(false)
     }
-  };
+  }
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -134,11 +195,7 @@ export default function SettingsPage() {
                     />
                     <div className="mt-2">
                       <span
-                        className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${
-                          settings.email_verified
-                            ? 'bg-green-100 text-green-700'
-                            : 'bg-amber-100 text-amber-700'
-                        }`}
+                        className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${settings.email_verified ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}
                       >
                         {settings.email_verified ? 'Verified' : 'Not verified'}
                       </span>
@@ -174,41 +231,118 @@ export default function SettingsPage() {
             <div className="p-8 text-center text-gray-500">Failed to load settings</div>
           )}
         </div>
+      </div>
 
+      {/* NEW: Entitlements/Billing Section - shows negotiated limits from Platform Admin */}
+      {entitlements && (
         <div className="mt-8 bg-white rounded-lg shadow p-8">
-          <h2 className="text-lg font-semibold text-gray-900 mb-4">Email Verification</h2>
-          <p className="text-gray-600 mb-4">
-            Keep your organization email verified to ensure reliable password recovery and account notifications.
+          <h2 className="text-lg font-semibold text-gray-900 mb-4">Negotiated Limits</h2>
+          <p className="text-sm text-gray-600 mb-4">
+            Limits set by the Platform Admin. Leave empty to inherit plan defaults.
           </p>
-          {settings?.email_verified ? (
-            <div className="bg-green-50 border border-green-200 rounded-lg p-4 text-green-700 text-sm">
-              Your organization email is verified.
+          <div className="grid grid-cols-2 gap-4 mb-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Contacts</label>
+              <div className="grid grid-cols-3 gap-2">
+                <div>
+                  <span className="text-sm text-gray-500">Effective soft</span>
+                  <span className="font-medium text-gray-900">{entitlements.effective.soft_limits.contacts}</span>
+                </div>
+                <div>
+                  <span className="text-sm text-gray-400">Plan override</span>
+                  <span className="text-sm">{entitlements.overrides?.contacts_limit ?? 'inherit'}</span>
+                </div>
+              </div>
             </div>
-          ) : user?.role !== 'ADMIN' ? (
-            <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 text-amber-700 text-sm">
-              Organization email is not verified. Ask an admin to resend verification.
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Forms</label>
+              <div className="grid grid-cols-3 gap-2">
+                <div>
+                  <span className="text-sm text-gray-500">Effective soft</span>
+                  <span className="font-medium text-gray-900">{entitlements.effective.soft_limits.forms}</span>
+                </div>
+                <div>
+                  <span className="text-sm text-gray-400">Plan override</span>
+                  <span className="text-sm">{entitlements.overrides?.forms_limit ?? 'inherit'}</span>
+                </div>
+              </div>
             </div>
-          ) : (
-            <button
-              onClick={handleResendVerification}
-              disabled={resendingVerification}
-              className="px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition disabled:bg-gray-400 text-sm font-medium"
-            >
-              {resendingVerification ? 'Sending...' : 'Resend Verification Email'}
-            </button>
-          )}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Staff Seats</label>
+              <div className="grid grid-cols-3 gap-2">
+                <div>
+                  <span className="text-sm text-gray-500">Effective soft</span>
+                  <span className="font-medium text-gray-900">{entitlements.effective.soft_limits.staff_users}</span>
+                </div>
+                <div>
+                  <span className="text-sm text-gray-400">Plan override</span>
+                  <span className="text-sm">{entitlements.overrides?.staff_users_limit ?? 'inherit'}</span>
+                </div>
+              </div>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Emails / Month</label>
+              <div className="grid grid-cols-3 gap-2">
+                <div>
+                  <span className="text-sm text-gray-500">Effective soft</span>
+                  <span className="font-medium text-gray-900">{entitlements.effective.soft_limits.monthly_email_sends}</span>
+                </div>
+                <div>
+                  <span className="text-sm text-gray-400">Plan override</span>
+                  <span className="text-sm">{entitlements.overrides?.monthly_email_sends_limit ?? 'inherit'}</span>
+                </div>
+              </div>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Storage (GB)</label>
+              <div className="grid grid-cols-3 gap-2">
+                <div>
+                  <span className="text-sm text-gray-500">Effective soft</span>
+                  <span className="font-medium text-gray-900">{entitlements.effective.soft_limits.storage_gb}</span>
+                </div>
+                <div>
+                  <span className="text-sm text-gray-400">Plan override</span>
+                  <span className="text-sm">{entitlements.overrides?.storage_gb_limit ?? 'inherit'}</span>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
+      )}
 
-        <div className="mt-8 bg-white rounded-lg shadow p-8">
-          <h2 className="text-lg font-semibold text-gray-900 mb-4">Paystack Integration</h2>
-          <p className="text-gray-600 mb-4">
-            Configure your Paystack API keys to enable payment processing. Your keys are encrypted and never shared.
-          </p>
-          <a href="#" className="text-blue-600 hover:text-blue-700 font-medium">
-            Configure Paystack Keys →
-          </a>
-        </div>
+      <div className="mt-8 bg-white rounded-lg shadow p-8">
+        <h2 className="text-lg font-semibold text-gray-900 mb-4">Email Verification</h2>
+        <p className="text-gray-600 mb-4">
+          Keep your organization email verified to ensure reliable password recovery and account notifications.
+        </p>
+        {settings?.email_verified ? (
+          <div className="bg-green-50 border border-green-200 rounded-lg p-4 text-green-700 text-sm">
+            Your organization email is verified.
+          </div>
+        ) : user?.role !== 'ADMIN' ? (
+          <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 text-amber-700 text-sm">
+            Organization email is not verified. Ask an admin to resend verification.
+          </div>
+        ) : (
+          <button
+            onClick={handleResendVerification}
+            disabled={resendingVerification}
+            className="px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition disabled:bg-gray-400 text-sm font-medium"
+          >
+            {resendingVerification ? 'Sending...' : 'Resend Verification Email'}
+          </button>
+        )}
+      </div>
+
+      <div className="mt-8 bg-white rounded-lg shadow p-8">
+        <h2 className="text-lg font-semibold text-gray-900 mb-4">Paystack Integration</h2>
+        <p className="text-gray-600 mb-4">
+          Configure your Paystack API keys to enable payment processing. Your keys are encrypted and never shared.
+        </p>
+        <a href="#" className="text-blue-600 hover:text-blue-700 font-medium">
+          Configure Paystack Keys →
+        </a>
       </div>
     </div>
-  );
-}
+  )
+}

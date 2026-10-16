@@ -13,6 +13,7 @@ import { Form } from '../../form/entities/form.entity';
 import { NotificationService } from '../../notification/notification.service';
 import { CreateOfflinePaymentDto, CreatePaymentDto, UpdatePaymentStatusDto } from '../dto/payment.dto';
 import { User } from '../../auth/entities/user.entity';
+import { BillingService } from '../../billing/billing.service';
 
 const DEFAULT_ENABLED_PAYMENT_METHODS: PaymentMethod[] = ['ONLINE'];
 
@@ -56,6 +57,7 @@ export class PaymentService {
     private userRepository: Repository<User>,
     private configService: ConfigService,
     private notificationService: NotificationService,
+    private billingService: BillingService,
   ) {}
 
   async create(organizationId: string, dto: CreatePaymentDto) {
@@ -171,6 +173,8 @@ export class PaymentService {
         throw new BadRequestException('This form does not allow partial payments');
       }
     }
+
+    await this.billingService.assertWithinHardLimit(organizationId, 'monthly_submissions');
 
     const submission = this.submissionRepository.create({
       organization_id: organizationId,

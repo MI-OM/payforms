@@ -5,6 +5,7 @@ describe('FormService', () => {
   let service: FormService;
   const formRepository = {
     find: jest.fn(),
+    findOne: jest.fn(),
   };
   const fieldRepository = {};
   const targetRepository = {};
@@ -20,6 +21,13 @@ describe('FormService', () => {
     set: jest.fn(),
     del: jest.fn(),
   };
+  const organizationStatusService = {
+    assertActive: jest.fn().mockResolvedValue(undefined),
+  };
+  const billingService = {
+    assertWithinHardLimit: jest.fn().mockResolvedValue(undefined),
+    recordUsage: jest.fn().mockResolvedValue(undefined),
+  };
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -30,6 +38,8 @@ describe('FormService', () => {
       groupRepository as any,
       contactRepository as any,
       cacheService as any,
+      organizationStatusService as any,
+      billingService as any,
     );
   });
 
@@ -149,6 +159,60 @@ describe('FormService', () => {
       await expect(
         service.findAccessibleByContact('org-1', 'missing-contact', 1, 20),
       ).rejects.toBeInstanceOf(NotFoundException);
+    });
+  });
+
+  describe('findBySlug (public form hard stop)', () => {
+    const publicForm = {
+      id: 'form-1',
+      slug: 'school-fees',
+      organization_id: 'org-1',
+    };
+
+    it('returns a cached form after enforcing the org hard stop', async () => {
+      cacheService.get.mockResolvedValue(publicForm);
+
+      const result = await service.findBySlug('school-fees');
+
+      expect(result).toBe(publicForm);
+      expect(organizationStatusService.assertActive).toHaveBeenCalledWith(
+        'org-1',
+        'This form is currently unavailable',
+      );
+      expect(formRepository.findOne).not.toHaveBeenCalled();
+    });
+
+    it('checks the hard stop on a cache miss before caching', async () => {
+      cacheService.get.mockResolvedValue(null);
+      formRepository.findOne.mockResolvedValue(publicForm);
+
+      const result = await service.findBySlug('school-fees');
+
+      expect(result).toBe(publicForm);
+      expect(organizationStatusService.assertActive).toHaveBeenCalledWith(
+        'org-1',
+        'This form is currently unavailable',
+      );
+      expect(cacheService.set).toHaveBeenCalled();
+    });
+
+    it('propagates a blocked organization and never caches it', async () => {
+      cacheService.get.mockResolvedValue(null);
+      formRepository.findOne.mockResolvedValue(publicForm);
+      organizationStatusService.assertActive.mockRejectedValueOnce(
+        new Error('blocked'),
+      );
+
+      await expect(service.findBySlug('school-fees')).rejects.toThrow('blocked');
+      expect(cacheService.set).not.toHaveBeenCalled();
+    });
+
+    it('returns null for an unknown slug without checking status', async () => {
+      cacheService.get.mockResolvedValue(null);
+      formRepository.findOne.mockResolvedValue(null);
+
+      await expect(service.findBySlug('nope')).resolves.toBeNull();
+      expect(organizationStatusService.assertActive).not.toHaveBeenCalled();
     });
   });
 });

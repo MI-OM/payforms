@@ -89,6 +89,7 @@ export class NotificationController {
       recipients,
       message,
       this.mapAttachment(attachment),
+      { organizationId: req.user.organization_id },
     );
 
     await this.notificationService.createContactNotification(
@@ -146,6 +147,7 @@ export class NotificationController {
       recipients,
       message,
       this.mapAttachment(attachment),
+      { organizationId: req.user.organization_id },
     );
 
     await this.notificationService.createContactNotification(
@@ -181,7 +183,9 @@ export class NotificationController {
       throw new BadRequestException('No recipients found in your organization');
     }
 
-    return this.notificationService.sendEmail(recipients, dto.subject, dto.body);
+    return this.notificationService.sendEmail(recipients, dto.subject, dto.body, undefined, {
+      organizationId: req.user.organization_id,
+    });
   }
 
   @Post('schedule/groups')
@@ -191,7 +195,9 @@ export class NotificationController {
       dto.group_ids,
     );
 
-    return this.notificationService.sendEmail(recipients, dto.subject, dto.body);
+    return this.notificationService.sendEmail(recipients, dto.subject, dto.body, undefined, {
+      organizationId: req.user.organization_id,
+    });
   }
 
   @Get('scheduled')

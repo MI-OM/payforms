@@ -7,9 +7,16 @@ import { Contact } from '../contact/entities/contact.entity';
 import { Group } from '../group/entities/group.entity';
 import { FormService } from './services/form.service';
 import { FormController } from './controllers/form.controller';
+import { OrganizationStatusModule } from '../organization/organization-status.module';
+import { BillingModule } from '../billing/billing.module';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Form, FormField, FormTarget, Group, Contact])],
+  imports: [
+    TypeOrmModule.forFeature([Form, FormField, FormTarget, Group, Contact]),
+    OrganizationStatusModule,
+    // Enforces the plan's `forms` hard limit on create.
+    BillingModule,
+  ],
   controllers: [FormController],
   providers: [FormService],
   exports: [FormService],

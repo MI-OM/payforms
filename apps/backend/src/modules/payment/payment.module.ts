@@ -12,11 +12,14 @@ import { PaymentController } from './controllers/payment.controller';
 import { TransactionsController } from './controllers/transactions.controller';
 import { WebhookController } from './controllers/webhook.controller';
 import { NotificationModule } from '../notification/notification.module';
+import { BillingModule } from '../billing/billing.module';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([Payment, PaymentLog, Submission, Contact, Organization, Form, User]),
     NotificationModule,
+    // Enforces the plan's `monthly_submissions` hard limit on offline payment intake.
+    BillingModule,
   ],
   controllers: [PaymentController, TransactionsController, WebhookController],
   providers: [PaymentService],

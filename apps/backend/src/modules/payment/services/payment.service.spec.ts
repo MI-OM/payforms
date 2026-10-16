@@ -36,6 +36,10 @@ describe('PaymentService', () => {
     sendFailedPaymentReminder: jest.fn(),
     createContactPaymentStatusNotification: jest.fn(),
   };
+  const billingService = {
+    assertWithinHardLimit: jest.fn().mockResolvedValue(undefined),
+    recordUsage: jest.fn().mockResolvedValue(undefined),
+  };
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -49,6 +53,7 @@ describe('PaymentService', () => {
       userRepository as any,
       configService as any,
       notificationService as any,
+      billingService as any,
     );
   });
 
