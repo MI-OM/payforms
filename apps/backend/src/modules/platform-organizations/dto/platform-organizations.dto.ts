@@ -1,4 +1,4 @@
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import {
   IsIn,
   IsISO8601,
@@ -51,6 +51,7 @@ export class ListPlatformOrganizationsQueryDto {
 export class ChangeOrganizationStatusDto {
   @ApiProperty({ enum: ORGANIZATION_STATUSES })
   @IsIn(ORGANIZATION_STATUSES)
+  @Transform(({ value }) => (typeof value === 'string' ? value.toLowerCase() : value))
   status: OrganizationStatus;
 
   @ApiPropertyOptional({ example: 'Non-payment of subscription invoice', description: 'Required when suspending or disabling' })

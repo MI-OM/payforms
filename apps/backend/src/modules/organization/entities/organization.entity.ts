@@ -78,7 +78,11 @@ export class Organization {
   // Drives the platform "hard stop": suspended/disabled blocks tenant login and
   // public payment forms. Denormalised onto the org for fast enforcement; the
   // full transition history lives in `org_status_events`.
-  @Column({ type: 'varchar', default: 'active' })
+  @Column({ 
+    type: 'enum', 
+    enum: ['active', 'suspended', 'disabled'],
+    default: 'active' 
+  })
   status: OrganizationStatus;
 
   @Column({ type: 'text', nullable: true })
