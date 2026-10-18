@@ -25,7 +25,7 @@
 --   DROP ROLE payforms_readonly.
 --
 -- NOTE: This script assumes the schema is in the `public` schema and the
---   database is named `payforms`. Adjust accordingly.
+--   database is named `Payforms`. Adjust accordingly.
 -- =============================================================================
 
 BEGIN;
@@ -60,7 +60,7 @@ $$;
 -- 2. Application role: full CRUD on all application tables
 -- ---------------------------------------------------------------------------
 
-GRANT CONNECT ON DATABASE payforms TO payforms_app;
+GRANT CONNECT ON DATABASE "Payforms" TO payforms_app;
 GRANT USAGE ON SCHEMA public TO payforms_app;
 
 -- Sequence access (required for auto-increment / uuid_generate)
@@ -80,7 +80,7 @@ ALTER DEFAULT PRIVILEGES IN SCHEMA public
 --    Developers can read non-financial operational data for debugging.
 -- ---------------------------------------------------------------------------
 
-GRANT CONNECT ON DATABASE payforms TO payforms_readonly;
+GRANT CONNECT ON DATABASE "Payforms" TO payforms_readonly;
 GRANT USAGE ON SCHEMA public TO payforms_readonly;
 
 -- Grant read access to non-financial tables only
