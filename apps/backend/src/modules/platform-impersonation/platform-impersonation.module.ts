@@ -11,6 +11,7 @@ import { PlatformJwtAuthGuard } from '../platform-auth/guards/platform-jwt-auth.
 import { PlatformRolesGuard } from '../platform-auth/guards/platform-roles.guard';
 import { PlatformImpersonationService } from './platform-impersonation.service';
 import { PlatformImpersonationController } from './platform-impersonation.controller';
+import { NotificationModule } from '../notification/notification.module';
 
 /**
  * Platform impersonation (Part 3, Wave B item 9 — IN v1).
@@ -36,6 +37,7 @@ import { PlatformImpersonationController } from './platform-impersonation.contro
     }),
     PlatformSettingsModule,
     PlatformAuditModule,
+    NotificationModule,
   ],
   controllers: [PlatformImpersonationController],
   providers: [

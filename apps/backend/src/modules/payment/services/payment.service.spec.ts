@@ -40,6 +40,12 @@ describe('PaymentService', () => {
     assertWithinHardLimit: jest.fn().mockResolvedValue(undefined),
     recordUsage: jest.fn().mockResolvedValue(undefined),
   };
+  const encryptionService = {
+    encrypt: jest.fn((v: string) => v),
+    decrypt: jest.fn((v: string) => v),
+    isEncrypted: jest.fn().mockReturnValue(false),
+    isEnabled: true,
+  };
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -54,6 +60,7 @@ describe('PaymentService', () => {
       configService as any,
       notificationService as any,
       billingService as any,
+      encryptionService as any,
     );
   });
 

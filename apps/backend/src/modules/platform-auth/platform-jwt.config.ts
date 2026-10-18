@@ -20,6 +20,17 @@ export function resolvePlatformJwtSecret(configService: ConfigService): string {
     return explicit.trim();
   }
 
+  const isProduction = configService.get<string>('NODE_ENV') === 'production';
+  if (isProduction) {
+    // Hard fail in production — a missing dedicated secret means platform admin
+    // tokens could be forged using the tenant JWT_SECRET, which is unacceptable.
+    throw new Error(
+      'PLATFORM_JWT_SECRET must be explicitly set in production. ' +
+      'It must differ from JWT_SECRET. ' +
+      'Generate one with: node -e "console.log(require(\'crypto\').randomBytes(48).toString(\'hex\'))"',
+    );
+  }
+
   const fallback = configService.get<string>('JWT_SECRET');
   if (!fallback || !fallback.trim()) {
     throw new Error(

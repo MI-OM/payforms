@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -13,6 +14,7 @@ import { Organization } from '../organization/entities/organization.entity';
 import { User } from '../auth/entities/user.entity';
 import { PlatformFeatureFlagsService } from '../platform-settings/platform-feature-flags.service';
 import { ImpersonationSession } from './entities/impersonation-session.entity';
+import { NotificationService } from '../notification/notification.service';
 import {
   IMPERSONATION_DEFAULT_DURATION_MINUTES,
   IMPERSONATION_DISABLED_MESSAGE,
@@ -51,6 +53,8 @@ export interface ImpersonationRequestContext {
  */
 @Injectable()
 export class PlatformImpersonationService {
+  private readonly logger = new Logger(PlatformImpersonationService.name);
+
   constructor(
     @InjectRepository(ImpersonationSession)
     private readonly sessionRepository: Repository<ImpersonationSession>,
@@ -61,6 +65,7 @@ export class PlatformImpersonationService {
     private readonly featureFlagsService: PlatformFeatureFlagsService,
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
+    private readonly notificationService: NotificationService,
   ) {}
 
   async start(
@@ -129,6 +134,11 @@ export class PlatformImpersonationService {
       },
       { expiresIn: `${durationMinutes}m` },
     );
+
+    // Notify the school admin that a support session has been started.
+    // This is a best-effort security alert — a failure must never block the
+    // impersonation flow itself, since the session is already fully audited.
+    void this.sendImpersonationNotice(organization, session, actor);
 
     return {
       session: this.toView(session),
@@ -212,6 +222,60 @@ export class PlatformImpersonationService {
   }
 
   // --- internals ------------------------------------------------------------
+
+  /**
+   * Best-effort email alert to the school admin when a platform support session
+   * begins. Failures are logged but never propagate — the session is already
+   * recorded in the audit trail regardless.
+   */
+  private async sendImpersonationNotice(
+    organization: Organization,
+    session: ImpersonationSession,
+    actor: PlatformActor,
+  ): Promise<void> {
+    if (!organization.email) {
+      return;
+    }
+
+    const expiresStr = session.expires_at.toUTCString();
+    const subject = `Security notice: Payforms support access for ${organization.name}`;
+    const html = `
+      <p>Hello,</p>
+      <p>
+        A Payforms support representative (<strong>${actor.email ?? 'unknown'}</strong>)
+        has started a temporary support session for your organization
+        <strong>${organization.name}</strong>.
+      </p>
+      <ul>
+        <li><strong>Reason recorded:</strong> ${session.reason}</li>
+        <li><strong>Session expires:</strong> ${expiresStr}</li>
+        <li><strong>Session ID:</strong> ${session.id}</li>
+      </ul>
+      <p>
+        This session is fully logged and attributable. If you did not request support
+        or have concerns about this access, please contact us immediately by replying
+        to this email.
+      </p>
+      <p>
+        To disable support access for your organization permanently, go to
+        <strong>Settings → Security → Support Access</strong> in your Payforms dashboard.
+      </p>
+    `;
+
+    try {
+      await this.notificationService.sendEmail(
+        [organization.email],
+        subject,
+        html,
+        undefined,
+        { organizationId: organization.id, enforceQuota: false },
+      );
+    } catch (err: any) {
+      this.logger.warn(
+        `Impersonation notice email failed for org ${organization.id}: ${err?.message ?? String(err)}`,
+      );
+    }
+  }
 
   /**
    * Kill switch. The flag is opt-OUT: while the flag row does not exist the
