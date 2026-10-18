@@ -28,6 +28,12 @@
 --   database is named `Payforms`. Adjust accordingly.
 -- =============================================================================
 
+-- IMPORTANT: Before running this script in Supabase SQL editor:
+-- 1. Go to your project's SQL Editor
+-- 2. Look for the database dropdown at the top of the editor
+-- 3. Select "Payforms" from the dropdown (not "postgres")
+-- 4. Then paste and run this script
+
 BEGIN;
 
 -- ---------------------------------------------------------------------------
@@ -60,7 +66,7 @@ $$;
 -- 2. Application role: full CRUD on all application tables
 -- ---------------------------------------------------------------------------
 
-GRANT CONNECT ON DATABASE "Payforms" TO payforms_app;
+GRANT CONNECT ON DATABASE "postgres" TO payforms_app;
 GRANT USAGE ON SCHEMA public TO payforms_app;
 
 -- Sequence access (required for auto-increment / uuid_generate)
@@ -80,7 +86,7 @@ ALTER DEFAULT PRIVILEGES IN SCHEMA public
 --    Developers can read non-financial operational data for debugging.
 -- ---------------------------------------------------------------------------
 
-GRANT CONNECT ON DATABASE "Payforms" TO payforms_readonly;
+GRANT CONNECT ON DATABASE "postgres" TO payforms_readonly;
 GRANT USAGE ON SCHEMA public TO payforms_readonly;
 
 -- Grant read access to non-financial tables only
