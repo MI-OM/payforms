@@ -2,6 +2,7 @@ import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, ManyToOne, Jo
 import { Organization } from '../../organization/entities/organization.entity';
 import { Group } from '../../group/entities/group.entity';
 import { Submission } from '../../submission/entities/submission.entity';
+import { ContactQrCode } from './contact-qr-code.entity';
 
 @Entity('contacts')
 @Index(['organization_id', 'email'], { unique: true })
@@ -82,4 +83,7 @@ export class Contact {
 
   @OneToMany(() => Submission, submission => submission.contact)
   submissions: Submission[];
+
+  @OneToMany(() => ContactQrCode, qr => qr.contact)
+  qr_code: ContactQrCode;
 }
