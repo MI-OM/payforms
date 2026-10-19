@@ -66,6 +66,24 @@ export class Contact {
   @Column({ nullable: true, type: 'timestamp' })
   token_invalidated_at: Date | null;
 
+  @Column({ type: 'boolean', default: false, select: false })
+  two_factor_enabled: boolean;
+
+  @Column({ type: 'text', nullable: true, select: false })
+  two_factor_secret: string | null;
+
+  @Column({ type: 'text', nullable: true, select: false })
+  two_factor_temp_secret: string | null;
+
+  @Column({ type: 'timestamp', nullable: true, select: false })
+  two_factor_temp_expires_at: Date | null;
+
+  @Column({ type: 'text', nullable: true, select: false })
+  two_factor_recovery_codes: string | null;
+
+  @Column({ type: 'varchar', nullable: true })
+  two_factor_backup_email: string | null;
+
   @CreateDateColumn()
   created_at: Date;
 

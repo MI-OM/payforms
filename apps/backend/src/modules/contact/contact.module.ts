@@ -18,6 +18,8 @@ import { ContactQrCodeService } from './services/contact-qr-code.service';
 import { ContactController } from './controllers/contact.controller';
 import { ContactImportTemplateController } from './controllers/contact-import-template.controller';
 import { ContactQrCodeController } from './controllers/contact-qr-code.controller';
+import { ContactTwoFactorAuthController } from './controllers/contact-two-factor-auth.controller';
+import { AuthModule } from '../auth/auth.module';
 import { NotificationModule } from '../notification/notification.module';
 import { BillingModule } from '../billing/billing.module';
 
@@ -36,11 +38,12 @@ import { BillingModule } from '../billing/billing.module';
       Submission,
       Organization,
     ]),
+    AuthModule,
     NotificationModule,
     // Enforces the plan's `contacts` hard limit on create/import.
     BillingModule,
   ],
-  controllers: [ContactController, ContactImportTemplateController, ContactQrCodeController],
+  controllers: [ContactController, ContactImportTemplateController, ContactQrCodeController, ContactTwoFactorAuthController],
   providers: [ContactService, ContactImportService, ContactImportTemplateService, ContactQrCodeService],
   exports: [ContactService, ContactImportTemplateService, ContactQrCodeService],
 })

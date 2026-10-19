@@ -1,4 +1,4 @@
-import { IsString, IsEmail, IsOptional, IsBoolean, IsArray, ValidateNested, IsIn, IsNumber, IsUUID } from 'class-validator';
+import { IsString, IsEmail, IsOptional, IsBoolean, IsArray, ValidateNested, IsIn, IsNumber, IsUUID, IsDateString } from 'class-validator';
 import { Type, Transform } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
@@ -203,6 +203,37 @@ export class UpdateContactDto {
   @IsOptional()
   @IsBoolean()
   must_reset_password?: boolean;
+
+  // 2FA fields (internal use for controller)
+  @ApiPropertyOptional({ example: true })
+  @IsOptional()
+  @IsBoolean()
+  two_factor_enabled?: boolean;
+
+  @ApiPropertyOptional({ example: 'ABCD1234EFGH5678' })
+  @IsOptional()
+  @IsString()
+  two_factor_secret?: string | null;
+
+  @ApiPropertyOptional({ example: 'TEMP1234TEMP5678' })
+  @IsOptional()
+  @IsString()
+  two_factor_temp_secret?: string | null;
+
+  @ApiPropertyOptional({ example: '2024-10-18T12:30:00Z' })
+  @IsOptional()
+  @IsDateString()
+  two_factor_temp_expires_at?: Date | null;
+
+  @ApiPropertyOptional({ example: '["ABCD1234", "EFGH5678", "IJKL9012"]' })
+  @IsOptional()
+  @IsString()
+  two_factor_recovery_codes?: string | null;
+
+  @ApiPropertyOptional({ example: 'backup@example.com' })
+  @IsOptional()
+  @IsEmail()
+  two_factor_backup_email?: string | null;
 }
 
 export class BulkImportContactsDto {
