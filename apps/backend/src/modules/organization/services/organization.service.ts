@@ -10,6 +10,7 @@ import { Contact } from '../../contact/entities/contact.entity';
 import { Form } from '../../form/entities/form.entity';
 import { Payment } from '../../payment/entities/payment.entity';
 import { BillingService } from '../../billing/billing.service';
+import { PaystackKeyEncryptionService } from '../../../common/security/paystack-key-encryption.service';
 
 const SUBDOMAIN_PATTERN = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
 const DOMAIN_PATTERN = /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/;
@@ -30,6 +31,7 @@ export class OrganizationService {
     private paymentRepository: Repository<Payment>,
     private storageService: StorageService,
     private billingService: BillingService,
+    private encryptionService: PaystackKeyEncryptionService,
   ) {}
 
   async create(dto: CreateOrganizationDto) {
@@ -108,8 +110,33 @@ export class OrganizationService {
   }
 
   async updatePaystackKeys(id: string, dto: UpdateOrganizationKeysDto) {
-    await this.organizationRepository.update(id, dto);
+    const updatePayload: Partial<Organization> = { ...dto };
+
+    // Encrypt the secret key before persisting. The public key is not a secret
+    // (it is safe to expose to the browser) so it is stored as plaintext.
+    if (dto.paystack_secret_key) {
+      updatePayload.paystack_secret_key = this.encryptionService.encrypt(
+        dto.paystack_secret_key,
+      );
+    }
+
+    await this.organizationRepository.update(id, updatePayload);
     return this.findById(id);
+  }
+
+  /**
+   * Retrieves and decrypts the Paystack secret key for an organization.
+   * For internal backend use only — never return this value to any API response.
+   */
+  async getDecryptedPaystackSecretKey(organizationId: string): Promise<string | null> {
+    const org = await this.organizationRepository.findOne({
+      where: { id: organizationId },
+      select: ['id', 'paystack_secret_key'],
+    });
+    if (!org?.paystack_secret_key) {
+      return null;
+    }
+    return this.encryptionService.decrypt(org.paystack_secret_key);
   }
 
   async uploadLogo(id: string, logoUrl: string) {

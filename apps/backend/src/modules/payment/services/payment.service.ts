@@ -14,6 +14,7 @@ import { NotificationService } from '../../notification/notification.service';
 import { CreateOfflinePaymentDto, CreatePaymentDto, UpdatePaymentStatusDto } from '../dto/payment.dto';
 import { User } from '../../auth/entities/user.entity';
 import { BillingService } from '../../billing/billing.service';
+import { PaystackKeyEncryptionService } from '../../../common/security/paystack-key-encryption.service';
 
 const DEFAULT_ENABLED_PAYMENT_METHODS: PaymentMethod[] = ['ONLINE'];
 
@@ -58,6 +59,7 @@ export class PaymentService {
     private configService: ConfigService,
     private notificationService: NotificationService,
     private billingService: BillingService,
+    private encryptionService: PaystackKeyEncryptionService,
   ) {}
 
   async create(organizationId: string, dto: CreatePaymentDto) {
@@ -444,9 +446,32 @@ export class PaymentService {
       where: { paystack_secret_key: Not(IsNull()) },
     });
 
+    // Convert the incoming signature to a Buffer once; if it is not valid hex
+    // (i.e. the right length for SHA-512) we can reject immediately without
+    // touching any org secret.
+    const signatureHex = (signature || '').toLowerCase();
+    if (!/^[0-9a-f]{128}$/.test(signatureHex)) {
+      return null;
+    }
+    const signatureBuffer = Buffer.from(signatureHex, 'hex');
+
     for (const org of organizations) {
-      const expected = crypto.createHmac('sha512', org.paystack_secret_key).update(rawBody).digest('hex');
-      if (expected === signature) {
+      const rawKey = this.encryptionService.decrypt(org.paystack_secret_key);
+      if (!rawKey) {
+        continue;
+      }
+      const expectedHex = crypto
+        .createHmac('sha512', rawKey)
+        .update(rawBody)
+        .digest('hex');
+      const expectedBuffer = Buffer.from(expectedHex, 'hex');
+
+      // Use a constant-time comparison to prevent timing side-channel attacks
+      // that could allow an adversary to brute-force the HMAC secret.
+      if (
+        expectedBuffer.length === signatureBuffer.length &&
+        crypto.timingSafeEqual(expectedBuffer, signatureBuffer)
+      ) {
         return org.id;
       }
     }
@@ -591,6 +616,10 @@ export class PaymentService {
     if (!org?.paystack_secret_key) {
       throw new BadRequestException('Paystack keys not configured');
     }
+    const secretKey = this.encryptionService.decrypt(org.paystack_secret_key);
+    if (!secretKey) {
+      throw new BadRequestException('Paystack keys not configured');
+    }
 
     if (!customerEmail && payment.submission_id) {
       const submission = await this.submissionRepository.findOne({
@@ -622,7 +651,7 @@ export class PaymentService {
         },
         {
           headers: {
-            Authorization: `Bearer ${org.paystack_secret_key}`,
+            Authorization: `Bearer ${secretKey}`,
             'Content-Type': 'application/json',
           },
         },
@@ -630,7 +659,11 @@ export class PaymentService {
 
       return response.data.data;
     } catch (error) {
-      console.error('Paystack initialization error:', error);
+      // Log only the status code and message — never the full axios error which
+      // may contain the Authorization header (bearing the Paystack secret key).
+      const statusCode = (error as any)?.response?.status ?? 'unknown';
+      const message = (error as any)?.response?.data?.message ?? (error as any)?.message ?? 'unknown error';
+      this.logger.error(`Paystack initialization failed [status=${statusCode}]: ${message}`);
       throw new BadRequestException('Failed to initialize payment');
     }
   }
@@ -640,20 +673,28 @@ export class PaymentService {
     if (!org?.paystack_secret_key) {
       throw new BadRequestException('Paystack keys not configured');
     }
+    const secretKey = this.encryptionService.decrypt(org.paystack_secret_key);
+    if (!secretKey) {
+      throw new BadRequestException('Paystack keys not configured');
+    }
 
     try {
       const response = await axios.get(
         `https://api.paystack.co/transaction/verify/${reference}`,
         {
           headers: {
-            Authorization: `Bearer ${org.paystack_secret_key}`,
+            Authorization: `Bearer ${secretKey}`,
           },
         },
       );
 
       return response.data.data;
     } catch (error) {
-      console.error('Paystack verification error:', error);
+      // Log only the status code and message — never the full axios error which
+      // may contain the Authorization header (bearing the Paystack secret key).
+      const statusCode = (error as any)?.response?.status ?? 'unknown';
+      const message = (error as any)?.response?.data?.message ?? (error as any)?.message ?? 'unknown error';
+      this.logger.error(`Paystack verification failed [status=${statusCode}]: ${message}`);
       throw new BadRequestException('Failed to verify payment');
     }
   }
@@ -1488,7 +1529,31 @@ export class PaymentService {
     const org = await this.organizationRepository.findOne({ where: { id: organizationId } });
     const paystackAmount = paystackData?.amount ? Number(paystackData.amount) / 100 : undefined;
 
-    if (status === 'PARTIAL' && org?.partial_payment_limit != null && paystackAmount != null) {
+    // Security: verify the amount Paystack reports is consistent with what the
+    // system recorded. A replayed webhook from a different (lower-value)
+    // transaction on the same organisation's Paystack account could otherwise
+    // set amount_paid to a value well below the expected amount while the
+    // derived status still reflects a successful outcome.
+    //
+    // Rule: when Paystack reports a successful status (PAID / PARTIAL) and
+    // returns an amount, that amount must be >= the expected payment amount.
+    // If it falls short we downgrade the outcome to PARTIAL (still recording the
+    // true amount Paystack confirmed) and leave balance_due non-zero, which
+    // prevents the payment from being marked fully settled.
+    let resolvedStatus = status;
+    if (
+      status === 'PAID' &&
+      paystackAmount != null &&
+      payment.amount != null &&
+      paystackAmount < Number(payment.amount)
+    ) {
+      this.logger.warn(
+        `Paystack reported amount (${paystackAmount}) is less than expected payment amount (${payment.amount}) for payment ${payment.id}. Downgrading status to PARTIAL.`,
+      );
+      resolvedStatus = 'PARTIAL';
+    }
+
+    if (resolvedStatus === 'PARTIAL' && org?.partial_payment_limit != null && paystackAmount != null) {
       const partialLimit = Number(org.partial_payment_limit);
       if (paystackAmount < partialLimit) {
         throw new BadRequestException(`Partial payment must be at least ${partialLimit}`);
@@ -1496,7 +1561,7 @@ export class PaymentService {
     }
 
     const updatedPayment = await this.updateStatus(organizationId, payment.id, {
-      status,
+      status: resolvedStatus,
       paid_at: paidAt,
       amount_paid: paystackAmount,
     }, {

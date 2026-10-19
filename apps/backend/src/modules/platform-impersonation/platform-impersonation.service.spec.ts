@@ -48,6 +48,7 @@ describe('PlatformImpersonationService', () => {
   let featureFlagsService: { resolve: jest.Mock };
   let jwtService: { sign: jest.Mock };
   let configService: { get: jest.Mock };
+  let notificationService: { sendEmail: jest.Mock };
   let service: PlatformImpersonationService;
 
   beforeEach(() => {
@@ -75,6 +76,7 @@ describe('PlatformImpersonationService', () => {
     };
     jwtService = { sign: jest.fn().mockReturnValue('signed-tenant-token') };
     configService = { get: jest.fn() };
+    notificationService = { sendEmail: jest.fn().mockResolvedValue(undefined) };
 
     service = new PlatformImpersonationService(
       sessionRepository as any,
@@ -83,6 +85,7 @@ describe('PlatformImpersonationService', () => {
       featureFlagsService as any,
       jwtService as any,
       configService as any,
+      notificationService as any,
     );
   });
 

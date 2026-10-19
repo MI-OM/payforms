@@ -31,10 +31,12 @@ import { PlatformUsersModule } from './modules/platform-users/platform-users.mod
 import { OrganizationEntitlementsModule } from './modules/organization/organization-entitlements.module';
 import { PlatformEntitlementsModule } from './modules/platform-entitlements/platform-entitlements.module';
 import { OrganizationContextModule } from './common/auth/organization-context.module';
+import { SecurityModule } from './common/security/security.module';
 
 @Module({
   imports: [
     CacheModule,
+    SecurityModule,
     OrganizationContextModule,
     ConfigModule.forRoot({
       isGlobal: true,
@@ -57,12 +59,38 @@ import { OrganizationContextModule } from './common/auth/organization-context.mo
         username: configService.get('DB_USER', 'postgres'),
         password: configService.get('DB_PASSWORD', 'postgres'),
         database: configService.get('DB_NAME', 'payforms'),
-        // Supabase (and most managed Postgres) require TLS. Set DB_SSL=true.
-        ssl: configService.get('DB_SSL') === 'true' ? { rejectUnauthorized: false } : false,
+        // TLS note: `rejectUnauthorized: false` is required when connecting
+        // through the Supabase Supavisor connection pooler, which presents a
+        // certificate signed by a CA not included in Node's default trust store.
+        //
+        // Risk: this disables certificate-chain validation, so a MITM attack
+        // on the database connection path cannot be detected by TLS alone. The
+        // risk is accepted because:
+        //   1. The connection travels through Supabase's own managed network.
+        //   2. The Supabase pooler's hostname is validated (SNI is still used).
+        //   3. Supabase does not expose a way to supply a custom CA bundle for
+        //      pooled connections at the time of writing.
+        //
+        // Mitigation: set DB_SSL_REJECT_UNAUTHORIZED=true and supply a CA
+        // bundle via DB_SSL_CA if you switch to a direct (non-pooled) Postgres
+        // connection string, which Supabase supports at the cost of connection
+        // count limits.
+        ssl: configService.get('DB_SSL') === 'true'
+          ? {
+              rejectUnauthorized:
+                configService.get('DB_SSL_REJECT_UNAUTHORIZED') === 'true',
+              ca: configService.get<string>('DB_SSL_CA') || undefined,
+            }
+          : false,
         entities: [__dirname + '/modules/**/entities/*.entity{.ts,.js}'],
         migrations: [__dirname + '/database/migrations/*{.ts,.js}'],
         migrationsRun: false,
-        synchronize: process.env.NODE_ENV !== 'production',
+        // TypeORM schema synchronization is dangerous in non-development
+        // environments: it auto-alters tables to match entity definitions and
+        // can silently drop columns. It is strictly limited to NODE_ENV=development
+        // and is always disabled in production. Never set NODE_ENV=development
+        // on a database with real customer data.
+        synchronize: process.env.NODE_ENV === 'development',
         extra: {
           max: Number(configService.get('DB_POOL_MAX', 50)),
           min: Number(configService.get('DB_POOL_MIN', 5)),
