@@ -1,4 +1,4 @@
-import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException, OnModuleInit } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { createHash, randomUUID } from 'crypto';
 import { In, LessThan, Repository } from 'typeorm';
@@ -24,6 +24,8 @@ import { DunningRun } from './entities/dunning-run.entity';
 import { ArrearsSnapshot } from './entities/arrears-snapshot.entity';
 import { ComplianceExportJob } from './entities/compliance-export-job.entity';
 import { ComplianceExportArtifact } from './entities/compliance-export-artifact.entity';
+import { IntegrationDeliveryWorkerService } from './services/integration-delivery-worker.service';
+import { DomainEventService } from '../../common/events/domain-event.service';
 
 const MARKET_FLAG_KEYS = {
   checkoutV2: 'checkout_v2_enabled',
@@ -37,7 +39,7 @@ const MARKET_FLAG_KEYS = {
 } as const;
 
 @Injectable()
-export class MarketReadinessService {
+export class MarketReadinessService implements OnModuleInit {
   constructor(
     @InjectRepository(Organization)
     private organizationRepository: Repository<Organization>,
@@ -83,7 +85,35 @@ export class MarketReadinessService {
     private complianceExportJobRepository: Repository<ComplianceExportJob>,
     @InjectRepository(ComplianceExportArtifact)
     private complianceExportArtifactRepository: Repository<ComplianceExportArtifact>,
+    private readonly integrationDeliveryWorker: IntegrationDeliveryWorkerService,
+    private readonly domainEventService: DomainEventService,
   ) {}
+
+  /**
+   * Subscribe to the application's domain events and forward them to the
+   * organization's integration endpoints.
+   *
+   * This is what makes the webhooks feature useful to a paying customer: they
+   * get told when money arrives, not just when an internal market-readiness
+   * job finishes.
+   */
+  onModuleInit(): void {
+    this.domainEventService.on('payment.completed', (event) =>
+      this.queueIntegrationDeliveriesIfEnabled(event.organization_id, event.type, event.payload),
+    );
+
+    this.domainEventService.on('payment.failed', (event) =>
+      this.queueIntegrationDeliveriesIfEnabled(event.organization_id, event.type, event.payload),
+    );
+
+    this.domainEventService.on('submission.created', (event) =>
+      this.queueIntegrationDeliveriesIfEnabled(event.organization_id, event.type, event.payload),
+    );
+
+    this.domainEventService.on('contact.created', (event) =>
+      this.queueIntegrationDeliveriesIfEnabled(event.organization_id, event.type, event.payload),
+    );
+  }
 
   async getFlags(organizationId: string) {
     const org = await this.organizationRepository.findOne({
@@ -769,6 +799,8 @@ export class MarketReadinessService {
     payload: {
       type: 'WEBHOOK' | 'SHEETS';
       target: string;
+      name?: string;
+      events?: string[];
       secret?: string;
       active?: boolean;
       config?: Record<string, unknown>;
@@ -780,6 +812,8 @@ export class MarketReadinessService {
       organization_id: organizationId,
       type: payload.type,
       target: payload.target,
+      name: payload.name?.trim() || null,
+      events: this.normalizeEndpointEvents(payload.events),
       secret: payload.secret || randomUUID(),
       active: payload.active ?? true,
       config: payload.config || null,
@@ -800,11 +834,27 @@ export class MarketReadinessService {
     return endpoints.map((endpoint) => this.sanitizeIntegrationEndpoint(endpoint));
   }
 
+  async getIntegrationEndpoint(organizationId: string, endpointId: string) {
+    await this.assertFeatureEnabled(organizationId, MARKET_FLAG_KEYS.integrations);
+
+    const endpoint = await this.integrationEndpointRepository.findOne({
+      where: { id: endpointId, organization_id: organizationId },
+    });
+
+    if (!endpoint) {
+      throw new NotFoundException('Integration endpoint not found');
+    }
+
+    return this.sanitizeIntegrationEndpoint(endpoint);
+  }
+
   async updateIntegrationEndpoint(
     organizationId: string,
     endpointId: string,
     payload: {
       target?: string;
+      name?: string;
+      events?: string[];
       secret?: string;
       active?: boolean;
       config?: Record<string, unknown>;
@@ -821,6 +871,12 @@ export class MarketReadinessService {
     }
 
     endpoint.target = payload.target ?? endpoint.target;
+    if (payload.name !== undefined) {
+      endpoint.name = payload.name.trim() || null;
+    }
+    if (payload.events !== undefined) {
+      endpoint.events = this.normalizeEndpointEvents(payload.events);
+    }
     endpoint.secret = payload.secret ?? endpoint.secret;
     endpoint.active = typeof payload.active === 'boolean' ? payload.active : endpoint.active;
     if (payload.config !== undefined) {
@@ -831,20 +887,119 @@ export class MarketReadinessService {
     return this.sanitizeIntegrationEndpoint(saved);
   }
 
+  /**
+   * Flip an endpoint between active and paused.
+   */
+  async toggleIntegrationEndpoint(organizationId: string, endpointId: string) {
+    await this.assertFeatureEnabled(organizationId, MARKET_FLAG_KEYS.integrations);
+
+    const endpoint = await this.integrationEndpointRepository.findOne({
+      where: { id: endpointId, organization_id: organizationId },
+    });
+
+    if (!endpoint) {
+      throw new NotFoundException('Integration endpoint not found');
+    }
+
+    endpoint.active = !endpoint.active;
+    const saved = await this.integrationEndpointRepository.save(endpoint);
+
+    return {
+      ...this.sanitizeIntegrationEndpoint(saved),
+      is_enabled: saved.active,
+    };
+  }
+
+  /**
+   * Delete an endpoint. Its delivery history is kept — the deliveries belong
+   * to the organization, not to the endpoint.
+   */
+  async deleteIntegrationEndpoint(organizationId: string, endpointId: string): Promise<void> {
+    await this.assertFeatureEnabled(organizationId, MARKET_FLAG_KEYS.integrations);
+
+    const endpoint = await this.integrationEndpointRepository.findOne({
+      where: { id: endpointId, organization_id: organizationId },
+    });
+
+    if (!endpoint) {
+      throw new NotFoundException('Integration endpoint not found');
+    }
+
+    await this.integrationEndpointRepository.delete(endpointId);
+  }
+
+  /**
+   * Delivery statistics for a single endpoint.
+   */
+  async getIntegrationEndpointStats(organizationId: string, endpointId: string) {
+    await this.assertFeatureEnabled(organizationId, MARKET_FLAG_KEYS.integrations);
+
+    const endpoint = await this.integrationEndpointRepository.findOne({
+      where: { id: endpointId, organization_id: organizationId },
+    });
+
+    if (!endpoint) {
+      throw new NotFoundException('Integration endpoint not found');
+    }
+
+    const deliveries = await this.integrationDeliveryRepository.find({
+      where: { organization_id: organizationId, endpoint_id: endpointId },
+      select: ['status'],
+    });
+
+    const successful = deliveries.filter((d) => d.status === 'DELIVERED').length;
+    const failed = deliveries.filter((d) => d.status === 'FAILED').length;
+    const queued = deliveries.filter((d) => d.status === 'QUEUED').length;
+    const total = deliveries.length;
+
+    return {
+      endpoint_id: endpoint.id,
+      total_deliveries: total,
+      successful,
+      failed,
+      queued,
+      success_rate: total > 0 ? Number(((successful / total) * 100).toFixed(2)) : 0,
+    };
+  }
+
+  /**
+   * Normalize an endpoint's event subscription list.
+   * An empty list means "all events".
+   */
+  private normalizeEndpointEvents(events?: string[] | null): string[] {
+    if (!Array.isArray(events)) {
+      return [];
+    }
+
+    const cleaned = events
+      .map((event) => String(event || '').trim())
+      .filter((event) => event.length > 0);
+
+    return Array.from(new Set(cleaned));
+  }
+
   async listIntegrationDeliveries(
     organizationId: string,
     page = 1,
     limit = 20,
     endpointId?: string,
+    status?: string,
   ) {
     await this.assertFeatureEnabled(organizationId, MARKET_FLAG_KEYS.integrations);
 
     const safePage = Number.isFinite(Number(page)) && Number(page) > 0 ? Number(page) : 1;
     const safeLimit = Number.isFinite(Number(limit)) && Number(limit) > 0 ? Math.min(Number(limit), 100) : 20;
 
-    const where = endpointId
-      ? { organization_id: organizationId, endpoint_id: endpointId }
-      : { organization_id: organizationId };
+    const where: Record<string, unknown> = { organization_id: organizationId };
+
+    if (endpointId) {
+      where.endpoint_id = endpointId;
+    }
+
+    const normalizedStatus = String(status || '').trim().toUpperCase();
+    if (['QUEUED', 'DELIVERED', 'FAILED'].includes(normalizedStatus)) {
+      where.status = normalizedStatus;
+    }
 
     const [data, total] = await this.integrationDeliveryRepository.findAndCount({
       where,
@@ -858,6 +1013,104 @@ export class MarketReadinessService {
       total,
       page: safePage,
       limit: safeLimit,
+    };
+  }
+
+  /**
+   * Get a single delivery record.
+   */
+  async getIntegrationDelivery(organizationId: string, deliveryId: string) {
+    await this.assertFeatureEnabled(organizationId, MARKET_FLAG_KEYS.integrations);
+
+    const delivery = await this.integrationDeliveryRepository.findOne({
+      where: { id: deliveryId, organization_id: organizationId },
+    });
+
+    if (!delivery) {
+      throw new NotFoundException('Delivery not found');
+    }
+
+    return delivery;
+  }
+
+  /**
+   * Send a synthetic test event to an endpoint and attempt delivery right away.
+   *
+   * This is the fastest way for an administrator to confirm that a webhook is
+   * actually reachable and that the receiver accepts our signature.
+   */
+  async testIntegrationEndpoint(organizationId: string, endpointId: string) {
+    await this.assertFeatureEnabled(organizationId, MARKET_FLAG_KEYS.integrations);
+
+    const endpoint = await this.integrationEndpointRepository.findOne({
+      where: { id: endpointId, organization_id: organizationId },
+    });
+
+    if (!endpoint) {
+      throw new NotFoundException('Integration endpoint not found');
+    }
+
+    const payload = {
+      message: 'This is a test event from Payforms.',
+      organization_id: organizationId,
+      endpoint_id: endpoint.id,
+      sent_at: new Date().toISOString(),
+    };
+
+    const payloadHash = createHash('sha256').update(JSON.stringify(payload)).digest('hex');
+
+    const delivery = await this.integrationDeliveryRepository.save(
+      this.integrationDeliveryRepository.create({
+        organization_id: organizationId,
+        endpoint_id: endpoint.id,
+        event_type: 'test.ping',
+        payload_hash: payloadHash,
+        payload,
+        status: 'QUEUED',
+        attempts: 0,
+        next_attempt_at: new Date(),
+      }),
+    );
+
+    const result = await this.integrationDeliveryWorker.deliverNow(delivery);
+
+    return {
+      delivery_id: delivery.id,
+      status: delivery.status,
+      ok: result.ok,
+      response_status: result.status,
+      response_body: result.body,
+      error: result.error,
+    };
+  }
+
+  /**
+   * Attempt a failed delivery again, immediately.
+   */
+  async retryIntegrationDelivery(organizationId: string, deliveryId: string) {
+    await this.assertFeatureEnabled(organizationId, MARKET_FLAG_KEYS.integrations);
+
+    const delivery = await this.integrationDeliveryRepository.findOne({
+      where: { id: deliveryId, organization_id: organizationId },
+    });
+
+    if (!delivery) {
+      throw new NotFoundException('Delivery not found');
+    }
+
+    if (delivery.status === 'DELIVERED') {
+      throw new BadRequestException('Delivery has already been delivered successfully');
+    }
+
+    const result = await this.integrationDeliveryWorker.deliverNow(delivery);
+
+    return {
+      delivery_id: delivery.id,
+      status: delivery.status,
+      ok: result.ok,
+      response_status: result.status,
+      response_body: result.body,
+      error: result.error,
     };
   }
 
@@ -1084,6 +1337,7 @@ export class MarketReadinessService {
       this.dunningRunRepository.create({
         campaign_id: campaignId,
         status: 'SCHEDULED',
+        started_at: new Date(),
         scheduled_for: payload.scheduled_for ? new Date(payload.scheduled_for) : new Date(),
       }),
     );
@@ -1107,7 +1361,10 @@ export class MarketReadinessService {
       1,
     );
 
-    return dunningRun;
+    // Re-fetch the run so the response reflects the completed metrics
+    // (computeArrearsSnapshots updates the run in-place; the local var is stale)
+    const freshRun = await this.dunningRunRepository.findOne({ where: { id: dunningRun.id } });
+    return freshRun ?? dunningRun;
   }
 
   private async computeArrearsSnapshots(
@@ -1134,10 +1391,10 @@ export class MarketReadinessService {
       .createQueryBuilder('p')
       .leftJoinAndSelect('p.contact', 'c')
       .where('p.organization_id = :organizationId', { organizationId })
-      .andWhere('p.status = :status', { status: 'UNRECEIVED' })
+      .andWhere('p.status IN (:...statuses)', { statuses: ['PENDING', 'PARTIAL'] })
       .andWhere('p.expected_at BETWEEN :minDate AND :maxDate', { minDate, maxDate })
-      .andWhere('CAST(p.amount AS NUMERIC) >= CAST(:minAmount AS NUMERIC)', {
-        minAmount: campaign.min_outstanding_amount,
+      .andWhere('CAST(p.balance_due AS NUMERIC) >= CAST(:minAmount AS NUMERIC)', {
+        minAmount: campaign.min_outstanding_amount || '0',
       })
       .select('p.id, p.contact_id, p.amount, p.expected_at, c.id')
       .getRawMany();
@@ -1191,6 +1448,20 @@ export class MarketReadinessService {
       // Update campaign's snapshot
       await this.dunningCampaignRepository.update(campaignId, {
         total_outstanding_snapshot: String(totalOutstanding),
+        last_executed_at: new Date(),
+      });
+    } else {
+      // No eligible contacts — still mark run as completed so it doesn't
+      // sit as SCHEDULED forever, and still stamp last_executed_at so the
+      // cooldown guard in the scheduler works correctly.
+      await this.dunningRunRepository.update(runId, {
+        contacts_evaluated: 0,
+        total_outstanding: '0',
+        status: 'COMPLETED',
+        completed_at: new Date(),
+      });
+
+      await this.dunningCampaignRepository.update(campaignId, {
         last_executed_at: new Date(),
       });
     }
@@ -1432,12 +1703,21 @@ export class MarketReadinessService {
     eventType: string,
     payload: Record<string, unknown>,
   ) {
-    const activeEndpoints = await this.integrationEndpointRepository.find({
+    const allEndpoints = await this.integrationEndpointRepository.find({
       where: {
         organization_id: organizationId,
         active: true,
       },
     });
+
+    // Only endpoints subscribed to this event receive it. An endpoint with no
+    // event list is subscribed to everything.
+    const activeEndpoints = allEndpoints.filter(
+      (endpoint) =>
+        !Array.isArray(endpoint.events) ||
+        endpoint.events.length === 0 ||
+        endpoint.events.includes(eventType),
+    );
 
     if (!activeEndpoints.length) {
       return;
@@ -1451,8 +1731,12 @@ export class MarketReadinessService {
         endpoint_id: endpoint.id,
         event_type: eventType,
         payload_hash: payloadHash,
+        // The payload has to be stored, not just hashed: the delivery worker
+        // needs the body to POST. The hash alone is an audit fingerprint.
+        payload: { ...payload },
         status: 'QUEUED',
         attempts: 0,
+        next_attempt_at: new Date(),
       })),
     );
   }

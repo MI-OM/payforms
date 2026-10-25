@@ -76,12 +76,20 @@ export default function ContactsPage() {
         <div className="bg-white rounded-lg shadow">
           <div className="p-6 border-b border-gray-200 flex justify-between items-center">
             <h2 className="text-lg font-semibold text-gray-900">All Contacts</h2>
-            <button
-              onClick={() => setShowModal(true)}
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition text-sm font-medium"
-            >
-              + Add Contact
-            </button>
+            <div className="flex items-center gap-2">
+              <a
+                href="/dashboard/contacts/import"
+                className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition text-sm font-medium"
+              >
+                Import CSV
+              </a>
+              <button
+                onClick={() => setShowModal(true)}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition text-sm font-medium"
+              >
+                + Add Contact
+              </button>
+            </div>
           </div>
 
           {loading ? (

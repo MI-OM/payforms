@@ -3,6 +3,8 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { Organization } from '../organization/entities/organization.entity';
 import { MarketReadinessController } from './controllers/market-readiness.controller';
 import { MarketReadinessService } from './market-readiness.service';
+import { DunningSchedulerService } from './services/dunning-scheduler.service';
+import { IntegrationDeliveryWorkerService } from './services/integration-delivery-worker.service';
 import { CheckoutSession } from './entities/checkout-session.entity';
 import { PaymentRecoveryCandidate } from './entities/payment-recovery-candidate.entity';
 import { PaymentRecoveryEvent } from './entities/payment-recovery-event.entity';
@@ -53,7 +55,11 @@ import { ComplianceExportArtifact } from './entities/compliance-export-artifact.
     ]),
   ],
   controllers: [MarketReadinessController],
-  providers: [MarketReadinessService],
-  exports: [MarketReadinessService],
+  providers: [
+    MarketReadinessService,
+    DunningSchedulerService,
+    IntegrationDeliveryWorkerService,
+  ],
+  exports: [MarketReadinessService, IntegrationDeliveryWorkerService],
 })
 export class MarketReadinessModule {}

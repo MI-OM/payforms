@@ -15,6 +15,7 @@ import { CreateOfflinePaymentDto, CreatePaymentDto, UpdatePaymentStatusDto } fro
 import { User } from '../../auth/entities/user.entity';
 import { BillingService } from '../../billing/billing.service';
 import { PaystackKeyEncryptionService } from '../../../common/security/paystack-key-encryption.service';
+import { DomainEventService } from '../../../common/events/domain-event.service';
 
 const DEFAULT_ENABLED_PAYMENT_METHODS: PaymentMethod[] = ['ONLINE'];
 
@@ -60,6 +61,7 @@ export class PaymentService {
     private notificationService: NotificationService,
     private billingService: BillingService,
     private encryptionService: PaystackKeyEncryptionService,
+    private domainEventService: DomainEventService,
   ) {}
 
   async create(organizationId: string, dto: CreatePaymentDto) {
@@ -564,6 +566,28 @@ export class PaymentService {
     }
 
     await this.paymentRepository.update({ id, organization_id: organizationId }, updatePayload);
+
+    // Announce status transitions so integration endpoints can react.
+    // Only real transitions are published — re-saving a payment that is
+    // already PAID must not fire a second "payment completed" event.
+    const statusChanged = payment.status !== nextStatus;
+    if (statusChanged && (nextStatus === 'PAID' || nextStatus === 'FAILED')) {
+      await this.domainEventService.emit(
+        nextStatus === 'PAID' ? 'payment.completed' : 'payment.failed',
+        organizationId,
+        {
+          payment_id: payment.id,
+          reference: payment.reference,
+          status: nextStatus,
+          amount: totalAmount,
+          amount_paid,
+          balance_due,
+          payment_method: nextPaymentMethod,
+          paid_at: paidAt,
+          occurred_at: new Date().toISOString(),
+        },
+      );
+    }
 
     if (options.source === 'admin_update') {
       await this.paymentLogRepository.save(

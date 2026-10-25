@@ -114,6 +114,14 @@ export class Organization {
   @Column({ type: 'timestamp', nullable: true })
   last_data_retention_purge_at: Date | null;
 
+  /**
+   * Reference to the default contact import template for this organization.
+   * If null, the system uses a built-in template with standard fields.
+   * Allows orgs to customize which fields are shown/required in imports.
+   */
+  @Column({ type: 'uuid', nullable: true })
+  default_import_template_id: string | null;
+
   @CreateDateColumn()
   created_at: Date;
 

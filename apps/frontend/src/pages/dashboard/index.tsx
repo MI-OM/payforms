@@ -115,6 +115,30 @@ export default function DashboardPage() {
               Payments
             </a>
             <a
+              href="/dashboard/installments"
+              className="block px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg"
+            >
+              Installments
+            </a>
+            <a
+              href="/dashboard/reminders"
+              className="block px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg"
+            >
+              Reminders
+            </a>
+            <a
+              href="/dashboard/import-templates"
+              className="block px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg"
+            >
+              Import Templates
+            </a>
+            <a
+              href="/dashboard/integrations"
+              className="block px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg"
+            >
+              Integrations
+            </a>
+            <a
               href="/dashboard/settings"
               className="block px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg"
             >

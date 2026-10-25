@@ -11,6 +11,7 @@ import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { RolesGuard } from './guards/roles.guard';
+import { TwoFactorAuthService } from './services/two-factor-auth.service';
 import { NotificationModule } from '../notification/notification.module';
 import { TenantResolverModule } from '../tenant/tenant-resolver.module';
 import { OrganizationStatusModule } from '../organization/organization-status.module';
@@ -36,7 +37,7 @@ import { BillingModule } from '../billing/billing.module';
     BillingModule,
   ],
   controllers: [AuthController],
-  providers: [AuthService, JwtStrategy, RolesGuard],
-  exports: [AuthService],
+  providers: [AuthService, JwtStrategy, RolesGuard, TwoFactorAuthService],
+  exports: [AuthService, TwoFactorAuthService],
 })
 export class AuthModule {}

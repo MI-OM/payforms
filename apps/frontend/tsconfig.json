@@ -25,7 +25,7 @@
     },
     "allowJs": true,
     "incremental": true,
-    "moduleResolution": "node"
+    "moduleResolution": "bundler"
   },
   "include": [
     "next-env.d.ts",

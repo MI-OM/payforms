@@ -21,6 +21,41 @@ export class IntegrationDelivery {
   @Column({ type: 'varchar', length: 128 })
   payload_hash: string;
 
+  /**
+   * The event body that is POSTed to the endpoint.
+   *
+   * `payload_hash` alone is not enough to deliver — it is a digest of the
+   * body, not the body. Rows queued before this column existed have a NULL
+   * payload and cannot be delivered; the worker fails them rather than
+   * sending a meaningless request.
+   */
+  @Column({ type: 'jsonb', nullable: true })
+  payload: Record<string, unknown> | null;
+
+  /**
+   * When the next delivery attempt is due. NULL means "due now".
+   */
+  @Column({ type: 'timestamp', nullable: true })
+  next_attempt_at: Date | null;
+
+  /**
+   * When the last delivery attempt was made.
+   */
+  @Column({ type: 'timestamp', nullable: true })
+  last_attempt_at: Date | null;
+
+  /**
+   * HTTP status returned by the endpoint on the last attempt.
+   */
+  @Column({ type: 'int', nullable: true })
+  response_status: number | null;
+
+  /**
+   * Truncated response body from the endpoint, kept for debugging.
+   */
+  @Column({ type: 'text', nullable: true })
+  response_body: string | null;
+
   @Column({ type: 'varchar', enum: ['QUEUED', 'DELIVERED', 'FAILED'], default: 'QUEUED' })
   status: IntegrationDeliveryStatus;
 

@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
+import { ScheduleModule } from '@nestjs/schedule';
 import { APP_GUARD } from '@nestjs/core';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { TypeOrmModule } from '@nestjs/typeorm';
@@ -32,12 +33,17 @@ import { OrganizationEntitlementsModule } from './modules/organization/organizat
 import { PlatformEntitlementsModule } from './modules/platform-entitlements/platform-entitlements.module';
 import { OrganizationContextModule } from './common/auth/organization-context.module';
 import { SecurityModule } from './common/security/security.module';
+import { DomainEventsModule } from './common/events/domain-event.service';
 
 @Module({
   imports: [
     CacheModule,
     SecurityModule,
     OrganizationContextModule,
+    // Publish/subscribe bus for domain events (payments, submissions) that
+    // the integrations module turns into webhook deliveries.
+    DomainEventsModule,
+    ScheduleModule.forRoot(),
     ConfigModule.forRoot({
       isGlobal: true,
       envFilePath: '.env',

@@ -5,6 +5,7 @@ import { Submission } from '../entities/submission.entity';
 import { CreateSubmissionDto } from '../dto/submission.dto';
 import { Contact } from '../../contact/entities/contact.entity';
 import { BillingService } from '../../billing/billing.service';
+import { DomainEventService } from '../../../common/events/domain-event.service';
 
 type SubmissionFilters = {
   form_id?: string;
@@ -21,6 +22,7 @@ export class SubmissionService {
     @InjectRepository(Contact)
     private contactRepository: Repository<Contact>,
     private billingService: BillingService,
+    private domainEventService: DomainEventService,
   ) {}
 
   async create(organizationId: string, formId: string, dto: CreateSubmissionDto) {
@@ -32,7 +34,19 @@ export class SubmissionService {
       contact_id: dto.contact_id,
       data: dto.data,
     });
-    return this.submissionRepository.save(submission);
+    const saved = await this.submissionRepository.save(submission);
+
+    // Announce the submission so integration endpoints can react to it.
+    // A failing subscriber is logged inside the event bus and does not fail
+    // the submission itself.
+    await this.domainEventService.emit('submission.created', organizationId, {
+      submission_id: saved.id,
+      form_id: formId,
+      contact_id: dto.contact_id ?? null,
+      created_at: saved.created_at,
+    });
+
+    return saved;
   }
 
   async findByOrganization(organizationId: string, page: number = 1, limit: number = 20) {
