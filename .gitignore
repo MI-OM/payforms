@@ -48,3 +48,5 @@ logs/
 # Local test artifacts
 apps/backend/src/scripts/test-supabase-upload.ts
 
+
+apps/frontend/tsconfig.tsbuildinfo
