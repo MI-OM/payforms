@@ -48,6 +48,13 @@ export class Contact {
   @Column('varchar', { nullable: true })
   guardian_phone: string | null;
 
+  /**
+   * Organization-defined custom field values, keyed by the import template's
+   * custom field id. Populated by the contact import pipeline.
+   */
+  @Column({ type: 'jsonb', nullable: true, default: () => "'{}'::jsonb" })
+  custom_fields: Record<string, any> | null;
+
   @Column('varchar', { nullable: true })
   password_hash: string | null;
 

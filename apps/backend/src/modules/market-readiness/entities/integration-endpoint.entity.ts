@@ -17,6 +17,19 @@ export class IntegrationEndpoint {
   @Column({ type: 'varchar' })
   target: string;
 
+  /**
+   * Human-readable label for the endpoint.
+   */
+  @Column({ type: 'varchar', nullable: true })
+  name: string | null;
+
+  /**
+   * Event types this endpoint subscribes to.
+   * An empty list means "all events".
+   */
+  @Column({ type: 'jsonb', default: () => "'[]'::jsonb" })
+  events: string[];
+
   @Column({ type: 'varchar' })
   secret: string;
 

@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, Query, Request, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, Query, Request, UseGuards, Delete, HttpCode } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../auth/guards/roles.guard';
@@ -181,6 +181,12 @@ export class MarketReadinessController {
     return this.marketReadinessService.listIntegrationEndpoints(req.user.organization_id);
   }
 
+  @Get('integrations/endpoints/:id')
+  @Roles('ADMIN', 'STAFF')
+  async getIntegrationEndpoint(@Request() req, @Param('id') id: string) {
+    return this.marketReadinessService.getIntegrationEndpoint(req.user.organization_id, id);
+  }
+
   @Patch('integrations/endpoints/:id')
   @Roles('ADMIN')
   async updateIntegrationEndpoint(
@@ -191,6 +197,25 @@ export class MarketReadinessController {
     return this.marketReadinessService.updateIntegrationEndpoint(req.user.organization_id, id, dto);
   }
 
+  @Post('integrations/endpoints/:id/toggle')
+  @Roles('ADMIN')
+  async toggleIntegrationEndpoint(@Request() req, @Param('id') id: string) {
+    return this.marketReadinessService.toggleIntegrationEndpoint(req.user.organization_id, id);
+  }
+
+  @Delete('integrations/endpoints/:id')
+  @Roles('ADMIN')
+  @HttpCode(204)
+  async deleteIntegrationEndpoint(@Request() req, @Param('id') id: string) {
+    await this.marketReadinessService.deleteIntegrationEndpoint(req.user.organization_id, id);
+  }
+
+  @Get('integrations/endpoints/:id/stats')
+  @Roles('ADMIN', 'STAFF')
+  async getIntegrationEndpointStats(@Request() req, @Param('id') id: string) {
+    return this.marketReadinessService.getIntegrationEndpointStats(req.user.organization_id, id);
+  }
+
   @Get('integrations/deliveries')
   @Roles('ADMIN', 'STAFF')
   async listIntegrationDeliveries(
@@ -198,13 +223,33 @@ export class MarketReadinessController {
     @Query('page') page: number = 1,
     @Query('limit') limit: number = 20,
     @Query('endpoint_id') endpointId?: string,
+    @Query('status') status?: string,
   ) {
     return this.marketReadinessService.listIntegrationDeliveries(
       req.user.organization_id,
       Number(page),
       Number(limit),
       endpointId,
+      status,
     );
+  }
+
+  @Get('integrations/deliveries/:id')
+  @Roles('ADMIN', 'STAFF')
+  async getIntegrationDelivery(@Request() req, @Param('id') id: string) {
+    return this.marketReadinessService.getIntegrationDelivery(req.user.organization_id, id);
+  }
+
+  @Post('integrations/endpoints/:id/test')
+  @Roles('ADMIN')
+  async testIntegrationEndpoint(@Request() req, @Param('id') id: string) {
+    return this.marketReadinessService.testIntegrationEndpoint(req.user.organization_id, id);
+  }
+
+  @Post('integrations/deliveries/:id/retry')
+  @Roles('ADMIN')
+  async retryIntegrationDelivery(@Request() req, @Param('id') id: string) {
+    return this.marketReadinessService.retryIntegrationDelivery(req.user.organization_id, id);
   }
 
   @Post('partners')

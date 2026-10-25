@@ -4,10 +4,12 @@ import { Repository, In } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
 import { Contact } from '../entities/contact.entity';
 import { ContactImport, ContactImportStatus } from '../entities/contact-import.entity';
+import { ContactImportTemplate, CustomFieldDefinition } from '../entities/contact-import-template.entity';
 import { Group } from '../../group/entities/group.entity';
 import { Organization } from '../../organization/entities/organization.entity';
 import { NotificationService } from '../../notification/notification.service';
 import { ContactService } from './contact.service';
+import { ContactImportTemplateService } from './contact-import-template.service';
 
 type ContactWithPasswordSetupToken = Contact & {
   password_setup_token?: string | null;
@@ -27,6 +29,7 @@ export class ContactImportService {
     private contactService: ContactService,
     private notificationService: NotificationService,
     private configService: ConfigService,
+    private contactImportTemplateService: ContactImportTemplateService,
   ) {}
 
   async sendPasswordSetupEmails(organizationId: string, contacts: ContactWithPasswordSetupToken[]) {
@@ -71,6 +74,7 @@ export class ContactImportService {
     existingEmails: Set<string>,
     importedEmails: Set<string>,
     validGroupIds: Set<string>,
+    template?: ContactImportTemplate,
   ) {
     const errors: string[] = [];
 
@@ -145,6 +149,12 @@ export class ContactImportService {
       }
     }
 
+    // Template-driven requirements. The hard rules above (name, email) always
+    // apply; a template adds to them rather than replacing them.
+    if (template) {
+      errors.push(...this.validateTemplateRequirements(row, template));
+    }
+
     return {
       row_index: rowIndex,
       row,
@@ -152,7 +162,108 @@ export class ContactImportService {
     };
   }
 
-  async validateImport(organizationId: string, contacts: Array<any>, createdBy: string) {
+  /**
+   * Validate a row against the import template's field configuration.
+   *
+   * Two kinds of requirement are enforced:
+   *   - Standard fields marked `required` in `fields_config` must have a value.
+   *   - Custom fields marked `required` must have a value, and every custom
+   *     field that IS supplied must be valid for its declared type.
+   */
+  private validateTemplateRequirements(
+    row: Record<string, any>,
+    template: ContactImportTemplate,
+  ): string[] {
+    const errors: string[] = [];
+    const fieldsConfig = template.fields_config || {};
+
+    for (const [fieldName, config] of Object.entries(fieldsConfig)) {
+      if (!config?.required) {
+        continue;
+      }
+
+      const value = row[fieldName];
+      if (value === undefined || value === null || String(value).trim() === '') {
+        errors.push(`${config.label || fieldName} is required`);
+      }
+    }
+
+    for (const customField of template.custom_fields || []) {
+      const value = row.custom_fields?.[customField.id];
+      const isEmpty = value === undefined || value === null || String(value).trim() === '';
+
+      if (isEmpty) {
+        if (customField.required) {
+          errors.push(`${customField.label || customField.name} is required`);
+        }
+        continue;
+      }
+
+      errors.push(...this.validateCustomFieldValue(customField, value));
+    }
+
+    return errors;
+  }
+
+  /**
+   * Check a custom field value against its declared type.
+   */
+  private validateCustomFieldValue(field: CustomFieldDefinition, value: any): string[] {
+    const errors: string[] = [];
+    const label = field.label || field.name;
+    const str = String(value).trim();
+
+    switch (field.type) {
+      case 'email':
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(str)) {
+          errors.push(`${label} must be a valid email address`);
+        }
+        break;
+      case 'phone':
+        if (!/^\+?[\d\s()-]{7,}$/.test(str)) {
+          errors.push(`${label} must be a valid phone number`);
+        }
+        break;
+      case 'number':
+        if (!Number.isFinite(Number(str))) {
+          errors.push(`${label} must be a number`);
+        }
+        break;
+      case 'date':
+        if (Number.isNaN(Date.parse(str))) {
+          errors.push(`${label} must be a valid date`);
+        }
+        break;
+      case 'select':
+        if (field.options?.length && !field.options.includes(str)) {
+          errors.push(`${label} must be one of: ${field.options.join(', ')}`);
+        }
+        break;
+      default:
+        break;
+    }
+
+    return errors;
+  }
+
+  async validateImport(
+    organizationId: string,
+    contacts: Array<any>,
+    createdBy: string,
+    templateId?: string | null,
+  ) {
+    // Resolve the template up front. An explicitly supplied template must
+    // exist and belong to this organization; otherwise the organization's
+    // default (or the built-in system default) is used.
+    const template = await this.contactImportTemplateService.resolveTemplateForImport(
+      organizationId,
+      templateId,
+    );
+
+    // The built-in system default is not a persisted row, so it has no id we
+    // can store or reference.
+    const persistedTemplateId = template.id.startsWith('system-default-') ? null : template.id;
+
     const existingContacts = await this.contactRepository.find({
       where: { organization_id: organizationId },
       select: ['email'],
@@ -185,7 +296,14 @@ export class ContactImportService {
     }
 
     const validationResults = contacts.map((contact, index) => {
-      const result = this.validateRow(contact, index, existingEmails, importedEmails, validGroupIds);
+      const result = this.validateRow(
+        contact,
+        index,
+        existingEmails,
+        importedEmails,
+        validGroupIds,
+        template,
+      );
       if (!result.errors.length && contact.email) {
         importedEmails.add(contact.email.toLowerCase().trim());
       }
@@ -198,6 +316,7 @@ export class ContactImportService {
     const importJob = this.contactImportRepository.create({
       organization_id: organizationId,
       created_by: createdBy,
+      template_id: persistedTemplateId,
       status,
       total_count: contacts.length,
       success_count: contacts.length - errorRows.length,
@@ -209,6 +328,15 @@ export class ContactImportService {
 
     await this.contactImportRepository.save(importJob);
 
+    // Record the template against the job so the audit trail answers "which
+    // template produced these contacts?" even after the template is edited.
+    await this.contactImportTemplateService.recordTemplateUsage(
+      organizationId,
+      importJob.id,
+      persistedTemplateId,
+      template,
+    );
+
     return {
       import_id: importJob.id,
       status: importJob.status,
@@ -216,6 +344,11 @@ export class ContactImportService {
       success_count: importJob.success_count,
       failure_count: importJob.failure_count,
       errors: errorRows,
+      template: {
+        id: persistedTemplateId,
+        name: template.name,
+        is_default: template.is_default,
+      },
     };
   }
 

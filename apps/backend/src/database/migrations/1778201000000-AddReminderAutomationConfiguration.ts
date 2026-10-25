@@ -56,13 +56,13 @@ export class AddReminderAutomationConfiguration1778201000000 implements Migratio
             type: 'jsonb',
             default: "'{\"type\": \"all_with_balance_due\"}'::jsonb",
             isNullable: false,
-            comment: 'Recipient selection: {type: "all_with_balance_due" | "specific_groups", group_ids?: []}',
+            comment: 'Recipient selection configuration for this policy',
           }),
           new TableColumn({
             name: 'message_template',
             type: 'text',
             isNullable: false,
-            comment: 'Reminder message (can include placeholders like {{contact_name}}, {{balance_due}}, {{days_overdue}})',
+            comment: 'Reminder message template with placeholder support',
           }),
           new TableColumn({
             name: 'cooldown_days',
@@ -176,7 +176,7 @@ export class AddReminderAutomationConfiguration1778201000000 implements Migratio
             name: 'send_status',
             type: 'varchar',
             enum: ['sent', 'failed', 'bounced'],
-            default: 'sent',
+            default: `'sent'`,
             isNullable: false,
           }),
           new TableColumn({

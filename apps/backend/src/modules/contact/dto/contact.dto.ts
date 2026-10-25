@@ -1,4 +1,4 @@
-import { IsString, IsEmail, IsOptional, IsBoolean, IsArray, ValidateNested, IsIn, IsNumber, IsUUID, IsDateString } from 'class-validator';
+import { IsString, IsEmail, IsOptional, IsBoolean, IsArray, ValidateNested, IsIn, IsNumber, IsUUID, IsDateString, IsObject } from 'class-validator';
 import { Type, Transform } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
@@ -332,6 +332,19 @@ export class ContactImportRowDto {
   @IsString({ each: true })
   group_paths?: string[];
 
+  @ApiPropertyOptional({
+    type: 'object',
+    additionalProperties: true,
+    example: { '2f9c1e77-1b2c-4a44-9d2e-5c0a7f1b3d84': '2026/2027' },
+    description:
+      'Values for the import template\'s custom fields, keyed by custom field id. ' +
+      'Custom fields are addressed through this map rather than as row properties so ' +
+      'that arbitrary field ids survive request validation.',
+  })
+  @IsOptional()
+  @IsObject()
+  custom_fields?: Record<string, any>;
+
   @ApiPropertyOptional({ example: true, description: 'If true, contact will be flagged for password setup/login flow' })
   @Transform(toOptionalBoolean)
   @IsOptional()
@@ -357,6 +370,17 @@ export class ContactImportValidateDto {
   @ValidateNested({ each: true })
   @Type(() => ContactImportRowDto)
   contacts: ContactImportRowDto[];
+
+  @ApiPropertyOptional({
+    example: 'f4a2c1d8-2b7e-4c9e-8a1f-2c3d4e5f6a7b',
+    description:
+      'Import template to validate against. When supplied, the template decides which ' +
+      'fields are required. When omitted, the organization default template is used ' +
+      'if one is configured, otherwise the built-in system default.',
+  })
+  @IsOptional()
+  @IsUUID()
+  template_id?: string;
 }
 
 export class ContactImportCommitDto {
@@ -372,6 +396,14 @@ export class ContactCsvImportDto {
   })
   @IsString()
   csv: string;
+
+  @ApiPropertyOptional({
+    example: 'f4a2c1d8-2b7e-4c9e-8a1f-2c3d4e5f6a7b',
+    description: 'Import template to validate against. Uses the organization default template when omitted.',
+  })
+  @IsOptional()
+  @IsUUID()
+  template_id?: string;
 }
 
 export class ContactQueryDto {

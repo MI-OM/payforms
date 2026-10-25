@@ -46,6 +46,10 @@ describe('PaymentService', () => {
     isEncrypted: jest.fn().mockReturnValue(false),
     isEnabled: true,
   };
+  const domainEventService = {
+    emit: jest.fn().mockResolvedValue(undefined),
+    on: jest.fn(),
+  };
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -61,6 +65,7 @@ describe('PaymentService', () => {
       notificationService as any,
       billingService as any,
       encryptionService as any,
+      domainEventService as any,
     );
   });
 

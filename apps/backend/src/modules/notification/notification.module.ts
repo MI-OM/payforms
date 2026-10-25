@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { NotificationService } from './notification.service';
 import { NotificationController } from './notification.controller';
 import { ReminderAutomationService } from './services/reminder-automation.service';
+import { ReminderSchedulerService } from './services/reminder-scheduler.service';
 import { ReminderAutomationController } from './controllers/reminder-automation.controller';
 import { ConfigModule } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
@@ -31,8 +32,12 @@ import { BillingModule } from '../billing/billing.module';
     // Meters every tenant email send against the plan's `monthly_email_sends`.
     BillingModule,
   ],
-  providers: [NotificationService, ReminderAutomationService],
+  providers: [
+    NotificationService,
+    ReminderAutomationService,
+    ReminderSchedulerService,
+  ],
   controllers: [NotificationController, ReminderAutomationController],
-  exports: [NotificationService, ReminderAutomationService],
+  exports: [NotificationService, ReminderAutomationService, ReminderSchedulerService],
 })
 export class NotificationModule {}

@@ -45,14 +45,12 @@ export class AddContactImportTemplateConfiguration1778200000000 implements Migra
             type: 'jsonb',
             default: "'{}'::jsonb",
             isNullable: false,
-            comment: 'Field visibility and requirement config: {field_name: {visible: bool, required: bool, label: string}}',
           }),
           new TableColumn({
             name: 'custom_fields',
             type: 'jsonb',
-            default: '[]::jsonb',
+            default: "'[]'::jsonb",
             isNullable: false,
-            comment: 'Array of custom fields: [{id, name, type (text/email/phone/number/select), required, options}]',
           }),
           new TableColumn({
             name: 'created_at',
@@ -115,14 +113,14 @@ export class AddContactImportTemplateConfiguration1778200000000 implements Migra
             name: 'template_id',
             type: 'uuid',
             isNullable: true,
-            comment: 'NULL = used default system template (backward compatibility)',
+            comment: 'NULL means the system default template was used',
           }),
           new TableColumn({
             name: 'template_snapshot',
             type: 'jsonb',
-            default: '{}',
+            default: "'{}'::jsonb",
             isNullable: false,
-            comment: 'Snapshot of template config at time of import (for audit trail)',
+            comment: 'Snapshot of template config at time of import',
           }),
           new TableColumn({
             name: 'created_at',

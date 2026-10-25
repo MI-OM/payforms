@@ -1,6 +1,6 @@
 import { Injectable, BadRequestException, NotFoundException, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, In, LessThan, MoreThanOrEqual } from 'typeorm';
+import { Repository, In } from 'typeorm';
 import { OrganizationReminderPolicy, ReminderTriggerConfig, ReminderRecipientConfig } from '../entities/organization-reminder-policy.entity';
 import { ReminderSendHistory } from '../entities/reminder-send-history.entity';
 import { Organization } from '../../organization/entities/organization.entity';
@@ -218,11 +218,11 @@ export class ReminderAutomationService {
     org: Organization,
     policy: OrganizationReminderPolicy,
   ): Promise<{ sent: number; failed: number }> {
-    const contacts = await this.getEligibleContacts(org.id, policy);
+    const recipients = await this.getEligibleRecipients(org.id, policy);
     let sentCount = 0;
     let failedCount = 0;
 
-    for (const contact of contacts) {
+    for (const { contact, balance_due, days_overdue } of recipients) {
       // Check cooldown
       const lastSend = await this.sendHistoryRepository.findOne({
         where: {
@@ -244,11 +244,7 @@ export class ReminderAutomationService {
         }
       }
 
-      // Get contact's outstanding balance and days overdue
-      const balanceInfo = await this.getContactBalanceInfo(org.id, contact.id);
-      if (!balanceInfo || balanceInfo.balance_due <= 0) {
-        continue;
-      }
+      const balanceInfo = { balance_due, days_overdue };
 
       // Send reminder
       try {
@@ -308,31 +304,38 @@ export class ReminderAutomationService {
   }
 
   /**
-   * Get eligible contacts for a reminder policy based on recipient config.
+   * Get the contacts eligible for a reminder policy, together with the balance
+   * figures used for the trigger thresholds and the message placeholders.
+   *
+   * Eligibility is the conjunction of three conditions:
+   *   1. Recipient config  — the contact is in scope for the policy audience.
+   *   2. Balance trigger  — outstanding balance >= trigger_config.balance_due_threshold.
+   *   3. Overdue trigger  — days overdue >= trigger_config.days_overdue_threshold.
+   *
+   * The whole set is computed with a single aggregate query (one row per contact)
+   * rather than one query per contact, so a policy that covers a large audience
+   * does not fan out into hundreds of round-trips.
    */
-  private async getEligibleContacts(
+  private async getEligibleRecipients(
     organizationId: string,
     policy: OrganizationReminderPolicy,
-  ): Promise<Contact[]> {
-    const { type, group_ids } = policy.recipient_config;
+  ): Promise<Array<{ contact: Contact; balance_due: number; days_overdue: number }>> {
+    const { type, group_ids } = policy.recipient_config ?? { type: 'all_with_balance_due' };
+    const balanceThreshold = Number(policy.trigger_config?.balance_due_threshold ?? 0) || 0;
+    const daysThreshold = Number(policy.trigger_config?.days_overdue_threshold ?? 0) || 0;
 
-    let query = this.contactRepository
-      .createQueryBuilder('contact')
-      .where('contact.organization_id = :organizationId', { organizationId })
+    let query = this.paymentRepository
+      .createQueryBuilder('payment')
+      .innerJoin('payment.submission', 'submission')
+      .innerJoin('submission.contact', 'contact')
+      .where('payment.organization_id = :organizationId', { organizationId })
+      .andWhere('payment.status IN (:...statuses)', { statuses: ['PENDING', 'PARTIAL'] })
       .andWhere('contact.is_active = true')
       .andWhere('contact.email IS NOT NULL')
-      // Filter to contacts with outstanding balance >= threshold
-      .innerJoin(
-        'contact.submissions',
-        'submission',
-        'submission.organization_id = :organizationId',
-      )
-      .innerJoin(
-        'submission.payments',
-        'payment',
-        'payment.status IN (:...statuses)',
-        { statuses: ['PENDING', 'PARTIAL'] },
-      );
+      .select('contact.id', 'contact_id')
+      .addSelect('SUM(payment.balance_due)', 'balance_due')
+      .addSelect('MIN(payment.created_at)', 'oldest_created_at')
+      .groupBy('contact.id');
 
     if (type === 'specific_groups' && group_ids && group_ids.length > 0) {
       query = query
@@ -340,53 +343,53 @@ export class ReminderAutomationService {
         .andWhere('group.id IN (:...groupIds)', { groupIds: group_ids });
     }
 
-    // Add distinct and select only contact fields to avoid duplicates
-    query = query.distinct(true).select('contact');
+    const rows = await query.getRawMany<{
+      contact_id: string;
+      balance_due: string;
+      oldest_created_at: Date;
+    }>();
 
-    return query.getMany();
-  }
-
-  /**
-   * Get contact's outstanding balance and days overdue.
-   */
-  private async getContactBalanceInfo(
-    organizationId: string,
-    contactId: string,
-  ): Promise<{ balance_due: number; days_overdue: number } | null> {
-    // Sum all unpaid and partial payments for this contact
-    // Need to join through submissions to get contact_id
-    const payments = await this.paymentRepository
-      .createQueryBuilder('payment')
-      .innerJoin('payment.submission', 'submission')
-      .where('payment.organization_id = :organizationId', { organizationId })
-      .andWhere('submission.contact_id = :contactId', { contactId })
-      .andWhere('payment.status IN (:...statuses)', { statuses: ['PENDING', 'PARTIAL'] })
-      .getMany();
-
-    if (!payments.length) {
-      return null;
+    if (!rows.length) {
+      return [];
     }
 
-    const totalBalance = payments.reduce((sum, p) => {
-      const balance = Number(p.balance_due) || 0;
-      return sum + balance;
-    }, 0);
-
-    // Calculate days overdue: find oldest unpaid payment
-    const oldestPayment = payments.reduce((oldest, p) => {
-      const pCreatedAt = new Date(p.created_at).getTime();
-      const oldestCreatedAt = new Date(oldest.created_at).getTime();
-      return pCreatedAt < oldestCreatedAt ? p : oldest;
+    const contacts = await this.contactRepository.find({
+      where: { id: In(rows.map((row) => row.contact_id)) },
     });
+    const contactById = new Map(contacts.map((contact) => [contact.id, contact]));
 
-    const daysOverdue = Math.floor(
-      (Date.now() - new Date(oldestPayment.created_at).getTime()) / (1000 * 60 * 60 * 24),
-    );
+    const now = Date.now();
+    const recipients: Array<{ contact: Contact; balance_due: number; days_overdue: number }> = [];
 
-    return {
-      balance_due: totalBalance,
-      days_overdue: daysOverdue,
-    };
+    for (const row of rows) {
+      const contact = contactById.get(row.contact_id);
+      if (!contact?.email) {
+        continue;
+      }
+
+      const balanceDue = Number(row.balance_due) || 0;
+      if (balanceDue <= 0 || balanceDue < balanceThreshold) {
+        continue;
+      }
+
+      const oldestCreatedAt = new Date(row.oldest_created_at).getTime();
+      if (Number.isNaN(oldestCreatedAt)) {
+        continue;
+      }
+
+      const daysOverdue = Math.floor((now - oldestCreatedAt) / (1000 * 60 * 60 * 24));
+      if (daysOverdue < daysThreshold) {
+        continue;
+      }
+
+      recipients.push({
+        contact,
+        balance_due: balanceDue,
+        days_overdue: daysOverdue,
+      });
+    }
+
+    return recipients;
   }
 
   /**

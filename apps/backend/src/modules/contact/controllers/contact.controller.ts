@@ -47,6 +47,19 @@ export class ContactController {
     return csv;
   }
 
+  // NOTE: the literal `imports` routes must be declared before the `:id`
+  // route. Express matches routes in registration order, so `GET /contacts/imports`
+  // would otherwise be swallowed by `GET /contacts/:id`.
+  @Get('imports')
+  async listImports(@Request() req, @Query('page') page: number = 1, @Query('limit') limit: number = 20) {
+    return this.contactImportService.listImports(req.user.organization_id, page, limit);
+  }
+
+  @Get('imports/:id')
+  async getImport(@Request() req, @Param('id') id: string) {
+    return this.contactImportService.getImport(req.user.organization_id, id);
+  }
+
   @Get(':id')
   async getContact(@Request() req, @Param('id') id: string) {
     return this.contactService.findById(req.user.organization_id, id);
@@ -84,13 +97,23 @@ export class ContactController {
 
   @Post('imports/validate')
   async validateImport(@Request() req, @Body() dto: ContactImportValidateDto) {
-    return this.contactImportService.validateImport(req.user.organization_id, dto.contacts, req.user.id);
+    return this.contactImportService.validateImport(
+      req.user.organization_id,
+      dto.contacts,
+      req.user.id,
+      dto.template_id,
+    );
   }
 
   @Post('imports/csv/validate')
   async validateCsvImport(@Request() req, @Body() dto: ContactCsvImportDto) {
     const contacts = this.contactService.parseCsvImport(dto.csv);
-    return this.contactImportService.validateImport(req.user.organization_id, contacts, req.user.id);
+    return this.contactImportService.validateImport(
+      req.user.organization_id,
+      contacts,
+      req.user.id,
+      dto.template_id,
+    );
   }
 
   @Post('imports/:id/commit')
@@ -101,21 +124,16 @@ export class ContactController {
   @Post('imports/csv/commit')
   async commitCsvImport(@Request() req, @Body() dto: ContactCsvImportDto) {
     const contacts = this.contactService.parseCsvImport(dto.csv);
-    const validation = await this.contactImportService.validateImport(req.user.organization_id, contacts, req.user.id);
+    const validation = await this.contactImportService.validateImport(
+      req.user.organization_id,
+      contacts,
+      req.user.id,
+      dto.template_id,
+    );
     if (validation.status !== ContactImportStatus.VALIDATED) {
       return validation;
     }
     return this.contactImportService.commitImport(req.user.organization_id, validation.import_id);
-  }
-
-  @Get('imports')
-  async listImports(@Request() req, @Query('page') page: number = 1, @Query('limit') limit: number = 20) {
-    return this.contactImportService.listImports(req.user.organization_id, page, limit);
-  }
-
-  @Get('imports/:id')
-  async getImport(@Request() req, @Param('id') id: string) {
-    return this.contactImportService.getImport(req.user.organization_id, id);
   }
 
   @Get(':id/transactions')

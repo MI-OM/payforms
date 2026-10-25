@@ -20,6 +20,13 @@ export class ContactImport {
   @Column({ nullable: true })
   created_by?: string;
 
+  /**
+   * Import template used to run this job.
+   * NULL means the built-in system default template was used.
+   */
+  @Column({ type: 'uuid', nullable: true })
+  template_id: string | null;
+
   @Column({ type: 'varchar', enum: ContactImportStatus, default: ContactImportStatus.PENDING })
   status: ContactImportStatus;
 

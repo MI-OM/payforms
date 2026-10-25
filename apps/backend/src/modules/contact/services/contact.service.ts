@@ -27,6 +27,8 @@ type ContactImportInput = {
   require_login?: boolean;
   is_active?: boolean;
   must_reset_password?: boolean;
+  /** Organization-defined custom field values, keyed by template custom field id. */
+  custom_fields?: Record<string, any>;
 };
 
 type ContactWithPasswordSetupToken = Contact & {
@@ -468,6 +470,7 @@ export class ContactService {
           guardian_phone: row.guardian_phone,
           is_active: row.is_active ?? true,
           must_reset_password: needsPasswordSetup,
+          custom_fields: row.custom_fields ?? null,
           password_reset_token: passwordResetToken ? this.hashOpaqueToken(passwordResetToken) : null,
           password_reset_expires_at: passwordResetExpiresAt,
           groups,
@@ -723,7 +726,39 @@ export class ContactService {
       require_login: row.require_login,
       is_active: row.is_active,
       must_reset_password: row.must_reset_password,
+      custom_fields: this.normalizeCustomFields(row.custom_fields),
     };
+  }
+
+  /**
+   * Normalize the custom field map, dropping empty values and keeping only
+   * scalar entries.
+   *
+   * Custom field values arrive as an object keyed by the template's custom
+   * field id (see `ContactImportRowDto.custom_fields`). The stored
+   * representation uses the same key, so a template can be pointed at the
+   * contact later and the values still line up.
+   */
+  private normalizeCustomFields(values?: Record<string, any>): Record<string, any> | undefined {
+    if (!values || typeof values !== 'object') {
+      return undefined;
+    }
+
+    const output: Record<string, any> = {};
+
+    for (const [fieldId, value] of Object.entries(values)) {
+      if (!fieldId) {
+        continue;
+      }
+
+      if (value === undefined || value === null || String(value).trim() === '') {
+        continue;
+      }
+
+      output[fieldId] = value;
+    }
+
+    return Object.keys(output).length ? output : undefined;
   }
 
   private uniqueStringList(values?: string[]) {

@@ -272,26 +272,76 @@ export class ContactImportTemplateService {
   }
 
   /**
+   * Resolve the template that should govern an import.
+   *
+   * - When `templateId` is supplied it must exist AND belong to the
+   *   organization, otherwise the import is rejected.
+   * - When it is omitted the organization's default template is used, falling
+   *   back to the built-in system default.
+   */
+  async resolveTemplateForImport(
+    organizationId: string,
+    templateId?: string | null,
+  ): Promise<ContactImportTemplate> {
+    if (!templateId) {
+      return this.getDefaultTemplate(organizationId);
+    }
+
+    const template = await this.templateRepository.findOne({
+      where: { id: templateId, organization_id: organizationId },
+    });
+
+    if (!template) {
+      throw new NotFoundException('Import template not found');
+    }
+
+    return template;
+  }
+
+  /**
    * Record which template was used for an import job.
    * Creates an immutable snapshot of the template configuration.
+   *
+   * The lookup is scoped to the organization on purpose: an unscoped lookup
+   * would let a caller pass another tenant's template id and have its
+   * configuration copied into their own import's audit trail.
+   *
+   * The call is idempotent — re-recording for the same import job updates the
+   * existing row instead of appending a second one, so a retried import does
+   * not produce a misleading duplicate audit entry.
    */
   async recordTemplateUsage(
+    organizationId: string,
     importJobId: string,
     templateId: string | null,
+    resolvedTemplate?: ContactImportTemplate,
   ): Promise<ContactImportJobApplication> {
-    let template: ContactImportTemplate | null = null;
     let snapshot: Record<string, any> = {};
 
     if (templateId) {
-      template = await this.templateRepository.findOne({ where: { id: templateId } });
-      if (template) {
-        snapshot = {
-          name: template.name,
-          description: template.description,
-          fields_config: template.fields_config,
-          custom_fields: template.custom_fields,
-        };
+      const template = await this.templateRepository.findOne({
+        where: { id: templateId, organization_id: organizationId },
+      });
+
+      if (!template) {
+        throw new NotFoundException('Import template not found');
       }
+
+      snapshot = this.buildTemplateSnapshot(template);
+    } else if (resolvedTemplate) {
+      // The built-in system default is not persisted, but it still describes
+      // what the import actually expected, so it is worth snapshotting.
+      snapshot = this.buildTemplateSnapshot(resolvedTemplate);
+    }
+
+    const existing = await this.jobApplicationRepository.findOne({
+      where: { import_job_id: importJobId },
+    });
+
+    if (existing) {
+      existing.template_id = templateId;
+      existing.template_snapshot = snapshot;
+      return this.jobApplicationRepository.save(existing);
     }
 
     const application = this.jobApplicationRepository.create({
@@ -301,6 +351,15 @@ export class ContactImportTemplateService {
     });
 
     return this.jobApplicationRepository.save(application);
+  }
+
+  private buildTemplateSnapshot(template: ContactImportTemplate): Record<string, any> {
+    return {
+      name: template.name,
+      description: template.description,
+      fields_config: template.fields_config,
+      custom_fields: template.custom_fields,
+    };
   }
 
   /**
@@ -374,6 +433,7 @@ export class ContactImportTemplateService {
       required: boolean;
       label: string;
       options?: string[];
+      customFieldId?: string;
     }>;
     customFields: CustomFieldDefinition[];
   }> {
@@ -392,6 +452,7 @@ export class ContactImportTemplateService {
       required: boolean;
       label: string;
       options?: string[];
+      customFieldId?: string;
     }> = [];
     for (const [fieldName, config] of Object.entries(template.fields_config)) {
       if (config.visible) {
@@ -413,6 +474,7 @@ export class ContactImportTemplateService {
         required: customField.required,
         label: customField.label,
         options: customField.options,
+        customFieldId: customField.id,
       });
     }
 

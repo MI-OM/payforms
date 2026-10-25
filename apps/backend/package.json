@@ -26,6 +26,7 @@
     "@nestjs/jwt": "^11.0.2",
     "@nestjs/passport": "^11.0.5",
     "@nestjs/platform-express": "^11.1.17",
+    "@nestjs/schedule": "5.0.1",
     "@nestjs/swagger": "^11.2.6",
     "@nestjs/throttler": "^6.4.0",
     "@nestjs/typeorm": "^11.0.0",
@@ -44,6 +45,7 @@
     "pdfkit": "^0.14.0",
     "pg": "^8.20.0",
     "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.2",
     "speakeasy": "^2.0.0",
     "ts-loader": "^9.5.4",
     "ts-node": "^10.9.2",
@@ -52,11 +54,14 @@
   },
   "devDependencies": {
     "@nestjs/cli": "^11.0.17",
+    "@nestjs/testing": "^11.2.7",
     "@types/express": "^5.0.6",
     "@types/jest": "^30.0.0",
     "@types/pdfkit": "^0.17.5",
+    "@types/supertest": "^6.0.3",
     "dotenv": "^16.6.1",
     "jest": "^30.2.0",
+    "supertest": "^7.3.1",
     "ts-jest": "^29.4.5"
   }
 }

@@ -154,6 +154,18 @@ export class CreateIntegrationEndpointDto {
 
   @IsOptional()
   @IsString()
+  name?: string;
+
+  /**
+   * Event types to subscribe to. Empty or omitted means all events.
+   */
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  events?: string[];
+
+  @IsOptional()
+  @IsString()
   secret?: string;
 
   @IsOptional()
@@ -169,6 +181,15 @@ export class UpdateIntegrationEndpointDto {
   @IsOptional()
   @IsString()
   target?: string;
+
+  @IsOptional()
+  @IsString()
+  name?: string;
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  events?: string[];
 
   @IsOptional()
   @IsString()
